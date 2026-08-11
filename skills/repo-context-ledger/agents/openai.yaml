@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Context Ledger"
+  short_description: "Keep feature context and change docs synchronized"
+  default_prompt: "Use $repo-context-ledger to initialize or maintain repository context documentation."
