@@ -6,22 +6,29 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 import datetime as dt
+import hashlib
 import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 
-VERSION = 1
+VERSION = 2
+TOOL_VERSION = "0.2.0"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
 BLOCK_END = "<!-- repo-context-ledger:end -->"
 RULE_START = "<!-- repo-context-ledger:rules:start -->"
 RULE_END = "<!-- repo-context-ledger:rules:end -->"
 CHANGES_START = "<!-- repo-context-ledger:changes:start -->"
 CHANGES_END = "<!-- repo-context-ledger:changes:end -->"
+PACK_FILES_START = "<!-- repo-context-ledger:pack-files:start -->"
+PACK_FILES_END = "<!-- repo-context-ledger:pack-files:end -->"
+PACK_SPECS_START = "<!-- repo-context-ledger:pack-specs:start -->"
+PACK_SPECS_END = "<!-- repo-context-ledger:pack-specs:end -->"
 IGNORED_DIRS = {
     ".git", ".hg", ".svn", ".idea", ".vscode", ".context-ledger",
     "node_modules", "vendor", "dist", "build", "target", "bin", "obj",
@@ -133,9 +140,134 @@ def field_value(text: str, field: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def set_field(text: str, field: str, value: str, after: str | None = None) -> str:
+    line = f"{field}: {value}".rstrip()
+    if re.search(rf"(?mi)^{re.escape(field)}:", text):
+        return re.sub(rf"(?mi)^{re.escape(field)}:.*$", line, text, count=1)
+    if after and re.search(rf"(?mi)^{re.escape(after)}:.*$", text):
+        return re.sub(
+            rf"(?mi)^({re.escape(after)}:.*)$",
+            lambda match: match.group(1) + "\n" + line,
+            text,
+            count=1,
+        )
+    heading = re.search(r"(?m)^## ", text)
+    position = heading.start() if heading else len(text)
+    return text[:position].rstrip() + "\n" + line + "\n\n" + text[position:].lstrip()
+
+
 def slugify(value: str) -> str:
     ascii_slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return ascii_slug[:48] or "change"
+
+
+def git_revision(repo: Path) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            text=True,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "none"
+    return result.stdout.strip() if result.returncode == 0 else "none"
+
+
+def git_dirty_paths(repo: Path) -> list[str]:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all"],
+            text=True,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if result.returncode != 0:
+        return []
+    paths = []
+    for line in result.stdout.splitlines():
+        raw = line[3:].strip()
+        if " -> " in raw:
+            raw = raw.split(" -> ", 1)[1]
+        if raw.replace("\\", "/") == ".context-ledger/.write.lock":
+            continue
+        if raw:
+            paths.append(raw.replace("\\", "/"))
+    return sorted(dict.fromkeys(paths))
+
+
+def file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def context_state_path(repo: Path) -> Path:
+    return safe_repo_path(repo, ".context-ledger/context-state.json", "context state")
+
+
+def default_context_state() -> dict:
+    return {
+        "schema_version": VERSION,
+        "active_feature": None,
+        "paused_handoffs": [],
+        "recent_features": [],
+    }
+
+
+def load_context_state(repo: Path) -> dict:
+    path = context_state_path(repo)
+    if not path.exists():
+        return default_context_state()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise LedgerError(f"Invalid context state: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise LedgerError("Context state must be a JSON object.")
+    paused = raw.get("paused_handoffs", [])
+    recent = raw.get("recent_features", [])
+    active = raw.get("active_feature")
+    if not isinstance(paused, list) or not all(isinstance(item, str) for item in paused):
+        raise LedgerError("context-state paused_handoffs must be a list of paths.")
+    if not isinstance(recent, list) or not all(isinstance(item, str) for item in recent):
+        raise LedgerError("context-state recent_features must be a list of feature slugs.")
+    if active is not None and not isinstance(active, str):
+        raise LedgerError("context-state active_feature must be a string or null.")
+    return {
+        "schema_version": VERSION,
+        "active_feature": active,
+        "paused_handoffs": list(dict.fromkeys(paused)),
+        "recent_features": list(dict.fromkeys(recent))[:10],
+    }
+
+
+def save_context_state(repo: Path, state: dict) -> None:
+    normalized = default_context_state()
+    normalized.update(state)
+    normalized["schema_version"] = VERSION
+    atomic_write(context_state_path(repo), json.dumps(normalized, indent=2, ensure_ascii=False) + "\n")
+
+
+def remember_feature(state: dict, feature: str) -> None:
+    state["active_feature"] = feature
+    state["recent_features"] = [feature] + [
+        item for item in state.get("recent_features", []) if item != feature
+    ][:9]
+
+
+def feature_slug(value: str) -> str:
+    slug = slugify(value)
+    if slug == "change" and value.strip().casefold() != "change":
+        digest = hashlib.sha1(value.strip().encode("utf-8")).hexdigest()[:10]
+        return f"feature-{digest}"
+    return slug
 
 
 def template_source(name: str, repo: Path | None = None) -> Path:
@@ -284,12 +416,13 @@ def managed_rules(config: dict) -> str:
 
 For every feature, bug fix, refactor, interface change, or other behavior-changing code task:
 
-1. Before editing code, inspect `{changes}/.active-handoff`. If empty, run `python .context-ledger/ledger.py start --title \"<task>\"` yourself.
-2. Run `python .context-ledger/ledger.py context --query \"<feature or module>\"` and read the returned context before broad code exploration.
-3. Keep the active handoff current while working.
-4. Update `{specs}/` when current behavior, contracts, boundaries, or code navigation changes.
-5. After code and tests are complete, fill every handoff section and run `python .context-ledger/ledger.py finish --spec <affected-spec>`. Use `--no-spec --reason \"...\"` only when no stable behavior exists to document.
-6. Run `python .context-ledger/ledger.py check --strict` and resolve failures before reporting completion.
+1. Before editing code, inspect `{changes}/.active-handoff`. If empty, run `python .context-ledger/ledger.py start --title \"<task>\" --feature \"<feature>\"` yourself.
+2. Prefer `python .context-ledger/ledger.py focus --feature \"<feature>\"` and read its Context Pack before broad code exploration. If no pack exists, create it with `pack`, fill it, then focus it. Fall back to `context --query` for discovery.
+3. When the user pauses or switches work, run `pause` with an accurate summary and next step before starting another handoff. When the user resumes, run `resume` and revalidate any stale state.
+4. Keep the active handoff current while working. Refresh affected Context Packs with `pack --file ...` when tracked code changes.
+5. Update `{specs}/` when current behavior, contracts, boundaries, or code navigation changes.
+6. After code and tests are complete, fill every handoff section and run `python .context-ledger/ledger.py finish --spec <affected-spec>`. Use `--no-spec --reason \"...\"` only when no stable behavior exists to document.
+7. Run `python .context-ledger/ledger.py check --strict` and resolve failures before reporting completion.
 
 Do not ask the user to run bookkeeping commands. Do not create a handoff for read-only analysis or formatting-only work. Preserve prose outside `repo-context-ledger` managed markers."""
 
@@ -302,7 +435,10 @@ def init_repo(repo: Path) -> int:
     runtime_target = runtime_dir / "ledger.py"
     if Path(__file__).resolve() != runtime_target.resolve():
         shutil.copy2(Path(__file__).resolve(), runtime_target)
-    for name in ("handoff-template.md", "spec-template.md", "project-context-template.md"):
+    for name in (
+        "handoff-template.md", "spec-template.md", "project-context-template.md",
+        "context-pack-template.md",
+    ):
         source = template_source(name, repo)
         target = template_dir / name
         if source.resolve() != target.resolve():
@@ -329,6 +465,7 @@ def init_repo(repo: Path) -> int:
     specs_root = safe_repo_path(repo, docs["specs"], "config.docs.specs")
     changes_root = safe_repo_path(repo, docs["changes"], "config.docs.changes")
     ai_root.mkdir(parents=True, exist_ok=True)
+    (ai_root / "context-packs").mkdir(parents=True, exist_ok=True)
     specs_root.mkdir(parents=True, exist_ok=True)
     changes_root.mkdir(parents=True, exist_ok=True)
     project_context = ai_root / "project-context.md"
@@ -340,6 +477,10 @@ def init_repo(repo: Path) -> int:
         }),
     )
     write_if_missing(changes_root / ".active-handoff", "")
+    if not context_state_path(repo).exists():
+        save_context_state(repo, default_context_state())
+    else:
+        save_context_state(repo, load_context_state(repo))
     write_if_missing(specs_root / "README.md", "# Stable feature context\n")
     write_if_missing(changes_root / "README.md", "# Change history\n")
 
@@ -382,12 +523,13 @@ def active_handoff(repo: Path, config: dict) -> Path | None:
     return target
 
 
-def start_change(repo: Path, title: str) -> int:
+def start_change(repo: Path, title: str, feature: str = "") -> int:
     title = title.strip()
     if not title or len(title) > 160 or "\n" in title or "\r" in title:
         print("Task title must be one line containing 1 to 160 characters.", file=sys.stderr)
         return 2
     config = load_config(repo)
+    feature = feature_slug(feature or title)
     current = active_handoff(repo, config)
     if current and current.exists():
         if first_heading(current).casefold() == title.casefold():
@@ -405,7 +547,12 @@ def start_change(repo: Path, title: str) -> int:
     folder.mkdir(parents=True, exist_ok=True)
     content = render_template(
         template_source("handoff-template.md", repo),
-        {"TITLE": title, "STARTED": stamp.isoformat(timespec="seconds")},
+        {
+            "TITLE": title,
+            "FEATURE": feature,
+            "STARTED": stamp.isoformat(timespec="seconds"),
+            "BASE_COMMIT": git_revision(repo),
+        },
     )
     stem = f"{stamp.strftime('%Y%m%d-%H%M%S')}-{slugify(title)}"
     path = folder / f"{stem}.md"
@@ -419,6 +566,9 @@ def start_change(repo: Path, title: str) -> int:
             counter += 1
             path = folder / f"{stem}-{counter}.md"
     atomic_write(active_pointer(repo, config), rel_posix(path, repo) + "\n")
+    state = load_context_state(repo)
+    remember_feature(state, feature)
+    save_context_state(repo, state)
     sync_repo(repo)
     print(rel_posix(path, repo))
     return 0
@@ -455,6 +605,283 @@ def context_search(repo: Path, query: str, limit: int) -> int:
         return 1
     for score, path in candidates[:limit]:
         print(f"{rel_posix(path, repo)}\t{first_heading(path)}\tscore={score}")
+    return 0
+
+
+def context_pack_path(repo: Path, config: dict, feature: str) -> Path:
+    ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
+    return ai_root / "context-packs" / f"{feature_slug(feature)}.md"
+
+
+def pack_file_entries(text: str) -> list[tuple[str, str]]:
+    pattern = re.compile(re.escape(PACK_FILES_START) + r"(.*?)" + re.escape(PACK_FILES_END), re.DOTALL)
+    match = pattern.search(text)
+    if not match:
+        return []
+    return re.findall(r"(?m)^- `([^`]+)` — `sha256:([0-9a-f]{64})`$", match.group(1))
+
+
+def pack_spec_paths(text: str) -> list[str]:
+    pattern = re.compile(re.escape(PACK_SPECS_START) + r"(.*?)" + re.escape(PACK_SPECS_END), re.DOTALL)
+    match = pattern.search(text)
+    if not match:
+        return []
+    return re.findall(r"(?m)^- \[[^\]]+\]\(([^)]+)\)$", match.group(1))
+
+
+def normalize_tracked_file(repo: Path, raw: str) -> Path:
+    target = Path(raw).resolve() if Path(raw).is_absolute() else (repo / raw).resolve()
+    try:
+        target.relative_to(repo.resolve())
+    except ValueError as exc:
+        raise LedgerError(f"Tracked file points outside the repository: {raw}") from exc
+    if not target.is_file():
+        raise LedgerError(f"Tracked file does not exist: {raw}")
+    return target
+
+
+def refresh_context_pack(
+    repo: Path,
+    feature: str,
+    title: str,
+    raw_files: list[str],
+    raw_specs: list[str],
+) -> int:
+    config = load_config(repo)
+    feature = feature_slug(feature)
+    path = context_pack_path(repo, config, feature)
+    existing = path.exists()
+    previous = path.read_text(encoding="utf-8") if existing else ""
+    if not raw_files and existing:
+        raw_files = [item[0] for item in pack_file_entries(previous)]
+    if not raw_specs and existing:
+        raw_specs = [
+            os.path.normpath(os.path.join(path.parent, item))
+            for item in pack_spec_paths(previous)
+        ]
+    if not raw_files:
+        print("A context pack must track at least one repository file.", file=sys.stderr)
+        return 2
+    tracked = list(dict.fromkeys(normalize_tracked_file(repo, raw) for raw in raw_files))
+    specs = list(dict.fromkeys(normalize_spec(repo, config, raw) for raw in raw_specs))
+    if existing:
+        text = previous
+    else:
+        display_title = title.strip() or feature.replace("-", " ").title()
+        text = render_template(
+            template_source("context-pack-template.md", repo),
+            {
+                "TITLE": display_title,
+                "FEATURE": feature,
+                "SOURCE_COMMIT": git_revision(repo),
+                "REFRESHED": now().isoformat(timespec="seconds"),
+            },
+        )
+    text = set_field(text, "Status", "current")
+    text = set_field(text, "Feature", feature, after="Status")
+    text = set_field(text, "Source commit", git_revision(repo), after="Feature")
+    text = set_field(text, "Last refreshed", now().isoformat(timespec="seconds"), after="Source commit")
+    file_lines = [
+        f"- `{rel_posix(item, repo)}` — `sha256:{file_digest(item)}`"
+        for item in tracked
+    ]
+    replace_files = (
+        "## Tracked file fingerprints\n\n" + "\n".join(file_lines)
+    )
+    temp_path = path
+    temp_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(temp_path, text.rstrip() + "\n")
+    replace_block(temp_path, PACK_FILES_START, PACK_FILES_END, replace_files)
+    spec_lines = [
+        f"- [{first_heading(item)}]({os.path.relpath(item, path.parent).replace(os.sep, '/')})"
+        for item in specs
+    ] or ["- No linked stable specs yet."]
+    replace_block(
+        temp_path,
+        PACK_SPECS_START,
+        PACK_SPECS_END,
+        "## Stable context\n\n" + "\n".join(spec_lines),
+    )
+    print(rel_posix(path, repo))
+    if not existing:
+        print("Fill every TODO in the new context pack before focusing it.")
+    return 0
+
+
+PACK_REQUIRED_HEADINGS = (
+    "## Purpose", "## Load order", "## Entry points and code map",
+    "## Contracts and boundaries", "## Verification",
+)
+
+
+def context_pack_errors(repo: Path, path: Path) -> list[str]:
+    text = path.read_text(encoding="utf-8")
+    errors: list[str] = []
+    if field_value(text, "Status").casefold() != "current":
+        errors.append("Context pack status must be current.")
+    if not field_value(text, "Feature"):
+        errors.append("Context pack is missing Feature metadata.")
+    if not field_value(text, "Source commit"):
+        errors.append("Context pack is missing Source commit metadata.")
+    if not field_value(text, "Last refreshed"):
+        errors.append("Context pack is missing Last refreshed metadata.")
+    if re.search(r"(?mi)^\s*TODO:\s*", text):
+        errors.append("Context pack still contains TODO placeholders.")
+    for index, heading in enumerate(PACK_REQUIRED_HEADINGS):
+        if heading not in text:
+            errors.append(f"Missing context pack section: {heading}")
+            continue
+        start = text.index(heading) + len(heading)
+        later = [text.find(other, start) for other in PACK_REQUIRED_HEADINGS[index + 1:]]
+        managed = [
+            text.find(PACK_SPECS_START, start), text.find(PACK_FILES_START, start),
+        ]
+        ends = [position for position in later + managed if position >= 0]
+        end = min(ends) if ends else len(text)
+        body = re.sub(r"[`*_#>\-]", "", text[start:end]).strip()
+        if len(body) < 10:
+            errors.append(f"Context pack section has no substantive content: {heading}")
+    entries = pack_file_entries(text)
+    if not entries:
+        errors.append("Context pack must contain at least one tracked file fingerprint.")
+    for raw, expected in entries:
+        try:
+            target = normalize_tracked_file(repo, raw)
+        except LedgerError as exc:
+            errors.append(str(exc))
+            continue
+        if file_digest(target) != expected:
+            errors.append(f"Context pack is stale; tracked file changed: {raw}")
+    return errors
+
+
+def focus_context(repo: Path, feature: str) -> int:
+    config = load_config(repo)
+    feature = feature_slug(feature)
+    pack = context_pack_path(repo, config, feature)
+    if not pack.is_file():
+        print(
+            f"No context pack for {feature}. Create one with the pack command before focusing it.",
+            file=sys.stderr,
+        )
+        return 2
+    current = active_handoff(repo, config)
+    if current and current.exists():
+        active_feature = feature_slug(field_value(current.read_text(encoding="utf-8"), "Feature") or first_heading(current))
+        if active_feature != feature:
+            print(
+                f"Active handoff belongs to {active_feature}; pause it before focusing {feature}.",
+                file=sys.stderr,
+            )
+            return 2
+    errors = context_pack_errors(repo, pack)
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+    state = load_context_state(repo)
+    remember_feature(state, feature)
+    save_context_state(repo, state)
+    text = pack.read_text(encoding="utf-8")
+    print(f"Context pack: {rel_posix(pack, repo)}")
+    for raw in pack_spec_paths(text):
+        target = (pack.parent / raw).resolve()
+        print(f"Stable spec: {rel_posix(target, repo)}")
+    for raw, _ in pack_file_entries(text):
+        print(f"Tracked file: {raw}")
+    return 0
+
+
+def pause_change(repo: Path, summary: str, next_step: str) -> int:
+    if len(summary.strip()) < 10 or len(next_step.strip()) < 5:
+        print("Pause requires a substantive --summary and --next step.", file=sys.stderr)
+        return 2
+    config = load_config(repo)
+    handoff = active_handoff(repo, config)
+    if not handoff or not handoff.is_file():
+        print("No active handoff to pause.", file=sys.stderr)
+        return 2
+    text = handoff.read_text(encoding="utf-8")
+    if field_value(text, "Status").casefold() != "active":
+        print("Only an active handoff can be paused.", file=sys.stderr)
+        return 2
+    feature = feature_slug(field_value(text, "Feature") or first_heading(handoff))
+    text = set_field(text, "Feature", feature, after="Status")
+    text = set_field(text, "Status", "paused")
+    text = set_field(text, "Paused", now().isoformat(timespec="seconds"), after="Completed")
+    text = set_field(text, "Base commit", field_value(text, "Base commit") or git_revision(repo), after="Resumed")
+    text = set_field(text, "Resume summary", summary.strip(), after="Dirty paths")
+    text = set_field(text, "Next step", next_step.strip(), after="Resume summary")
+    dirty = git_dirty_paths(repo)
+    text = set_field(text, "Dirty paths", ", ".join(dirty) if dirty else "none", after="Base commit")
+    atomic_write(handoff, text.rstrip() + "\n")
+    atomic_write(active_pointer(repo, config), "")
+    state = load_context_state(repo)
+    handoff_rel = rel_posix(handoff, repo)
+    state["paused_handoffs"] = [handoff_rel] + [
+        item for item in state.get("paused_handoffs", []) if item != handoff_rel
+    ]
+    state["active_feature"] = None
+    save_context_state(repo, state)
+    sync_repo(repo)
+    print(f"Paused {handoff_rel}")
+    return 0
+
+
+def resolve_paused_handoff(repo: Path, config: dict, raw: str, state: dict) -> Path:
+    candidate = raw.strip() if raw else (state.get("paused_handoffs") or [""])[0]
+    if not candidate:
+        raise LedgerError("No paused handoff is available to resume.")
+    target = safe_repo_path(repo, candidate, "paused handoff")
+    changes_root = safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes")
+    try:
+        target.relative_to(changes_root)
+    except ValueError as exc:
+        raise LedgerError("Paused handoff must be inside the configured change history.") from exc
+    if not target.is_file():
+        raise LedgerError(f"Paused handoff does not exist: {candidate}")
+    return target
+
+
+def resume_change(repo: Path, raw_handoff: str) -> int:
+    config = load_config(repo)
+    current = active_handoff(repo, config)
+    if current:
+        print(f"Another handoff is active: {rel_posix(current, repo)}", file=sys.stderr)
+        return 2
+    state = load_context_state(repo)
+    handoff = resolve_paused_handoff(repo, config, raw_handoff, state)
+    text = handoff.read_text(encoding="utf-8")
+    if field_value(text, "Status").casefold() != "paused":
+        print("Only a paused handoff can be resumed.", file=sys.stderr)
+        return 2
+    feature = feature_slug(field_value(text, "Feature") or first_heading(handoff))
+    base_commit = field_value(text, "Base commit")
+    current_commit = git_revision(repo)
+    text = set_field(text, "Feature", feature, after="Status")
+    text = set_field(text, "Status", "active")
+    text = set_field(text, "Resumed", now().isoformat(timespec="seconds"), after="Paused")
+    atomic_write(handoff, text.rstrip() + "\n")
+    handoff_rel = rel_posix(handoff, repo)
+    atomic_write(active_pointer(repo, config), handoff_rel + "\n")
+    state["paused_handoffs"] = [
+        item for item in state.get("paused_handoffs", []) if item != handoff_rel
+    ]
+    remember_feature(state, feature)
+    save_context_state(repo, state)
+    sync_repo(repo)
+    print(f"Resumed {handoff_rel}")
+    if base_commit and base_commit != "none" and current_commit != base_commit:
+        print(f"WARNING: repository moved from {base_commit} to {current_commit}; revalidate the resume state.")
+    pack = context_pack_path(repo, config, feature)
+    if pack.exists():
+        errors = context_pack_errors(repo, pack)
+        if errors:
+            print("WARNING: context pack requires refresh:")
+            for error in errors:
+                print(f"- {error}")
+        else:
+            print(f"Context pack: {rel_posix(pack, repo)}")
     return 0
 
 
@@ -497,13 +924,16 @@ def readme_body(repo: Path, config: dict, readme: Path, module: str | None) -> s
         relevant_specs, relevant_changes = specs, changes
     specs_root = safe_repo_path(repo, config["docs"]["specs"], "config.docs.specs")
     changes_root = safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes")
+    packs_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai") / "context-packs"
     spec_index = os.path.relpath(specs_root / "README.md", readme_dir).replace(os.sep, "/")
     change_index = os.path.relpath(changes_root / "README.md", readme_dir).replace(os.sep, "/")
+    packs_link = os.path.relpath(packs_root, readme_dir).replace(os.sep, "/")
     lines = [
         "## Repository context",
         "",
         f"- [Stable feature context]({spec_index})",
         f"- [Change history]({change_index})",
+        f"- [Feature Context Packs]({packs_link})",
     ]
     if relevant_specs:
         lines.append("- Relevant specs: " + ", ".join(
@@ -700,7 +1130,10 @@ def check_repo(repo: Path, strict: bool) -> int:
     specs_root = safe_repo_path(repo, config["docs"]["specs"], "config.docs.specs")
     changes_root = safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes")
     ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
-    for required in (repo / "AGENTS.md", specs_root / "README.md", changes_root / "README.md"):
+    for required in (
+        repo / "AGENTS.md", specs_root / "README.md", changes_root / "README.md",
+        context_state_path(repo),
+    ):
         if not required.exists():
             errors.append(f"Missing required file: {rel_posix(required, repo)}")
     if (repo / "AGENTS.md").exists() and RULE_START not in (repo / "AGENTS.md").read_text(encoding="utf-8"):
@@ -710,6 +1143,32 @@ def check_repo(repo: Path, strict: bool) -> int:
         errors.append(f"Active handoff does not exist: {current}")
     if strict and current and current.exists():
         errors.extend(handoff_validation_errors(current.read_text(encoding="utf-8")))
+    try:
+        state = load_context_state(repo)
+        paused_seen = set()
+        for raw in state.get("paused_handoffs", []):
+            if raw in paused_seen:
+                errors.append(f"Duplicate paused handoff in context state: {raw}")
+                continue
+            paused_seen.add(raw)
+            try:
+                paused = safe_repo_path(repo, raw, "paused handoff")
+            except LedgerError as exc:
+                errors.append(str(exc))
+                continue
+            if not paused.is_file():
+                errors.append(f"Paused handoff does not exist: {raw}")
+            elif field_value(paused.read_text(encoding="utf-8"), "Status").casefold() != "paused":
+                errors.append(f"Paused handoff has non-paused status: {raw}")
+    except LedgerError as exc:
+        errors.append(str(exc))
+
+    if strict:
+        packs_root = ai_root / "context-packs"
+        if packs_root.exists():
+            for pack in sorted(packs_root.glob("*.md")):
+                for error in context_pack_errors(repo, pack):
+                    errors.append(f"{rel_posix(pack, repo)}: {error}")
 
     markdown_files = []
     for docs_root in (ai_root, specs_root, changes_root):
@@ -744,8 +1203,15 @@ def check_repo(repo: Path, strict: bool) -> int:
 def show_status(repo: Path) -> int:
     config = load_config(repo)
     current = active_handoff(repo, config)
+    state = load_context_state(repo)
+    packs_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai") / "context-packs"
     print(f"Repository: {repo}")
     print(f"Active handoff: {rel_posix(current, repo) if current else 'none'}")
+    print(f"Active feature: {state.get('active_feature') or 'none'}")
+    print(f"Paused handoffs: {len(state.get('paused_handoffs', []))}")
+    for raw in state.get("paused_handoffs", []):
+        print(f"- {raw}")
+    print(f"Context packs: {len(list(packs_root.glob('*.md'))) if packs_root.exists() else 0}")
     print(f"Stable specs: {len(all_specs(repo, config))}")
     print(f"Recorded changes: {len(all_changes(repo, config))}")
     print(f"Detected modules: {len(config.get('modules', []))}")
@@ -754,14 +1220,28 @@ def show_status(repo: Path) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Maintain AI-friendly repository context documentation.")
+    parser.add_argument("--version", action="version", version=f"repo-context-ledger {TOOL_VERSION}")
     parser.add_argument("--repo", default=".", help="Repository root (default: current directory)")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Initialize or refresh repository integration")
     start = sub.add_parser("start", help="Start a behavior-changing work handoff")
     start.add_argument("--title", required=True)
+    start.add_argument("--feature", default="", help="Stable feature slug or name")
     context = sub.add_parser("context", help="Find likely stable background documents")
     context.add_argument("--query", required=True)
     context.add_argument("--limit", type=int, default=5)
+    pack = sub.add_parser("pack", help="Create or refresh a feature Context Pack")
+    pack.add_argument("--feature", required=True)
+    pack.add_argument("--title", default="")
+    pack.add_argument("--file", action="append", default=[])
+    pack.add_argument("--spec", action="append", default=[])
+    focus = sub.add_parser("focus", help="Load and validate a feature Context Pack")
+    focus.add_argument("--feature", required=True)
+    pause = sub.add_parser("pause", help="Pause the active handoff and preserve resume state")
+    pause.add_argument("--summary", required=True)
+    pause.add_argument("--next", required=True, dest="next_step")
+    resume = sub.add_parser("resume", help="Resume the latest or selected paused handoff")
+    resume.add_argument("--handoff", default="")
     finish = sub.add_parser("finish", help="Complete the active handoff and link specs")
     finish_group = finish.add_mutually_exclusive_group()
     finish_group.add_argument("--spec", action="append", default=[])
@@ -778,12 +1258,20 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = build_parser().parse_args(argv)
         repo = resolve_repo(args.repo)
-        if args.command in {"init", "start", "finish", "sync"}:
+        if args.command in {"init", "start", "pack", "focus", "pause", "resume", "finish", "sync"}:
             with repo_lock(repo):
                 if args.command == "init":
                     return init_repo(repo)
                 if args.command == "start":
-                    return start_change(repo, args.title)
+                    return start_change(repo, args.title, args.feature)
+                if args.command == "pack":
+                    return refresh_context_pack(repo, args.feature, args.title, args.file, args.spec)
+                if args.command == "focus":
+                    return focus_context(repo, args.feature)
+                if args.command == "pause":
+                    return pause_change(repo, args.summary, args.next_step)
+                if args.command == "resume":
+                    return resume_change(repo, args.handoff)
                 if args.command == "finish":
                     return finish_change(repo, args.spec, args.no_spec, args.reason)
                 return sync_repo(repo)

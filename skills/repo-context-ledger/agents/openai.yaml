@@ -1,4 +1,4 @@
 interface:
   display_name: "Repo Context Ledger"
-  short_description: "Keep feature context and change docs synchronized"
-  default_prompt: "Use $repo-context-ledger to initialize or maintain repository context documentation."
+  short_description: "Preserve coding context across AI sessions"
+  default_prompt: "Use $repo-context-ledger to maintain this repository's feature context or resume paused work."

@@ -18,9 +18,18 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 - what changed, why it changed, and how it was verified;
 - which project and module README summaries need refreshing.
 
+## What's new in v0.2.0
+
+- Natural-language context switching: pause one task, focus another feature, and resume later without losing progress.
+- Context Packs: compact, feature-specific loading guides under `docs/ai/context-packs/`.
+- Paused task stack: preserve multiple unfinished handoffs and resume the latest or a selected task.
+- Staleness detection: tracked-file fingerprints warn when a Context Pack no longer matches the code.
+- Resume safety: preserve the base commit, dirty paths, completed work, and next concrete action.
+
 ## What it maintains
 
 - `docs/ai/`: concise repository-wide orientation for fresh AI sessions.
+- `docs/ai/context-packs/`: minimal feature context, load order, boundaries, tests, and tracked-file fingerprints.
 - `docs/specs/`: current feature behavior, code maps, contracts, and boundaries.
 - `docs/changes/`: chronological implementation and repair handoffs, grouped as `YYYY/MM/<change>.md` with a small monthly index.
 - `docs/changes/.active-handoff`: a pointer to work currently in progress.
@@ -75,7 +84,7 @@ Open the target project with your AI coding tool and ask:
 
 > Use repo-context-ledger to initialize this repository.
 
-The agent creates the documentation structure and durable agent instructions without overwriting existing documentation.
+The agent creates the documentation structure, context state, and durable agent instructions without overwriting existing documentation.
 
 ### 2. Work normally
 
@@ -89,21 +98,35 @@ You do **not** need to run `ctx begin`, name a handoff, or remember lifecycle co
 2. start a change handoff before implementation;
 3. update code and tests;
 4. record the affected code path, decisions, boundaries, and verification;
-5. update the stable feature spec;
+5. update the stable feature spec and Context Pack;
 6. refresh affected module README files and the root README summary;
 7. close the handoff and validate the ledger.
 
-### 3. Start a new AI session
+### 3. Switch tasks naturally
+
+Tell the agent what you want in ordinary language:
+
+> Pause the withdrawal monitoring fix and switch to the login timeout issue.
+
+The agent records the current progress and next step, pauses that handoff, loads the login Context Pack, and starts the new work. Later, say:
+
+> Continue the previous withdrawal monitoring task.
+
+The agent restores the handoff, checks whether the repository or tracked files changed, and reloads only the relevant context. Internal `pause`, `focus`, `pack`, and `resume` commands are agent-owned bookkeeping; users do not need to run them.
+
+### 4. Start a new AI session
 
 Tell the new agent which feature or interface you want to change. It can read the compact generated index and relevant spec instead of scanning a large part of the repository for background context.
 
-### 4. Review the result
+### 5. Review the result
 
 After a completed change, expect to see:
 
 ```text
 docs/
 ├── ai/
+│   └── context-packs/
+│       └── withdrawal-monitoring.md
 ├── specs/
 └── changes/
     └── 2026/
@@ -121,6 +144,8 @@ The exact month is generated from the completion date. Monthly grouping keeps th
 - Only explicitly marked generated blocks are replaced.
 - Every configured path is validated to remain inside the repository before writes occur.
 - Handoff files use collision-safe creation and never overwrite existing history.
+- Active work cannot silently switch to another feature; it must be paused with resumable state first.
+- Context Packs detect missing or modified tracked files with SHA-256 fingerprints.
 - Managed files use atomic replacement, and mutating commands use a short repository lock to prevent concurrent writers.
 - The runtime uses the Python 3.10+ standard library and requires no API key.
 - Semantic documentation remains the agent's responsibility; scripts enforce deterministic structure, lifecycle state, and links.

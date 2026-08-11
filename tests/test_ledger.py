@@ -20,6 +20,10 @@ LEDGER_MODULE = importlib.util.module_from_spec(LEDGER_SPEC)
 LEDGER_SPEC.loader.exec_module(LEDGER_MODULE)
 
 
+def field_from_file(path: Path, field: str) -> str:
+    return LEDGER_MODULE.field_value(path.read_text(encoding="utf-8"), field)
+
+
 class LedgerFlowTests(unittest.TestCase):
     def test_skill_metadata_matches_open_agent_skills_shape(self):
         skill = ROOT / "skills" / "repo-context-ledger" / "SKILL.md"
@@ -45,6 +49,19 @@ class LedgerFlowTests(unittest.TestCase):
             )
         return result
 
+    def fill_context_pack(self, path: Path):
+        text = path.read_text(encoding="utf-8")
+        replacements = [
+            "Keeps authentication behavior understandable across fresh AI sessions.",
+            "Read the linked spec first, followed by the tracked implementation file.",
+            "The public entry point is the tracked authentication service module.",
+            "Preserve credential validation, permissions, and existing failure behavior.",
+            "Run the authentication unit tests and the strict ledger validation.",
+        ]
+        for replacement in replacements:
+            text = re.sub(r"(?m)^TODO:.*$", replacement, text, count=1)
+        path.write_text(text, encoding="utf-8")
+
     def test_end_to_end_preserves_readmes_and_links_specs(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
@@ -61,17 +78,16 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertIn("Human module text.", (module / "README.md").read_text(encoding="utf-8"))
             self.assertTrue((repo / "AGENTS.md").exists())
             self.assertTrue((repo / ".cursor/rules/repo-context-ledger.mdc").exists())
+            self.assertTrue((repo / ".context-ledger/context-state.json").exists())
+            self.assertTrue((repo / ".context-ledger/templates/context-pack-template.md").exists())
+            self.assertEqual(
+                2,
+                json.loads((repo / ".context-ledger/config.json").read_text(encoding="utf-8"))["schema_version"],
+            )
             self.assertIn("Keep this text.", (repo / "AGENTS.md").read_text(encoding="utf-8"))
 
             # Re-initializing from the repository-local runtime is safe and idempotent.
-            local_runtime = repo / ".context-ledger/ledger.py"
-            result = subprocess.run(
-                [sys.executable, str(local_runtime), "--repo", str(repo), "init"],
-                text=True,
-                capture_output=True,
-                encoding="utf-8",
-            )
-            self.assertEqual(0, result.returncode, result.stderr)
+            self.run_ledger(repo, "init")
             self.assertEqual(1, (repo / "AGENTS.md").read_text(encoding="utf-8").count("<!-- repo-context-ledger:rules:start -->"))
 
             start = self.run_ledger(repo, "start", "--title", "Repair payment status")
@@ -113,6 +129,125 @@ class LedgerFlowTests(unittest.TestCase):
             self.run_ledger(repo, "start", "--title", "First task")
             result = self.run_ledger(repo, "start", "--title", "Second task", expected=2)
             self.assertIn("Another handoff is active", result.stderr)
+
+    def test_context_pack_focus_and_staleness_detection(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            source = repo / "src/auth.py"
+            source.parent.mkdir(parents=True)
+            source.write_text("def authenticate():\n    return True\n", encoding="utf-8")
+            self.run_ledger(repo, "init")
+            spec = repo / "docs/specs/authentication.md"
+            spec.write_text("# Authentication\n\nStatus: current\n", encoding="utf-8")
+
+            created = self.run_ledger(
+                repo,
+                "pack",
+                "--feature",
+                "authentication",
+                "--title",
+                "Authentication",
+                "--file",
+                "src/auth.py",
+                "--spec",
+                "docs/specs/authentication.md",
+            )
+            pack = repo / created.stdout.splitlines()[0]
+            self.assertTrue(pack.exists())
+            self.assertIn("Fill every TODO", created.stdout)
+            incomplete = self.run_ledger(repo, "focus", "--feature", "authentication", expected=2)
+            self.assertIn("TODO placeholders", incomplete.stderr)
+
+            self.fill_context_pack(pack)
+            focused = self.run_ledger(repo, "focus", "--feature", "authentication")
+            self.assertIn("Context pack: docs/ai/context-packs/authentication.md", focused.stdout)
+            self.assertIn("Stable spec: docs/specs/authentication.md", focused.stdout)
+            self.assertIn("Tracked file: src/auth.py", focused.stdout)
+            state = json.loads((repo / ".context-ledger/context-state.json").read_text(encoding="utf-8"))
+            self.assertEqual("authentication", state["active_feature"])
+            self.run_ledger(repo, "check", "--strict")
+
+            source.write_text("def authenticate():\n    return False\n", encoding="utf-8")
+            stale = self.run_ledger(repo, "focus", "--feature", "authentication", expected=2)
+            self.assertIn("tracked file changed: src/auth.py", stale.stderr)
+            strict = self.run_ledger(repo, "check", "--strict", expected=2)
+            self.assertIn("Context pack is stale", strict.stderr)
+
+            self.run_ledger(repo, "pack", "--feature", "authentication")
+            self.run_ledger(repo, "focus", "--feature", "authentication")
+            self.run_ledger(repo, "check", "--strict")
+
+    def test_pause_stack_and_selected_resume(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            first = self.run_ledger(
+                repo, "start", "--title", "Repair withdrawals", "--feature", "withdrawals"
+            )
+            first_path = first.stdout.strip().splitlines()[-1]
+            self.run_ledger(
+                repo,
+                "pause",
+                "--summary",
+                "Withdrawal behavior has been inspected and no code is changed yet.",
+                "--next",
+                "Update the withdrawal service and its tests.",
+            )
+            self.assertEqual("", (repo / "docs/changes/.active-handoff").read_text(encoding="utf-8"))
+            self.assertEqual("paused", field_from_file(repo / first_path, "Status"))
+            self.assertNotIn(".write.lock", field_from_file(repo / first_path, "Dirty paths"))
+
+            second = self.run_ledger(
+                repo, "start", "--title", "Repair authentication", "--feature", "authentication"
+            )
+            second_path = second.stdout.strip().splitlines()[-1]
+            self.run_ledger(
+                repo,
+                "pause",
+                "--summary",
+                "Authentication timeout behavior and tests have been located.",
+                "--next",
+                "Implement the timeout fix and run focused tests.",
+            )
+            state = json.loads((repo / ".context-ledger/context-state.json").read_text(encoding="utf-8"))
+            self.assertEqual([second_path, first_path], state["paused_handoffs"])
+
+            resumed_second = self.run_ledger(repo, "resume")
+            self.assertIn(second_path, resumed_second.stdout)
+            self.assertEqual("active", field_from_file(repo / second_path, "Status"))
+            self.run_ledger(
+                repo,
+                "pause",
+                "--summary",
+                "Authentication remains paused after confirming the intended timeout fix.",
+                "--next",
+                "Apply the timeout change when this task becomes active again.",
+            )
+            resumed_first = self.run_ledger(repo, "resume", "--handoff", first_path)
+            self.assertIn(first_path, resumed_first.stdout)
+            pointer = (repo / "docs/changes/.active-handoff").read_text(encoding="utf-8").strip()
+            self.assertEqual(first_path, pointer)
+            final_state = json.loads((repo / ".context-ledger/context-state.json").read_text(encoding="utf-8"))
+            self.assertEqual("withdrawals", final_state["active_feature"])
+            self.assertEqual([second_path], final_state["paused_handoffs"])
+
+    def test_focus_refuses_to_abandon_another_active_feature(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            source = repo / "src/auth.py"
+            source.parent.mkdir(parents=True)
+            source.write_text("enabled = True\n", encoding="utf-8")
+            self.run_ledger(repo, "init")
+            created = self.run_ledger(
+                repo, "pack", "--feature", "authentication", "--file", "src/auth.py"
+            )
+            pack = repo / created.stdout.splitlines()[0]
+            self.fill_context_pack(pack)
+            self.run_ledger(
+                repo, "start", "--title", "Repair withdrawals", "--feature", "withdrawals"
+            )
+            blocked = self.run_ledger(repo, "focus", "--feature", "authentication", expected=2)
+            self.assertIn("pause it before focusing authentication", blocked.stderr)
 
     def test_handoff_names_never_overwrite_history(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -200,6 +335,32 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             self.run_ledger(repo, "check", "--strict")
             self.assertTrue((repo / "knowledge/changes/README.md").exists())
+
+    def test_v1_repository_migrates_to_v2_without_losing_docs(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            project_context = repo / "docs/ai/project-context.md"
+            project_context.write_text(
+                project_context.read_text(encoding="utf-8").replace(
+                    "TODO: Summarize what this repository delivers and who uses it.",
+                    "Preserved project purpose.",
+                ),
+                encoding="utf-8",
+            )
+            config_path = repo / ".context-ledger/config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["schema_version"] = 1
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            (repo / ".context-ledger/context-state.json").unlink()
+            (repo / ".context-ledger/templates/context-pack-template.md").unlink()
+
+            self.run_ledger(repo, "init")
+            migrated = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertEqual(2, migrated["schema_version"])
+            self.assertTrue((repo / ".context-ledger/context-state.json").exists())
+            self.assertTrue((repo / ".context-ledger/templates/context-pack-template.md").exists())
+            self.assertIn("Preserved project purpose.", project_context.read_text(encoding="utf-8"))
 
     def test_deleted_auto_module_is_not_recreated(self):
         with tempfile.TemporaryDirectory() as raw:

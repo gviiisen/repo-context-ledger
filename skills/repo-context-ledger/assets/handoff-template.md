@@ -1,8 +1,15 @@
 # {{TITLE}}
 
 Status: active
+Feature: {{FEATURE}}
 Started: {{STARTED}}
 Completed:
+Paused:
+Resumed:
+Base commit: {{BASE_COMMIT}}
+Dirty paths: none
+Resume summary:
+Next step:
 Specs: none
 Spec exception:
 

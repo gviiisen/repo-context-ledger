@@ -1,6 +1,6 @@
 ---
 name: repo-context-ledger
-description: Maintain durable, AI-friendly repository context whenever an agent initializes a repository, implements or fixes behavior, refactors code, changes an interface, or completes a coding task. Use this skill to create and update docs/ai, stable feature specifications, active handoffs, change history, and managed README summaries without asking the user to run bookkeeping commands.
+description: Maintain durable, AI-friendly repository context whenever an agent initializes a repository, implements or fixes behavior, refactors code, changes an interface, pauses or switches tasks, resumes prior work, hands work to another AI session, or completes a coding task. Use this skill to create and update Context Packs, docs/ai, stable feature specifications, active and paused handoffs, change history, and managed README summaries without asking the user to run bookkeeping commands.
 ---
 
 # Repo Context Ledger
@@ -41,17 +41,30 @@ Apply this workflow autonomously for features, bug fixes, refactors, interface c
    python .context-ledger/ledger.py start --title "<concise task title>"
    ```
 
-3. Retrieve likely background documents:
+3. Load the feature Context Pack:
+
+   ```text
+   python .context-ledger/ledger.py focus --feature "<feature>"
+   ```
+
+   If no Context Pack exists, create one, fill every semantic section, then focus it:
+
+   ```text
+   python .context-ledger/ledger.py pack --feature "<feature>" --file <important-file> --spec <related-spec>
+   ```
+
+4. When the feature is not yet known, retrieve likely background documents:
 
    ```text
    python .context-ledger/ledger.py context --query "<feature, interface, or module>"
    ```
 
-4. Read the returned stable specs and relevant project context before broad code exploration.
-5. Implement and verify the code change.
-6. Update the active handoff with intent, changed behavior, code paths, boundaries, verification, and documentation impact. Remove every `TODO` placeholder.
-7. Update an existing file under the configured stable-spec directory (default `docs/specs/`) when current behavior, boundaries, contracts, or code navigation changed. Create one from `.context-ledger/templates/spec-template.md` when no suitable stable spec exists.
-8. Finish and link the change to every affected stable spec:
+5. Read the returned stable specs and relevant project context before broad code exploration.
+6. Implement and verify the code change.
+7. Update the active handoff with intent, changed behavior, code paths, boundaries, verification, and documentation impact. Remove every `TODO` placeholder.
+8. Refresh the Context Pack fingerprints and content when its tracked code paths changed.
+9. Update an existing file under the configured stable-spec directory (default `docs/specs/`) when current behavior, boundaries, contracts, or code navigation changed. Create one from `.context-ledger/templates/spec-template.md` when no suitable stable spec exists.
+10. Finish and link the change to every affected stable spec:
 
    ```text
    python .context-ledger/ledger.py finish --spec docs/specs/<feature>.md
@@ -63,7 +76,33 @@ Apply this workflow autonomously for features, bug fixes, refactors, interface c
    python .context-ledger/ledger.py finish --no-spec --reason "<why no stable spec applies>"
    ```
 
-9. Run `python .context-ledger/ledger.py check --strict` and resolve failures before reporting completion.
+11. Run `python .context-ledger/ledger.py check --strict` and resolve failures before reporting completion.
+
+## Switch or resume context
+
+Interpret natural-language requests such as "pause this and fix login," "continue the previous withdrawal task," or "hand this to another AI" as lifecycle instructions. Do not require command syntax from the user.
+
+Before switching away from active work, record an accurate resume summary and concrete next step:
+
+```text
+python .context-ledger/ledger.py pause --summary "<completed work and current state>" --next "<next concrete action>"
+```
+
+Focus the target feature's Context Pack, then start its handoff when code behavior will change. Never abandon a different active handoff silently.
+
+Resume the most recently paused task:
+
+```text
+python .context-ledger/ledger.py resume
+```
+
+Resume a selected task when multiple handoffs are paused:
+
+```text
+python .context-ledger/ledger.py resume --handoff docs/changes/YYYY/MM/<change>.md
+```
+
+After resuming, read the handoff's resume fields, load its Context Pack, inspect dirty paths, and revalidate warnings about changed commits or stale fingerprints before editing code.
 
 ## Handle non-behavior work
 
@@ -73,7 +112,9 @@ For read-only analysis, questions, formatting-only edits, or tasks that do not c
 
 - Run `python .context-ledger/ledger.py status` to inspect the current state.
 - Reuse an active handoff when it belongs to the current task.
-- Do not overwrite a different active handoff. Explain the conflict and resolve it only with clear task context.
+- Pause rather than overwrite a different active handoff.
+- Use the paused stack in `.context-ledger/context-state.json`; do not edit it manually.
+- Refresh a stale Context Pack with `pack` after inspecting the changed files.
 - Run `python .context-ledger/ledger.py sync` after manually repairing documents or configuration.
 
 ## Writing rules
@@ -82,6 +123,7 @@ For read-only analysis, questions, formatting-only edits, or tasks that do not c
 - Record why and what changed in `docs/changes/`.
 - Keep each change in its own file. Let the runtime build small per-month indexes; never accumulate all change narratives in one document.
 - Record cross-cutting repository orientation in `docs/ai/`.
+- Keep each `docs/ai/context-packs/<feature>.md` file concise. Link to stable specs and track only the minimum code paths required to resume work.
 - Include concrete code paths, entry points, boundaries, failure modes, and verification commands.
 - Never rewrite README prose outside managed markers.
 - Never invent tests, behavior, or code paths that were not inspected.

@@ -6,6 +6,12 @@ Use three layers of repository knowledge.
 
 Store information that applies across features: repository purpose, major modules, shared architecture, environment conventions, and navigation guidance. Keep it concise and link to stable feature specs.
 
+### `docs/ai/context-packs/`: minimal feature loading
+
+Keep one compact Context Pack per feature or bounded subsystem. Use it as the first document loaded after a context switch. Record the minimum load order, entry points, contracts, boundaries, verification, stable-spec links, and tracked-file fingerprints.
+
+Context Packs route an agent to current truth; they do not replace stable specs. Refresh a pack after its tracked files change. Strict validation treats changed or missing fingerprints as stale context.
+
 ## `docs/specs/`: current feature truth
 
 Create one document per durable feature, interface, or bounded subsystem. Describe:
@@ -34,6 +40,8 @@ docs/changes/YYYY/MM/<individual-change>.md
 The root history index lists months only. Each monthly index lists that month's individual changes, preventing a single document from growing without bound.
 
 `docs/changes/.active-handoff` contains only the repository-relative path of the current handoff. An empty file means no task is active. Configured alternative documentation roots use the same internal layout.
+
+Paused handoffs keep `Status: paused`, a resume summary, the next action, base commit, and dirty paths. `.context-ledger/context-state.json` stores the active feature, the ordered paused-handoff stack, and recently focused features. The runtime owns this state file; agents use lifecycle commands rather than editing it directly.
 
 ## README summaries
 
