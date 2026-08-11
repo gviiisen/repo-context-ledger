@@ -14,11 +14,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 
-VERSION = 2
-TOOL_VERSION = "0.2.0"
+VERSION = 3
+TOOL_VERSION = "0.3.0"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
 BLOCK_END = "<!-- repo-context-ledger:end -->"
 RULE_START = "<!-- repo-context-ledger:rules:start -->"
@@ -161,18 +162,57 @@ def slugify(value: str) -> str:
     return ascii_slug[:48] or "change"
 
 
-def git_revision(repo: Path) -> str:
+def git_output(repo: Path, *args: str) -> str:
     try:
         result = subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            ["git", "-C", str(repo), *args],
             text=True,
             capture_output=True,
             encoding="utf-8",
             timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
-        return "none"
-    return result.stdout.strip() if result.returncode == 0 else "none"
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def is_git_repo(repo: Path) -> bool:
+    return git_output(repo, "rev-parse", "--is-inside-work-tree") == "true"
+
+
+def git_revision(repo: Path, ref: str = "HEAD") -> str:
+    return git_output(repo, "rev-parse", ref) or "none"
+
+
+def git_branch(repo: Path) -> str:
+    return git_output(repo, "branch", "--show-current") or "detached"
+
+
+def git_actor(repo: Path) -> str:
+    return (
+        git_output(repo, "config", "user.name")
+        or os.environ.get("GITHUB_ACTOR")
+        or os.environ.get("USERNAME")
+        or os.environ.get("USER")
+        or "unknown"
+    )
+
+
+def detect_default_branch(repo: Path) -> str:
+    remote = git_output(repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+    if remote.startswith("origin/"):
+        return remote.split("/", 1)[1]
+    for candidate in ("main", "master"):
+        if git_output(repo, "show-ref", "--verify", f"refs/heads/{candidate}"):
+            return candidate
+    branch = git_branch(repo)
+    return branch if branch != "detached" else "main"
+
+
+def configured_base_ref(repo: Path, config: dict) -> str:
+    branch = config.get("team", {}).get("default_branch", "main")
+    remote = f"origin/{branch}"
+    return remote if git_revision(repo, remote) != "none" else branch
 
 
 def git_dirty_paths(repo: Path) -> list[str]:
@@ -208,16 +248,57 @@ def file_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+def legacy_context_state_path(repo: Path) -> Path:
+    return safe_repo_path(repo, ".context-ledger/context-state.json", "legacy context state")
+
+
 def context_state_path(repo: Path) -> Path:
-    return safe_repo_path(repo, ".context-ledger/context-state.json", "context state")
+    if is_git_repo(repo):
+        branch = git_branch(repo)
+        state_key = f"{slugify(branch)[:32]}-{hashlib.sha1(branch.encode('utf-8')).hexdigest()[:8]}"
+        raw = git_output(
+            repo,
+            "rev-parse",
+            "--git-path",
+            f"repo-context-ledger/states/{state_key}/context-state.json",
+        )
+        if raw:
+            path = Path(raw)
+            return path.resolve() if path.is_absolute() else (repo / path).resolve()
+    return legacy_context_state_path(repo)
 
 
 def default_context_state() -> dict:
     return {
         "schema_version": VERSION,
+        "active_handoff": None,
         "active_feature": None,
         "paused_handoffs": [],
         "recent_features": [],
+    }
+
+
+def normalize_context_state(raw: dict) -> dict:
+    if not isinstance(raw, dict):
+        raise LedgerError("Context state must be a JSON object.")
+    paused = raw.get("paused_handoffs", [])
+    recent = raw.get("recent_features", [])
+    active = raw.get("active_feature")
+    active_handoff_value = raw.get("active_handoff")
+    if not isinstance(paused, list) or not all(isinstance(item, str) for item in paused):
+        raise LedgerError("context-state paused_handoffs must be a list of paths.")
+    if not isinstance(recent, list) or not all(isinstance(item, str) for item in recent):
+        raise LedgerError("context-state recent_features must be a list of feature slugs.")
+    if active is not None and not isinstance(active, str):
+        raise LedgerError("context-state active_feature must be a string or null.")
+    if active_handoff_value is not None and not isinstance(active_handoff_value, str):
+        raise LedgerError("context-state active_handoff must be a path or null.")
+    return {
+        "schema_version": VERSION,
+        "active_handoff": active_handoff_value,
+        "active_feature": active,
+        "paused_handoffs": list(dict.fromkeys(paused)),
+        "recent_features": list(dict.fromkeys(recent))[:10],
     }
 
 
@@ -229,23 +310,7 @@ def load_context_state(repo: Path) -> dict:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
         raise LedgerError(f"Invalid context state: {exc}") from exc
-    if not isinstance(raw, dict):
-        raise LedgerError("Context state must be a JSON object.")
-    paused = raw.get("paused_handoffs", [])
-    recent = raw.get("recent_features", [])
-    active = raw.get("active_feature")
-    if not isinstance(paused, list) or not all(isinstance(item, str) for item in paused):
-        raise LedgerError("context-state paused_handoffs must be a list of paths.")
-    if not isinstance(recent, list) or not all(isinstance(item, str) for item in recent):
-        raise LedgerError("context-state recent_features must be a list of feature slugs.")
-    if active is not None and not isinstance(active, str):
-        raise LedgerError("context-state active_feature must be a string or null.")
-    return {
-        "schema_version": VERSION,
-        "active_feature": active,
-        "paused_handoffs": list(dict.fromkeys(paused)),
-        "recent_features": list(dict.fromkeys(recent))[:10],
-    }
+    return normalize_context_state(raw)
 
 
 def save_context_state(repo: Path, state: dict) -> None:
@@ -253,6 +318,47 @@ def save_context_state(repo: Path, state: dict) -> None:
     normalized.update(state)
     normalized["schema_version"] = VERSION
     atomic_write(context_state_path(repo), json.dumps(normalized, indent=2, ensure_ascii=False) + "\n")
+
+
+def legacy_active_pointer(repo: Path, config: dict) -> Path:
+    return safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes") / ".active-handoff"
+
+
+def migrate_workspace_state(repo: Path, config: dict) -> bool:
+    target = context_state_path(repo)
+    state = load_context_state(repo)
+    migrated = False
+    remove_legacy_state = False
+    legacy_state = legacy_context_state_path(repo)
+    if target != legacy_state and legacy_state.exists():
+        try:
+            previous = normalize_context_state(json.loads(legacy_state.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError) as exc:
+            raise LedgerError(f"Invalid legacy context state: {exc}") from exc
+        if not state.get("active_handoff"):
+            state["active_handoff"] = previous.get("active_handoff")
+        if not state.get("active_feature"):
+            state["active_feature"] = previous.get("active_feature")
+        state["paused_handoffs"] = list(dict.fromkeys(
+            state.get("paused_handoffs", []) + previous.get("paused_handoffs", [])
+        ))
+        state["recent_features"] = list(dict.fromkeys(
+            state.get("recent_features", []) + previous.get("recent_features", [])
+        ))[:10]
+        remove_legacy_state = True
+        migrated = True
+    pointer = legacy_active_pointer(repo, config)
+    if pointer.exists():
+        raw = pointer.read_text(encoding="utf-8").strip()
+        if raw and not state.get("active_handoff"):
+            state["active_handoff"] = raw
+        migrated = True
+    save_context_state(repo, state)
+    if remove_legacy_state:
+        legacy_state.unlink()
+    if pointer.exists():
+        pointer.unlink()
+    return migrated
 
 
 def remember_feature(state: dict, feature: str) -> None:
@@ -268,6 +374,14 @@ def feature_slug(value: str) -> str:
         digest = hashlib.sha1(value.strip().encode("utf-8")).hexdigest()[:10]
         return f"feature-{digest}"
     return slug
+
+
+def actor_slug(repo: Path) -> str:
+    return slugify(git_actor(repo))[:24] or "unknown"
+
+
+def unique_handoff_id(repo: Path, stamp: dt.datetime) -> str:
+    return f"{stamp.strftime('%Y%m%d%H%M%S')}-{actor_slug(repo)}-{uuid.uuid4().hex[:10]}"
 
 
 def template_source(name: str, repo: Path | None = None) -> Path:
@@ -360,11 +474,26 @@ def validate_config(repo: Path, config: dict) -> dict:
             "readme": rel_posix(readme, repo),
             "source": source,
         })
+    raw_team = config.get("team", {})
+    if not isinstance(raw_team, dict):
+        raise LedgerError("config.team must be an object.")
+    team_enabled = bool(raw_team.get("enabled", is_git_repo(repo)))
+    default_branch = raw_team.get("default_branch") or detect_default_branch(repo)
+    if not isinstance(default_branch, str) or not re.fullmatch(r"[A-Za-z0-9._/-]+", default_branch):
+        raise LedgerError("config.team.default_branch must be a valid branch name.")
+    derived_updates = raw_team.get("derived_updates", "default-branch")
+    if derived_updates not in {"default-branch", "always"}:
+        raise LedgerError("config.team.derived_updates must be default-branch or always.")
     return {
         "schema_version": config.get("schema_version", VERSION),
         "docs": normalized_docs,
         "modules": normalized_modules,
         "readme_managed_blocks": bool(config.get("readme_managed_blocks", True)),
+        "team": {
+            "enabled": team_enabled,
+            "default_branch": default_branch,
+            "derived_updates": derived_updates,
+        },
     }
 
 
@@ -416,13 +545,16 @@ def managed_rules(config: dict) -> str:
 
 For every feature, bug fix, refactor, interface change, or other behavior-changing code task:
 
-1. Before editing code, inspect `{changes}/.active-handoff`. If empty, run `python .context-ledger/ledger.py start --title \"<task>\" --feature \"<feature>\"` yourself.
+1. Before editing code, run `python .context-ledger/ledger.py status`. If this worktree has no active handoff, run `python .context-ledger/ledger.py start --title \"<task>\" --feature \"<feature>\"` yourself.
 2. Prefer `python .context-ledger/ledger.py focus --feature \"<feature>\"` and read its Context Pack before broad code exploration. If no pack exists, create it with `pack`, fill it, then focus it. Fall back to `context --query` for discovery.
 3. When the user pauses or switches work, run `pause` with an accurate summary and next step before starting another handoff. When the user resumes, run `resume` and revalidate any stale state.
 4. Keep the active handoff current while working. Refresh affected Context Packs with `pack --file ...` when tracked code changes.
 5. Update `{specs}/` when current behavior, contracts, boundaries, or code navigation changes.
 6. After code and tests are complete, fill every handoff section and run `python .context-ledger/ledger.py finish --spec <affected-spec>`. Use `--no-spec --reason \"...\"` only when no stable behavior exists to document.
 7. Run `python .context-ledger/ledger.py check --strict` and resolve failures before reporting completion.
+8. Before opening or updating a pull request, update the configured base ref and run `python .context-ledger/ledger.py team-check --base origin/{config.get('team', {}).get('default_branch', 'main')}`.
+
+Workspace activity is stored in Git worktree metadata and must not be committed. On feature branches, do not regenerate shared README or monthly index blocks. After merging on `{config.get('team', {}).get('default_branch', 'main')}`, run `python .context-ledger/ledger.py sync --derived` once.
 
 Do not ask the user to run bookkeeping commands. Do not create a handoff for read-only analysis or formatting-only work. Preserve prose outside `repo-context-ledger` managed markers."""
 
@@ -457,6 +589,11 @@ def init_repo(repo: Path) -> int:
         "docs": previous.get("docs") or {"ai": "docs/ai", "specs": "docs/specs", "changes": "docs/changes"},
         "modules": modules,
         "readme_managed_blocks": True,
+        "team": previous.get("team") or {
+            "enabled": is_git_repo(repo),
+            "default_branch": detect_default_branch(repo),
+            "derived_updates": "default-branch",
+        },
     }
     save_config(repo, config)
 
@@ -476,11 +613,7 @@ def init_repo(repo: Path) -> int:
             "CHANGES_INDEX": os.path.relpath(changes_root / "README.md", ai_root).replace(os.sep, "/"),
         }),
     )
-    write_if_missing(changes_root / ".active-handoff", "")
-    if not context_state_path(repo).exists():
-        save_context_state(repo, default_context_state())
-    else:
-        save_context_state(repo, load_context_state(repo))
+    migrated_state = migrate_workspace_state(repo, config)
     write_if_missing(specs_root / "README.md", "# Stable feature context\n")
     write_if_missing(changes_root / "README.md", "# Change history\n")
 
@@ -498,28 +631,29 @@ Read and follow the repository root `AGENTS.md`, especially the Repository conte
     cursor_rule.parent.mkdir(parents=True, exist_ok=True)
     atomic_write(cursor_rule, cursor_content)
 
-    sync_repo(repo)
+    sync_repo(repo, derived=True)
     print(f"Initialized Repo Context Ledger in {repo}")
     print(f"Detected modules: {len(modules)}")
+    print(f"Team mode: {'enabled' if config['team']['enabled'] else 'disabled'}")
+    if migrated_state:
+        print("Migrated shared v0.2 state to workspace-local v0.3 state.")
     return 0
 
 
 def active_pointer(repo: Path, config: dict) -> Path:
-    return safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes") / ".active-handoff"
+    return legacy_active_pointer(repo, config)
 
 
 def active_handoff(repo: Path, config: dict) -> Path | None:
-    pointer = active_pointer(repo, config)
-    if not pointer.exists():
-        return None
-    raw = pointer.read_text(encoding="utf-8").strip()
+    raw = load_context_state(repo).get("active_handoff")
     if not raw:
         return None
-    target = (repo / raw).resolve()
+    target = safe_repo_path(repo, raw, "active handoff")
+    changes_root = safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes")
     try:
-        target.relative_to(repo.resolve())
+        target.relative_to(changes_root)
     except ValueError as exc:
-        raise LedgerError("Active handoff points outside the repository.") from exc
+        raise LedgerError("Active handoff points outside the configured change history.") from exc
     return target
 
 
@@ -539,6 +673,7 @@ def start_change(repo: Path, title: str, feature: str = "") -> int:
         return 2
 
     stamp = now()
+    handoff_id = unique_handoff_id(repo, stamp)
     folder = safe_repo_path(
         repo,
         f"{config['docs']['changes']}/{stamp.strftime('%Y')}/{stamp.strftime('%m')}",
@@ -550,11 +685,14 @@ def start_change(repo: Path, title: str, feature: str = "") -> int:
         {
             "TITLE": title,
             "FEATURE": feature,
+            "ACTOR": git_actor(repo),
+            "BRANCH": git_branch(repo),
+            "HANDOFF_ID": handoff_id,
             "STARTED": stamp.isoformat(timespec="seconds"),
             "BASE_COMMIT": git_revision(repo),
         },
     )
-    stem = f"{stamp.strftime('%Y%m%d-%H%M%S')}-{slugify(title)}"
+    stem = f"{handoff_id}-{slugify(title)}"
     path = folder / f"{stem}.md"
     counter = 1
     while True:
@@ -565,8 +703,8 @@ def start_change(repo: Path, title: str, feature: str = "") -> int:
         except FileExistsError:
             counter += 1
             path = folder / f"{stem}-{counter}.md"
-    atomic_write(active_pointer(repo, config), rel_posix(path, repo) + "\n")
     state = load_context_state(repo)
+    state["active_handoff"] = rel_posix(path, repo)
     remember_feature(state, feature)
     save_context_state(repo, state)
     sync_repo(repo)
@@ -674,13 +812,27 @@ def refresh_context_pack(
                 "TITLE": display_title,
                 "FEATURE": feature,
                 "SOURCE_COMMIT": git_revision(repo),
+                "BASE_BRANCH": config.get("team", {}).get("default_branch", "main"),
+                "BASE_COMMIT": git_revision(repo, configured_base_ref(repo, config)),
                 "REFRESHED": now().isoformat(timespec="seconds"),
             },
         )
     text = set_field(text, "Status", "current")
     text = set_field(text, "Feature", feature, after="Status")
     text = set_field(text, "Source commit", git_revision(repo), after="Feature")
-    text = set_field(text, "Last refreshed", now().isoformat(timespec="seconds"), after="Source commit")
+    text = set_field(
+        text,
+        "Base branch",
+        config.get("team", {}).get("default_branch", "main"),
+        after="Source commit",
+    )
+    text = set_field(
+        text,
+        "Base commit",
+        git_revision(repo, configured_base_ref(repo, config)),
+        after="Base branch",
+    )
+    text = set_field(text, "Last refreshed", now().isoformat(timespec="seconds"), after="Base commit")
     file_lines = [
         f"- `{rel_posix(item, repo)}` — `sha256:{file_digest(item)}`"
         for item in tracked
@@ -723,6 +875,10 @@ def context_pack_errors(repo: Path, path: Path) -> list[str]:
         errors.append("Context pack is missing Feature metadata.")
     if not field_value(text, "Source commit"):
         errors.append("Context pack is missing Source commit metadata.")
+    if not field_value(text, "Base branch"):
+        errors.append("Context pack is missing Base branch metadata.")
+    if not field_value(text, "Base commit"):
+        errors.append("Context pack is missing Base commit metadata.")
     if not field_value(text, "Last refreshed"):
         errors.append("Context pack is missing Last refreshed metadata.")
     if re.search(r"(?mi)^\s*TODO:\s*", text):
@@ -815,9 +971,9 @@ def pause_change(repo: Path, summary: str, next_step: str) -> int:
     dirty = git_dirty_paths(repo)
     text = set_field(text, "Dirty paths", ", ".join(dirty) if dirty else "none", after="Base commit")
     atomic_write(handoff, text.rstrip() + "\n")
-    atomic_write(active_pointer(repo, config), "")
     state = load_context_state(repo)
     handoff_rel = rel_posix(handoff, repo)
+    state["active_handoff"] = None
     state["paused_handoffs"] = [handoff_rel] + [
         item for item in state.get("paused_handoffs", []) if item != handoff_rel
     ]
@@ -863,7 +1019,7 @@ def resume_change(repo: Path, raw_handoff: str) -> int:
     text = set_field(text, "Resumed", now().isoformat(timespec="seconds"), after="Paused")
     atomic_write(handoff, text.rstrip() + "\n")
     handoff_rel = rel_posix(handoff, repo)
-    atomic_write(active_pointer(repo, config), handoff_rel + "\n")
+    state["active_handoff"] = handoff_rel
     state["paused_handoffs"] = [
         item for item in state.get("paused_handoffs", []) if item != handoff_rel
     ]
@@ -947,8 +1103,21 @@ def readme_body(repo: Path, config: dict, readme: Path, module: str | None) -> s
     return "\n".join(lines)
 
 
-def sync_repo(repo: Path) -> int:
+def should_update_derived(repo: Path, config: dict) -> bool:
+    team = config.get("team", {})
+    if not team.get("enabled") or team.get("derived_updates") == "always":
+        return True
+    return git_branch(repo) == team.get("default_branch")
+
+
+def sync_repo(repo: Path, derived: bool = False) -> int:
     config = load_config(repo)
+    if not derived and not should_update_derived(repo, config):
+        print(
+            "Skipped shared README and index regeneration on a feature branch; "
+            "run sync --derived after merging on the default branch."
+        )
+        return 0
     specs = all_specs(repo, config)
     changes = all_changes(repo, config)
     specs_root = safe_repo_path(repo, config["docs"]["specs"], "config.docs.specs")
@@ -1104,7 +1273,9 @@ def finish_change(
     else:
         text = re.sub(r"(?mi)^(Specs:.*)$", rf"\1\n{exception_line}", text, count=1)
     atomic_write(handoff, text.rstrip() + "\n")
-    atomic_write(active_pointer(repo, config), "")
+    state = load_context_state(repo)
+    state["active_handoff"] = None
+    save_context_state(repo, state)
     sync_repo(repo)
     result = check_repo(repo, strict=True)
     if result == 0:
@@ -1120,6 +1291,104 @@ def local_links(path: Path) -> list[str]:
     return re.findall(r"(?<!!)\[[^\]]*\]\(([^)]+)\)", text)
 
 
+def git_changed_paths(repo: Path, *args: str) -> set[str]:
+    output = git_output(repo, "diff", "--name-only", "--diff-filter=ACMRD", *args)
+    return {line.strip().replace("\\", "/") for line in output.splitlines() if line.strip()}
+
+
+def handoff_features_for_paths(
+    repo: Path,
+    config: dict,
+    paths: set[str],
+    ref: str | None = None,
+) -> set[str]:
+    changes_prefix = config["docs"]["changes"].rstrip("/") + "/"
+    features: set[str] = set()
+    for raw in paths:
+        if not raw.startswith(changes_prefix) or not raw.endswith(".md") or raw.endswith("/README.md"):
+            continue
+        if ref:
+            text = git_output(repo, "show", f"{ref}:{raw}")
+        else:
+            path = repo / raw
+            text = path.read_text(encoding="utf-8") if path.is_file() else git_output(repo, "show", f"HEAD:{raw}")
+        feature = field_value(text, "Feature")
+        if feature:
+            features.add(feature_slug(feature))
+    return features
+
+
+def is_generated_index(config: dict, raw: str) -> bool:
+    raw = raw.replace("\\", "/")
+    specs_index = config["docs"]["specs"].rstrip("/") + "/README.md"
+    changes_root = config["docs"]["changes"].rstrip("/")
+    return raw == specs_index or (
+        raw.startswith(changes_root + "/") and raw.endswith("/README.md")
+    ) or raw == changes_root + "/README.md"
+
+
+def team_check(repo: Path, raw_base: str) -> int:
+    config = load_config(repo)
+    if not is_git_repo(repo):
+        print("Team check requires a Git repository.", file=sys.stderr)
+        return 2
+    base = raw_base.strip() or configured_base_ref(repo, config)
+    base_revision = git_revision(repo, base)
+    if base_revision == "none":
+        print(f"Base ref does not exist locally: {base}", file=sys.stderr)
+        return 2
+    merge_base = git_output(repo, "merge-base", "HEAD", base)
+    if not merge_base:
+        print(f"Cannot determine a merge base with {base}.", file=sys.stderr)
+        return 2
+
+    local_changed = git_changed_paths(repo, f"{merge_base}..HEAD")
+    local_changed.update(git_dirty_paths(repo))
+    upstream_changed = git_changed_paths(repo, f"{merge_base}..{base}")
+    errors: list[str] = []
+
+    for raw in sorted(local_changed.intersection(upstream_changed)):
+        errors.append(f"Both this branch and {base} changed: {raw}")
+
+    local_features = handoff_features_for_paths(repo, config, local_changed)
+    upstream_features = handoff_features_for_paths(repo, config, upstream_changed, base)
+    for feature in sorted(local_features.intersection(upstream_features)):
+        errors.append(f"Concurrent handoffs affect the same feature: {feature}")
+
+    current_branch = git_branch(repo)
+    default_branch = config.get("team", {}).get("default_branch", "main")
+    if current_branch != default_branch:
+        for raw in sorted(path for path in local_changed if is_generated_index(config, path)):
+            errors.append(
+                f"Feature branch modifies generated index {raw}; restore it and regenerate after merge."
+            )
+
+    ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
+    packs_root = ai_root / "context-packs"
+    if packs_root.exists():
+        for pack in sorted(packs_root.glob("*.md")):
+            pack_rel = rel_posix(pack, repo)
+            if pack_rel not in local_changed:
+                continue
+            for error in context_pack_errors(repo, pack):
+                errors.append(f"{pack_rel}: {error}")
+            recorded_base = field_value(pack.read_text(encoding="utf-8"), "Base commit")
+            if recorded_base not in {"", "none", base_revision}:
+                errors.append(
+                    f"{pack_rel} was refreshed from base {recorded_base}, but {base} is {base_revision}."
+                )
+
+    print(f"Team check base: {base} ({base_revision})")
+    print(f"Current branch: {current_branch}")
+    print(f"Branch changes: {len(local_changed)}; upstream changes: {len(upstream_changed)}")
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+    print("Team collaboration check passed.")
+    return 0
+
+
 def check_repo(repo: Path, strict: bool) -> int:
     errors: list[str] = []
     try:
@@ -1130,10 +1399,7 @@ def check_repo(repo: Path, strict: bool) -> int:
     specs_root = safe_repo_path(repo, config["docs"]["specs"], "config.docs.specs")
     changes_root = safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes")
     ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
-    for required in (
-        repo / "AGENTS.md", specs_root / "README.md", changes_root / "README.md",
-        context_state_path(repo),
-    ):
+    for required in (repo / "AGENTS.md", specs_root / "README.md", changes_root / "README.md"):
         if not required.exists():
             errors.append(f"Missing required file: {rel_posix(required, repo)}")
     if (repo / "AGENTS.md").exists() and RULE_START not in (repo / "AGENTS.md").read_text(encoding="utf-8"):
@@ -1155,6 +1421,11 @@ def check_repo(repo: Path, strict: bool) -> int:
                 paused = safe_repo_path(repo, raw, "paused handoff")
             except LedgerError as exc:
                 errors.append(str(exc))
+                continue
+            try:
+                paused.relative_to(changes_root)
+            except ValueError:
+                errors.append(f"Paused handoff is outside the configured change history: {raw}")
                 continue
             if not paused.is_file():
                 errors.append(f"Paused handoff does not exist: {raw}")
@@ -1206,6 +1477,10 @@ def show_status(repo: Path) -> int:
     state = load_context_state(repo)
     packs_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai") / "context-packs"
     print(f"Repository: {repo}")
+    print(f"Actor: {git_actor(repo)}")
+    print(f"Branch: {git_branch(repo)}")
+    print(f"Workspace state: {context_state_path(repo)}")
+    print(f"Default branch: {config.get('team', {}).get('default_branch', 'main')}")
     print(f"Active handoff: {rel_posix(current, repo) if current else 'none'}")
     print(f"Active feature: {state.get('active_feature') or 'none'}")
     print(f"Paused handoffs: {len(state.get('paused_handoffs', []))}")
@@ -1247,9 +1522,16 @@ def build_parser() -> argparse.ArgumentParser:
     finish_group.add_argument("--spec", action="append", default=[])
     finish_group.add_argument("--no-spec", action="store_true")
     finish.add_argument("--reason", default="", help="Required explanation when --no-spec is used")
-    sub.add_parser("sync", help="Regenerate indexes and managed README blocks")
+    sync = sub.add_parser("sync", help="Regenerate indexes and managed README blocks")
+    sync.add_argument(
+        "--derived",
+        action="store_true",
+        help="Force shared derived files to regenerate (normally after merging on the default branch)",
+    )
     check = sub.add_parser("check", help="Validate ledger structure and local links")
     check.add_argument("--strict", action="store_true")
+    team = sub.add_parser("team-check", help="Detect branch, feature, and generated-file conflicts")
+    team.add_argument("--base", default="", help="Base ref (default: configured origin default branch)")
     sub.add_parser("status", help="Show ledger state")
     return parser
 
@@ -1274,11 +1556,13 @@ def main(argv: list[str] | None = None) -> int:
                     return resume_change(repo, args.handoff)
                 if args.command == "finish":
                     return finish_change(repo, args.spec, args.no_spec, args.reason)
-                return sync_repo(repo)
+                return sync_repo(repo, args.derived)
         if args.command == "context":
             return context_search(repo, args.query, max(1, args.limit))
         if args.command == "check":
             return check_repo(repo, args.strict)
+        if args.command == "team-check":
+            return team_check(repo, args.base)
         if args.command == "status":
             return show_status(repo)
         return 2

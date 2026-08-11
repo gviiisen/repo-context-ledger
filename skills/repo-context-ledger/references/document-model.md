@@ -39,13 +39,17 @@ docs/changes/YYYY/MM/<individual-change>.md
 
 The root history index lists months only. Each monthly index lists that month's individual changes, preventing a single document from growing without bound.
 
-`docs/changes/.active-handoff` contains only the repository-relative path of the current handoff. An empty file means no task is active. Configured alternative documentation roots use the same internal layout.
+Each handoff has a unique timestamp/actor/token filename plus `Handoff ID`, `Actor`, and `Branch` metadata. This allows contributors to create changes concurrently without claiming the same path.
 
-Paused handoffs keep `Status: paused`, a resume summary, the next action, base commit, and dirty paths. `.context-ledger/context-state.json` stores the active feature, the ordered paused-handoff stack, and recently focused features. The runtime owns this state file; agents use lifecycle commands rather than editing it directly.
+Paused handoffs keep `Status: paused`, a resume summary, the next action, base commit, and dirty paths. In a Git repository, active handoff, active feature, paused stack, and recent features are private workspace state under Git metadata and isolated by branch/worktree. They are not committed. In a non-Git directory, the fallback state remains `.context-ledger/context-state.json`. Agents use `status` and lifecycle commands rather than editing state directly.
 
 ## README summaries
 
 The runtime owns only content between `repo-context-ledger` markers. Root and detected module READMEs retain human-authored content outside those markers. Generated blocks link readers and agents to current context and recent changes.
+
+Monthly indexes and managed README blocks are derived data. With the default team policy, feature branches do not regenerate them. After merge, run `sync --derived` on the default branch to rebuild the same result from committed handoffs, specs, and Context Packs. This keeps concurrent pull requests from repeatedly conflicting in shared summaries.
+
+Context Packs record both a source commit and a base branch/commit. `team-check` compares a working branch with its base, detects overlapping code paths and feature handoffs, rejects derived-index edits on feature branches, and reports packs created against an outdated base.
 
 ## Migration rules
 
@@ -53,3 +57,4 @@ The runtime owns only content between `repo-context-ledger` markers. Root and de
 - Preserve existing files and prose.
 - Prefer adding indexes and managed blocks over reorganizing a mature repository.
 - Configure exceptional paths in `.context-ledger/config.json` instead of duplicating documents.
+- Re-running `init` migrates v2 shared `.active-handoff` and context state into private v3 workspace state after the new state is safely written.

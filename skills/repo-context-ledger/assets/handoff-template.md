@@ -2,6 +2,9 @@
 
 Status: active
 Feature: {{FEATURE}}
+Handoff ID: {{HANDOFF_ID}}
+Actor: {{ACTOR}}
+Branch: {{BRANCH}}
 Started: {{STARTED}}
 Completed:
 Paused:

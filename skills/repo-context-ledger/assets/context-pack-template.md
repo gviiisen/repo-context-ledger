@@ -3,6 +3,8 @@
 Status: current
 Feature: {{FEATURE}}
 Source commit: {{SOURCE_COMMIT}}
+Base branch: {{BASE_BRANCH}}
+Base commit: {{BASE_COMMIT}}
 Last refreshed: {{REFRESHED}}
 
 ## Purpose

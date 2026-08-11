@@ -1,6 +1,6 @@
 ---
 name: repo-context-ledger
-description: Maintain durable, AI-friendly repository context whenever an agent initializes a repository, implements or fixes behavior, refactors code, changes an interface, pauses or switches tasks, resumes prior work, hands work to another AI session, or completes a coding task. Use this skill to create and update Context Packs, docs/ai, stable feature specifications, active and paused handoffs, change history, and managed README summaries without asking the user to run bookkeeping commands.
+description: Maintain durable, AI-friendly repository context whenever an agent initializes a repository, implements or fixes behavior, refactors code, changes an interface, pauses or switches tasks, resumes prior work, hands work to another AI session, collaborates across Git branches or worktrees, prepares a pull request, or completes a coding task. Use this skill to create and update Context Packs, docs/ai, stable feature specifications, branch-safe active and paused handoffs, change history, and managed README summaries without asking the user to run bookkeeping commands.
 ---
 
 # Repo Context Ledger
@@ -34,7 +34,7 @@ Read [document-model.md](references/document-model.md) when choosing where infor
 
 Apply this workflow autonomously for features, bug fixes, refactors, interface changes, and other changes that alter behavior. Do not ask the user to run ledger commands.
 
-1. Before editing code, inspect `docs/changes/.active-handoff`.
+1. Before editing code, run `python .context-ledger/ledger.py status`. Active state is private to the current Git branch and worktree; do not look for or create a shared `.active-handoff` file.
 2. If there is no active handoff, run:
 
    ```text
@@ -78,6 +78,27 @@ Apply this workflow autonomously for features, bug fixes, refactors, interface c
 
 11. Run `python .context-ledger/ledger.py check --strict` and resolve failures before reporting completion.
 
+On a feature branch, normal lifecycle commands intentionally leave shared README blocks and monthly indexes unchanged. This prevents generated-file conflicts between contributors. The handoff, stable spec, and Context Pack remain normal reviewable files.
+
+## Collaborate through Git
+
+Use one branch or worktree per task. The runtime stores active and paused task state under Git metadata, isolated by branch and worktree, so two contributors do not overwrite each other's current task pointer.
+
+Before opening or updating a pull request:
+
+1. Fetch or otherwise update the intended base branch.
+2. Run `python .context-ledger/ledger.py team-check --base <base-ref>`.
+3. Resolve reported overlaps in code paths or feature handoffs with the other contributor. Rebase or merge the current base as appropriate, then refresh any stale Context Pack.
+4. Run `python .context-ledger/ledger.py check --strict`.
+
+After changes are merged, run this once on the configured default branch:
+
+```text
+python .context-ledger/ledger.py sync --derived
+```
+
+This deterministically rebuilds monthly change indexes and managed root/module README summaries from committed source documents. Do not hand-edit generated indexes.
+
 ## Switch or resume context
 
 Interpret natural-language requests such as "pause this and fix login," "continue the previous withdrawal task," or "hand this to another AI" as lifecycle instructions. Do not require command syntax from the user.
@@ -113,15 +134,16 @@ For read-only analysis, questions, formatting-only edits, or tasks that do not c
 - Run `python .context-ledger/ledger.py status` to inspect the current state.
 - Reuse an active handoff when it belongs to the current task.
 - Pause rather than overwrite a different active handoff.
-- Use the paused stack in `.context-ledger/context-state.json`; do not edit it manually.
+- Use `status` and lifecycle commands for the private paused stack; do not find or edit its Git-metadata state file manually.
 - Refresh a stale Context Pack with `pack` after inspecting the changed files.
-- Run `python .context-ledger/ledger.py sync` after manually repairing documents or configuration.
+- Run `python .context-ledger/ledger.py sync` after manually repairing documents or configuration. Add `--derived` on the default branch after merges.
 
 ## Writing rules
 
 - Record current truth in `docs/specs/`; do not turn stable specs into chronological diaries.
 - Record why and what changed in `docs/changes/`.
 - Keep each change in its own file. Let the runtime build small per-month indexes; never accumulate all change narratives in one document.
+- Keep the runtime-generated handoff ID, actor, and branch metadata. Unique filenames are intentional and prevent two contributors from creating the same history path.
 - Record cross-cutting repository orientation in `docs/ai/`.
 - Keep each `docs/ai/context-packs/<feature>.md` file concise. Link to stable specs and track only the minimum code paths required to resume work.
 - Include concrete code paths, entry points, boundaries, failure modes, and verification commands.

@@ -49,6 +49,32 @@ class LedgerFlowTests(unittest.TestCase):
             )
         return result
 
+    def run_git(self, repo: Path, *args: str, expected: int = 0):
+        result = subprocess.run(
+            ["git", "-C", str(repo), *args],
+            text=True,
+            capture_output=True,
+            encoding="utf-8",
+        )
+        if result.returncode != expected:
+            self.fail(
+                f"git returned {result.returncode}, expected {expected}\n"
+                f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            )
+        return result
+
+    def init_git_repo(self, repo: Path, actor: str = "Alice"):
+        repo.mkdir(parents=True, exist_ok=True)
+        self.run_git(repo, "init", "-b", "main")
+        self.run_git(repo, "config", "user.name", actor)
+        self.run_git(repo, "config", "user.email", f"{actor.casefold()}@example.test")
+        source = repo / "src/service.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("VALUE = 1\n", encoding="utf-8")
+        self.run_ledger(repo, "init")
+        self.run_git(repo, "add", "-A")
+        self.run_git(repo, "commit", "-m", "Initialize repository")
+
     def fill_context_pack(self, path: Path):
         text = path.read_text(encoding="utf-8")
         replacements = [
@@ -81,7 +107,7 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertTrue((repo / ".context-ledger/context-state.json").exists())
             self.assertTrue((repo / ".context-ledger/templates/context-pack-template.md").exists())
             self.assertEqual(
-                2,
+                3,
                 json.loads((repo / ".context-ledger/config.json").read_text(encoding="utf-8"))["schema_version"],
             )
             self.assertIn("Keep this text.", (repo / "AGENTS.md").read_text(encoding="utf-8"))
@@ -107,7 +133,11 @@ class LedgerFlowTests(unittest.TestCase):
             )
             handoff.write_text(handoff.read_text(encoding="utf-8").replace("TODO:", "Recorded:"), encoding="utf-8")
             self.run_ledger(repo, "finish", "--spec", "docs/specs/payment-status.md")
-            self.assertEqual("", (repo / "docs/changes/.active-handoff").read_text(encoding="utf-8"))
+            completed_state = json.loads(
+                (repo / ".context-ledger/context-state.json").read_text(encoding="utf-8")
+            )
+            self.assertIsNone(completed_state["active_handoff"])
+            self.assertFalse((repo / "docs/changes/.active-handoff").exists())
             self.assertIn("Repair payment status", spec.read_text(encoding="utf-8"))
             self.assertIn("Latest recorded change", (module / "README.md").read_text(encoding="utf-8"))
             self.assertIn("Human root text.", (repo / "README.md").read_text(encoding="utf-8"))
@@ -193,7 +223,11 @@ class LedgerFlowTests(unittest.TestCase):
                 "--next",
                 "Update the withdrawal service and its tests.",
             )
-            self.assertEqual("", (repo / "docs/changes/.active-handoff").read_text(encoding="utf-8"))
+            paused_state = json.loads(
+                (repo / ".context-ledger/context-state.json").read_text(encoding="utf-8")
+            )
+            self.assertIsNone(paused_state["active_handoff"])
+            self.assertFalse((repo / "docs/changes/.active-handoff").exists())
             self.assertEqual("paused", field_from_file(repo / first_path, "Status"))
             self.assertNotIn(".write.lock", field_from_file(repo / first_path, "Dirty paths"))
 
@@ -225,11 +259,149 @@ class LedgerFlowTests(unittest.TestCase):
             )
             resumed_first = self.run_ledger(repo, "resume", "--handoff", first_path)
             self.assertIn(first_path, resumed_first.stdout)
-            pointer = (repo / "docs/changes/.active-handoff").read_text(encoding="utf-8").strip()
-            self.assertEqual(first_path, pointer)
             final_state = json.loads((repo / ".context-ledger/context-state.json").read_text(encoding="utf-8"))
+            self.assertEqual(first_path, final_state["active_handoff"])
             self.assertEqual("withdrawals", final_state["active_feature"])
             self.assertEqual([second_path], final_state["paused_handoffs"])
+
+    def test_git_workspace_state_is_private_and_handoff_has_identity(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            started = self.run_ledger(
+                repo, "start", "--title", "Repair authentication", "--feature", "authentication"
+            )
+            handoff_rel = started.stdout.strip().splitlines()[-1]
+            handoff = repo / handoff_rel
+            state_path = LEDGER_MODULE.context_state_path(repo)
+            self.assertTrue(state_path.exists())
+            self.assertIn(".git", state_path.parts)
+            self.assertFalse((repo / ".context-ledger/context-state.json").exists())
+            self.assertFalse((repo / "docs/changes/.active-handoff").exists())
+            status = self.run_git(repo, "status", "--porcelain").stdout
+            self.assertNotIn("context-state.json", status)
+            self.assertNotIn(".active-handoff", status)
+            text = handoff.read_text(encoding="utf-8")
+            self.assertEqual("Alice", LEDGER_MODULE.field_value(text, "Actor"))
+            self.assertEqual("main", LEDGER_MODULE.field_value(text, "Branch"))
+            self.assertRegex(LEDGER_MODULE.field_value(text, "Handoff ID"), r"^\d{14}-alice-[0-9a-f]{10}$")
+            self.assertIn("-alice-", handoff.name)
+
+    def test_v2_git_state_and_active_pointer_migrate_to_private_v3_state(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            started = self.run_ledger(
+                repo, "start", "--title", "Repair authentication", "--feature", "authentication"
+            )
+            handoff_rel = started.stdout.strip().splitlines()[-1]
+            private_state = LEDGER_MODULE.context_state_path(repo)
+            private_state.unlink()
+
+            legacy_state = repo / ".context-ledger/context-state.json"
+            legacy_state.write_text(
+                json.dumps(
+                    {
+                        "version": 2,
+                        "active_feature": "authentication",
+                        "paused_handoffs": [],
+                        "recent_features": ["authentication"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            legacy_pointer = repo / "docs/changes/.active-handoff"
+            legacy_pointer.write_text(handoff_rel + "\n", encoding="utf-8")
+            config_path = repo / ".context-ledger/config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["schema_version"] = 2
+            config.pop("team", None)
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+
+            migrated = self.run_ledger(repo, "init")
+            self.assertIn("Migrated shared v0.2 state to workspace-local v0.3 state", migrated.stdout)
+            state = json.loads(LEDGER_MODULE.context_state_path(repo).read_text(encoding="utf-8"))
+            self.assertEqual(handoff_rel, state["active_handoff"])
+            self.assertEqual("authentication", state["active_feature"])
+            self.assertFalse(legacy_state.exists())
+            self.assertFalse(legacy_pointer.exists())
+            self.assertEqual(3, json.loads(config_path.read_text(encoding="utf-8"))["schema_version"])
+
+    def test_git_worktrees_have_independent_active_state(self):
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            repo = base / "repo"
+            worktree = base / "worktree-b"
+            self.init_git_repo(repo, "Alice")
+            self.run_git(repo, "worktree", "add", "-b", "feature-b", str(worktree), "main")
+
+            main_start = self.run_ledger(
+                repo, "start", "--title", "Repair withdrawals", "--feature", "withdrawals"
+            )
+            other_start = self.run_ledger(
+                worktree, "start", "--title", "Repair login", "--feature", "authentication"
+            )
+            main_state_path = LEDGER_MODULE.context_state_path(repo)
+            other_state_path = LEDGER_MODULE.context_state_path(worktree)
+            self.assertNotEqual(main_state_path, other_state_path)
+            main_state = json.loads(main_state_path.read_text(encoding="utf-8"))
+            other_state = json.loads(other_state_path.read_text(encoding="utf-8"))
+            self.assertEqual(main_start.stdout.strip().splitlines()[-1], main_state["active_handoff"])
+            self.assertEqual(other_start.stdout.strip().splitlines()[-1], other_state["active_handoff"])
+            self.assertEqual("withdrawals", main_state["active_feature"])
+            self.assertEqual("authentication", other_state["active_feature"])
+
+    def test_feature_branch_skips_shared_derived_files(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo)
+            self.run_git(repo, "switch", "-c", "feature/auth")
+            readme = repo / "README.md"
+            change_index = repo / "docs/changes/README.md"
+            before_readme = readme.read_text(encoding="utf-8")
+            before_index = change_index.read_text(encoding="utf-8")
+
+            started = self.run_ledger(
+                repo, "start", "--title", "Repair authentication", "--feature", "authentication"
+            )
+            handoff = repo / started.stdout.strip().splitlines()[-1]
+            self.assertTrue(handoff.exists())
+            self.assertEqual(before_readme, readme.read_text(encoding="utf-8"))
+            self.assertEqual(before_index, change_index.read_text(encoding="utf-8"))
+            self.assertFalse((handoff.parent / "README.md").exists())
+            skipped = self.run_ledger(repo, "sync")
+            self.assertIn("Skipped shared README", skipped.stdout)
+
+            self.run_ledger(repo, "sync", "--derived")
+            self.assertTrue((handoff.parent / "README.md").exists())
+            self.assertIn("Repair authentication", readme.read_text(encoding="utf-8"))
+
+    def test_team_check_detects_same_path_and_feature_changed_upstream(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            source = repo / "src/service.py"
+
+            self.run_git(repo, "switch", "-c", "feature/auth")
+            source.write_text("VALUE = 2\n", encoding="utf-8")
+            self.run_ledger(
+                repo, "start", "--title", "Feature authentication", "--feature", "authentication"
+            )
+            self.run_git(repo, "add", "-A")
+            self.run_git(repo, "commit", "-m", "Change authentication on feature")
+
+            self.run_git(repo, "switch", "main")
+            source.write_text("VALUE = 3\n", encoding="utf-8")
+            self.run_ledger(
+                repo, "start", "--title", "Main authentication", "--feature", "authentication"
+            )
+            self.run_git(repo, "add", "-A")
+            self.run_git(repo, "commit", "-m", "Change authentication on main")
+
+            self.run_git(repo, "switch", "feature/auth")
+            checked = self.run_ledger(repo, "team-check", "--base", "main", expected=2)
+            self.assertIn("Both this branch and main changed: src/service.py", checked.stderr)
+            self.assertIn("Concurrent handoffs affect the same feature: authentication", checked.stderr)
 
     def test_focus_refuses_to_abandon_another_active_feature(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -260,7 +432,9 @@ class LedgerFlowTests(unittest.TestCase):
                     config = LEDGER_MODULE.load_config(repo)
                     first = LEDGER_MODULE.active_handoff(repo, config)
                     original = first.read_text(encoding="utf-8")
-                    LEDGER_MODULE.active_pointer(repo, config).write_text("", encoding="utf-8")
+                    state = LEDGER_MODULE.load_context_state(repo)
+                    state["active_handoff"] = None
+                    LEDGER_MODULE.save_context_state(repo, state)
                     self.assertEqual(0, LEDGER_MODULE.start_change(repo, "修复接口"))
                     second = LEDGER_MODULE.active_handoff(repo, config)
             self.assertNotEqual(first, second)
@@ -336,7 +510,7 @@ class LedgerFlowTests(unittest.TestCase):
             self.run_ledger(repo, "check", "--strict")
             self.assertTrue((repo / "knowledge/changes/README.md").exists())
 
-    def test_v1_repository_migrates_to_v2_without_losing_docs(self):
+    def test_legacy_repository_migrates_to_v3_without_losing_docs(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
             self.run_ledger(repo, "init")
@@ -357,7 +531,7 @@ class LedgerFlowTests(unittest.TestCase):
 
             self.run_ledger(repo, "init")
             migrated = json.loads(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(2, migrated["schema_version"])
+            self.assertEqual(3, migrated["schema_version"])
             self.assertTrue((repo / ".context-ledger/context-state.json").exists())
             self.assertTrue((repo / ".context-ledger/templates/context-pack-template.md").exists())
             self.assertIn("Preserved project purpose.", project_context.read_text(encoding="utf-8"))
