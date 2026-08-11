@@ -14,12 +14,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
 
-VERSION = 3
-TOOL_VERSION = "0.3.0"
+VERSION = 4
+TOOL_VERSION = "0.4.0"
+QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
 BLOCK_END = "<!-- repo-context-ledger:end -->"
 RULE_START = "<!-- repo-context-ledger:rules:start -->"
@@ -30,6 +32,10 @@ PACK_FILES_START = "<!-- repo-context-ledger:pack-files:start -->"
 PACK_FILES_END = "<!-- repo-context-ledger:pack-files:end -->"
 PACK_SPECS_START = "<!-- repo-context-ledger:pack-specs:start -->"
 PACK_SPECS_END = "<!-- repo-context-ledger:pack-specs:end -->"
+EVIDENCE_START = "<!-- repo-context-ledger:evidence:start -->"
+EVIDENCE_END = "<!-- repo-context-ledger:evidence:end -->"
+CHECKS_START = "<!-- repo-context-ledger:checks:start -->"
+CHECKS_END = "<!-- repo-context-ledger:checks:end -->"
 IGNORED_DIRS = {
     ".git", ".hg", ".svn", ".idea", ".vscode", ".context-ledger",
     "node_modules", "vendor", "dist", "build", "target", "bin", "obj",
@@ -155,6 +161,40 @@ def set_field(text: str, field: str, value: str, after: str | None = None) -> st
     heading = re.search(r"(?m)^## ", text)
     position = heading.start() if heading else len(text)
     return text[:position].rstrip() + "\n" + line + "\n\n" + text[position:].lstrip()
+
+
+def managed_text(text: str, start: str, end: str) -> str:
+    match = re.search(re.escape(start) + r"(.*?)" + re.escape(end), text, re.DOTALL)
+    return match.group(1).strip() if match else ""
+
+
+def replace_managed_text(text: str, start: str, end: str, body: str) -> str:
+    block = f"{start}\n{body.rstrip()}\n{end}"
+    pattern = re.compile(re.escape(start) + r".*?" + re.escape(end), re.DOTALL)
+    if pattern.search(text):
+        return pattern.sub(lambda _: block, text, count=1)
+    return text.rstrip() + "\n\n" + block + "\n"
+
+
+def section_body(text: str, heading: str) -> str:
+    match = re.search(
+        rf"(?ms)^{re.escape(heading)}\s*$\n(.*?)(?=^##\s|\Z)",
+        text,
+    )
+    return match.group(1).strip() if match else ""
+
+
+def is_evidence_quality(text: str) -> bool:
+    return field_value(text, "Quality profile").casefold() == QUALITY_PROFILE
+
+
+def concrete_code_spans(text: str) -> list[str]:
+    spans = re.findall(r"`([^`\r\n]+)`", text)
+    return [
+        item.replace("\\", "/")
+        for item in spans
+        if "/" in item or "\\" in item or re.search(r"\.[A-Za-z0-9]{1,8}(?::|$)", item)
+    ]
 
 
 def slugify(value: str) -> str:
@@ -384,6 +424,13 @@ def unique_handoff_id(repo: Path, stamp: dt.datetime) -> str:
     return f"{stamp.strftime('%Y%m%d%H%M%S')}-{actor_slug(repo)}-{uuid.uuid4().hex[:10]}"
 
 
+def record_language(config: dict, requested: str = "") -> str:
+    language = requested.strip() or config.get("quality", {}).get("language", "auto")
+    if language not in {"auto", "en", "zh-CN"}:
+        raise LedgerError("Record language must be auto, en, or zh-CN.")
+    return language
+
+
 def template_source(name: str, repo: Path | None = None) -> Path:
     skill_asset = Path(__file__).resolve().parent.parent / "assets" / name
     if skill_asset.exists():
@@ -484,6 +531,19 @@ def validate_config(repo: Path, config: dict) -> dict:
     derived_updates = raw_team.get("derived_updates", "default-branch")
     if derived_updates not in {"default-branch", "always"}:
         raise LedgerError("config.team.derived_updates must be default-branch or always.")
+    raw_quality = config.get("quality", {})
+    if not isinstance(raw_quality, dict):
+        raise LedgerError("config.quality must be an object.")
+    quality_language = raw_quality.get("language", "auto")
+    if quality_language not in {"auto", "en", "zh-CN"}:
+        raise LedgerError("config.quality.language must be auto, en, or zh-CN.")
+    quality_detail = raw_quality.get("detail", "standard")
+    if quality_detail not in {"concise", "standard", "detailed"}:
+        raise LedgerError("config.quality.detail must be concise, standard, or detailed.")
+    default_pack_lines = {"concise": 120, "standard": 180, "detailed": 300}[quality_detail]
+    max_pack_lines = raw_quality.get("max_context_pack_lines", default_pack_lines)
+    if not isinstance(max_pack_lines, int) or isinstance(max_pack_lines, bool) or not 60 <= max_pack_lines <= 500:
+        raise LedgerError("config.quality.max_context_pack_lines must be an integer from 60 to 500.")
     return {
         "schema_version": config.get("schema_version", VERSION),
         "docs": normalized_docs,
@@ -493,6 +553,12 @@ def validate_config(repo: Path, config: dict) -> dict:
             "enabled": team_enabled,
             "default_branch": default_branch,
             "derived_updates": derived_updates,
+        },
+        "quality": {
+            "profile": QUALITY_PROFILE,
+            "language": quality_language,
+            "detail": quality_detail,
+            "max_context_pack_lines": max_pack_lines,
         },
     }
 
@@ -545,14 +611,16 @@ def managed_rules(config: dict) -> str:
 
 For every feature, bug fix, refactor, interface change, or other behavior-changing code task:
 
-1. Before editing code, run `python .context-ledger/ledger.py status`. If this worktree has no active handoff, run `python .context-ledger/ledger.py start --title \"<task>\" --feature \"<feature>\"` yourself.
-2. Prefer `python .context-ledger/ledger.py focus --feature \"<feature>\"` and read its Context Pack before broad code exploration. If no pack exists, create it with `pack`, fill it, then focus it. Fall back to `context --query` for discovery.
-3. When the user pauses or switches work, run `pause` with an accurate summary and next step before starting another handoff. When the user resumes, run `resume` and revalidate any stale state.
-4. Keep the active handoff current while working. Refresh affected Context Packs with `pack --file ...` when tracked code changes.
-5. Update `{specs}/` when current behavior, contracts, boundaries, or code navigation changes.
-6. After code and tests are complete, fill every handoff section and run `python .context-ledger/ledger.py finish --spec <affected-spec>`. Use `--no-spec --reason \"...\"` only when no stable behavior exists to document.
-7. Run `python .context-ledger/ledger.py check --strict` and resolve failures before reporting completion.
-8. Before opening or updating a pull request, update the configured base ref and run `python .context-ledger/ledger.py team-check --base origin/{config.get('team', {}).get('default_branch', 'main')}`.
+1. Before editing code, run `status`. If this worktree has no active handoff, determine its language and run `start --title \"<task>\" --feature \"<feature>\" --language <en|zh-CN>` yourself.
+2. Resolve `quality.language`; when it is `auto`, follow nearby docs or the user's language. Keep paths, symbols, commands, and error text untranslated.
+3. Focus the feature Context Pack before broad code exploration. If none exists, create and fill one; fall back to `context --query` for discovery.
+4. Pause with an accurate summary and next step before switching work. Resume and revalidate stale state when returning.
+5. Run every claimed check through `python .context-ledger/ledger.py verify -- <command>`. Use `verify --not-run --reason \"...\"` only when verification is genuinely unavailable.
+6. Run `evidence`, read `.context-ledger/writing-quality.md`, and fill the handoff from actual changed paths. Refresh affected Context Packs with `pack --file ...`.
+7. Update `{specs}/` when current behavior, contracts, boundaries, or code navigation changes.
+8. Finish with `finish --spec <affected-spec>`, or use `--no-spec --reason \"...\"` only when no stable behavior exists.
+9. Run `check --strict` and resolve failures before reporting completion.
+10. Before opening or updating a pull request, update the base ref and run `team-check --base origin/{config.get('team', {}).get('default_branch', 'main')}`.
 
 Workspace activity is stored in Git worktree metadata and must not be committed. On feature branches, do not regenerate shared README or monthly index blocks. After merging on `{config.get('team', {}).get('default_branch', 'main')}`, run `python .context-ledger/ledger.py sync --derived` once.
 
@@ -575,6 +643,10 @@ def init_repo(repo: Path) -> int:
         target = template_dir / name
         if source.resolve() != target.resolve():
             shutil.copy2(source, target)
+    quality_source = Path(__file__).resolve().parent.parent / "references" / "writing-quality.md"
+    quality_target = runtime_dir / "writing-quality.md"
+    if quality_source.exists() and quality_source.resolve() != quality_target.resolve():
+        shutil.copy2(quality_source, quality_target)
 
     known_modules = {
         item["path"]: item
@@ -594,6 +666,12 @@ def init_repo(repo: Path) -> int:
             "default_branch": detect_default_branch(repo),
             "derived_updates": "default-branch",
         },
+        "quality": previous.get("quality") or {
+            "profile": QUALITY_PROFILE,
+            "language": "auto",
+            "detail": "standard",
+            "max_context_pack_lines": 180,
+        },
     }
     save_config(repo, config)
 
@@ -611,6 +689,8 @@ def init_repo(repo: Path) -> int:
         render_template(template_dir / "project-context-template.md", {
             "SPECS_INDEX": os.path.relpath(specs_root / "README.md", ai_root).replace(os.sep, "/"),
             "CHANGES_INDEX": os.path.relpath(changes_root / "README.md", ai_root).replace(os.sep, "/"),
+            "LANGUAGE": record_language(config),
+            "DETAIL": config.get("quality", {}).get("detail", "standard"),
         }),
     )
     migrated_state = migrate_workspace_state(repo, config)
@@ -622,11 +702,11 @@ def init_repo(repo: Path) -> int:
     replace_block(repo / "CLAUDE.md", RULE_START, RULE_END, claude_body, "# Claude Code instructions")
     cursor_rule = repo / ".cursor/rules/repo-context-ledger.mdc"
     cursor_content = """---
-description: Maintain repository feature context and change history for behavior-changing code work.
+description: Maintain evidence-based repository context and verified change history for behavior-changing code work.
 alwaysApply: true
 ---
 
-Read and follow the repository root `AGENTS.md`, especially the Repository context ledger section. Run ledger lifecycle commands autonomously; never delegate them to the user.
+Read and follow the repository root `AGENTS.md`, especially the Repository context ledger section. Apply `.context-ledger/writing-quality.md` to evidence-v1 records. Run ledger lifecycle commands autonomously; never delegate them to the user.
 """
     cursor_rule.parent.mkdir(parents=True, exist_ok=True)
     atomic_write(cursor_rule, cursor_content)
@@ -636,7 +716,7 @@ Read and follow the repository root `AGENTS.md`, especially the Repository conte
     print(f"Detected modules: {len(modules)}")
     print(f"Team mode: {'enabled' if config['team']['enabled'] else 'disabled'}")
     if migrated_state:
-        print("Migrated shared v0.2 state to workspace-local v0.3 state.")
+        print("Migrated shared pre-v0.3 state to workspace-local state.")
     return 0
 
 
@@ -657,7 +737,7 @@ def active_handoff(repo: Path, config: dict) -> Path | None:
     return target
 
 
-def start_change(repo: Path, title: str, feature: str = "") -> int:
+def start_change(repo: Path, title: str, feature: str = "", language: str = "") -> int:
     title = title.strip()
     if not title or len(title) > 160 or "\n" in title or "\r" in title:
         print("Task title must be one line containing 1 to 160 characters.", file=sys.stderr)
@@ -688,6 +768,8 @@ def start_change(repo: Path, title: str, feature: str = "") -> int:
             "ACTOR": git_actor(repo),
             "BRANCH": git_branch(repo),
             "HANDOFF_ID": handoff_id,
+            "LANGUAGE": record_language(config, language),
+            "DETAIL": config.get("quality", {}).get("detail", "standard"),
             "STARTED": stamp.isoformat(timespec="seconds"),
             "BASE_COMMIT": git_revision(repo),
         },
@@ -784,6 +866,7 @@ def refresh_context_pack(
     title: str,
     raw_files: list[str],
     raw_specs: list[str],
+    language: str = "",
 ) -> int:
     config = load_config(repo)
     feature = feature_slug(feature)
@@ -815,6 +898,8 @@ def refresh_context_pack(
                 "BASE_BRANCH": config.get("team", {}).get("default_branch", "main"),
                 "BASE_COMMIT": git_revision(repo, configured_base_ref(repo, config)),
                 "REFRESHED": now().isoformat(timespec="seconds"),
+                "LANGUAGE": record_language(config, language),
+                "DETAIL": config.get("quality", {}).get("detail", "standard"),
             },
         )
     text = set_field(text, "Status", "current")
@@ -881,7 +966,7 @@ def context_pack_errors(repo: Path, path: Path) -> list[str]:
         errors.append("Context pack is missing Base commit metadata.")
     if not field_value(text, "Last refreshed"):
         errors.append("Context pack is missing Last refreshed metadata.")
-    if re.search(r"(?mi)^\s*TODO:\s*", text):
+    if re.search(r"(?i)TODO:\s*|\{\{[A-Z_]+\}\}", text):
         errors.append("Context pack still contains TODO placeholders.")
     for index, heading in enumerate(PACK_REQUIRED_HEADINGS):
         if heading not in text:
@@ -908,6 +993,27 @@ def context_pack_errors(repo: Path, path: Path) -> list[str]:
             continue
         if file_digest(target) != expected:
             errors.append(f"Context pack is stale; tracked file changed: {raw}")
+    if is_evidence_quality(text):
+        config = load_config(repo)
+        errors.extend(quality_metadata_errors(text, "Context pack"))
+        max_lines = config.get("quality", {}).get("max_context_pack_lines", 180)
+        if len(text.splitlines()) > max_lines:
+            errors.append(f"Context pack has {len(text.splitlines())} lines; configured maximum is {max_lines}.")
+        load_order = section_body(text, "## Load order")
+        for label in ("Read first", "Read if needed", "Do not load by default"):
+            if len(labeled_value(load_order, label)) < 8:
+                errors.append(f"Context pack Load order requires a substantive {label}: value.")
+        if not concrete_code_spans(section_body(text, "## Entry points and code map")):
+            errors.append("Context pack code map must cite a concrete path or symbol in backticks.")
+        contracts = section_body(text, "## Contracts and boundaries")
+        for label in ("Invariants and contracts", "Failure / recovery", "Non-goals"):
+            if len(labeled_value(contracts, label)) < 12:
+                errors.append(f"Context pack boundaries require a substantive {label}: value.")
+        if not re.search(r"`[^`\r\n]+`", section_body(text, "## Verification")):
+            errors.append("Context pack Verification must cite a reliable command in backticks.")
+        semantic = "\n".join(section_body(text, heading) for heading in PACK_REQUIRED_HEADINGS)
+        if has_vague_standalone_text(semantic):
+            errors.append("Context pack contains a vague standalone claim; replace it with concrete navigation or evidence.")
     return errors
 
 
@@ -1204,14 +1310,99 @@ def link_change_to_spec(spec: Path, handoff: Path) -> None:
     atomic_write(spec, updated.rstrip() + "\n")
 
 
-def handoff_validation_errors(text: str) -> list[str]:
+def quality_metadata_errors(text: str, kind: str) -> list[str]:
+    errors: list[str] = []
+    language = field_value(text, "Language")
+    if language not in {"en", "zh-CN"}:
+        errors.append(f"{kind} Language must resolve to en or zh-CN; replace auto before completion.")
+    if field_value(text, "Detail") not in {"concise", "standard", "detailed"}:
+        errors.append(f"{kind} Detail must be concise, standard, or detailed.")
+    return errors
+
+
+def labeled_value(body: str, label: str) -> str:
+    match = re.search(rf"(?mi)^\s*(?:[-*]\s*)?{re.escape(label)}:\s*(.+?)\s*$", body)
+    return match.group(1).strip() if match else ""
+
+
+def has_vague_standalone_text(body: str) -> bool:
+    vague = {
+        "updated relevant files", "fixed the logic", "tests passed", "updated documentation",
+        "修改了相关代码", "修复了逻辑", "测试通过", "更新了相关文档", "已完成修改",
+    }
+    for raw in body.splitlines():
+        line = re.sub(r"^[\s|>*-]+|[\s.|]+$", "", raw).casefold()
+        if line in vague:
+            return True
+    return False
+
+
+def is_implementation_path(config: dict, raw: str) -> bool:
+    normalized = raw.replace("\\", "/").lstrip("./")
+    doc_roots = [config["docs"][key].rstrip("/") + "/" for key in ("ai", "specs", "changes")]
+    if any(normalized.startswith(prefix) for prefix in doc_roots):
+        return False
+    if normalized.startswith((".context-ledger/", ".cursor/")):
+        return False
+    return normalized not in {"README.md", "AGENTS.md", "CLAUDE.md"}
+
+
+def evidence_handoff_errors(repo: Path, config: dict, text: str) -> list[str]:
+    errors = quality_metadata_errors(text, "Handoff")
+    changed = section_body(text, "## Changed behavior")
+    for label in ("Before", "After"):
+        value = labeled_value(changed, label)
+        if len(value) < 12:
+            errors.append(f"Handoff Changed behavior requires a substantive {label}: value.")
+    code_body = section_body(text, "## Code paths")
+    code_refs = concrete_code_spans(code_body)
+    if not code_refs:
+        errors.append("Handoff Code paths must cite at least one concrete path or symbol in backticks.")
+    boundaries = section_body(text, "## Boundaries and risks")
+    for label in ("Invariant", "Failure / recovery", "Not changed"):
+        if len(labeled_value(boundaries, label)) < 12:
+            errors.append(f"Handoff Boundaries and risks requires a substantive {label}: value.")
+    checks = managed_text(text, CHECKS_START, CHECKS_END)
+    has_passed = "- Status: passed" in checks
+    if "- Status: failed" in checks and not has_passed:
+        errors.append("Handoff has a failed verification with no later passed verification.")
+    if not has_passed and "- Not run —" not in checks:
+        errors.append("Handoff requires a passed ledger verify record or a substantive not-run exception.")
+    docs = section_body(text, "## Documentation updates")
+    updated = labeled_value(docs, "Updated")
+    reason = labeled_value(docs, "Reason")
+    if not concrete_code_spans(updated) and not re.match(r"(?i)^none\s*[—-]\s*.{12,}$", updated):
+        errors.append("Documentation updates must cite a path or use None — <substantive reason>.")
+    if len(reason) < 12:
+        errors.append("Documentation updates requires a substantive Reason: value.")
+    questions = section_body(text, "## Open questions")
+    if len(re.sub(r"[`*_#>\-]", "", questions).strip()) < 4:
+        errors.append("Handoff Open questions must record uncertainty or explicitly say None.")
+    evidence = managed_text(text, EVIDENCE_START, EVIDENCE_END)
+    if not evidence or "Evidence has not been captured yet" in evidence:
+        errors.append("Handoff Git change evidence has not been captured.")
+    evidence_paths = [path for path in concrete_code_spans(evidence) if is_implementation_path(config, path)]
+    if evidence_paths and not any(path in code_refs for path in evidence_paths):
+        errors.append("Handoff Code paths must cite at least one implementation path from Git change evidence.")
+    semantic = "\n".join(section_body(text, heading) for heading in REQUIRED_HANDOFF_HEADINGS)
+    if has_vague_standalone_text(semantic):
+        errors.append("Handoff contains a vague standalone claim; replace it with behavior, path, and evidence.")
+    return errors
+
+
+def handoff_validation_errors(
+    text: str,
+    repo: Path | None = None,
+    config: dict | None = None,
+    expected_status: str = "active",
+) -> list[str]:
     errors = []
-    if field_value(text, "Status").casefold() != "active":
-        errors.append("Handoff status must be active.")
+    if field_value(text, "Status").casefold() != expected_status.casefold():
+        errors.append(f"Handoff status must be {expected_status}.")
     for field in ("Started", "Specs"):
         if not field_value(text, field):
             errors.append(f"Handoff metadata is missing: {field}.")
-    if re.search(r"(?mi)^\s*TODO:\s*", text):
+    if re.search(r"(?i)TODO:\s*", text):
         errors.append("Active handoff still contains TODO placeholders.")
     positions = [text.find(heading) for heading in REQUIRED_HANDOFF_HEADINGS]
     present_positions = [position for position in positions if position >= 0]
@@ -1228,6 +1419,42 @@ def handoff_validation_errors(text: str) -> list[str]:
         body = re.sub(r"[`*_#>\-]", "", text[start:end]).strip()
         if len(body) < 10:
             errors.append(f"Handoff section has no substantive content: {heading}")
+    if is_evidence_quality(text):
+        if repo is None or config is None:
+            errors.append("Evidence-quality handoff validation requires repository context.")
+        else:
+            errors.extend(evidence_handoff_errors(repo, config, text))
+    return errors
+
+
+SPEC_REQUIRED_HEADINGS = (
+    "## Purpose and behavior", "## Entry points and code map",
+    "## Data flow and contracts", "## Boundaries and failure modes", "## Verification",
+)
+
+
+def spec_quality_errors(path: Path) -> list[str]:
+    text = path.read_text(encoding="utf-8")
+    if not is_evidence_quality(text):
+        return []
+    errors = quality_metadata_errors(text, "Stable spec")
+    if re.search(r"(?i)TODO:\s*|\{\{[A-Z_]+\}\}", text):
+        errors.append("Stable spec still contains template placeholders.")
+    for heading in SPEC_REQUIRED_HEADINGS:
+        if len(re.sub(r"[`*_#>\-|]", "", section_body(text, heading)).strip()) < 12:
+            errors.append(f"Stable spec section has no substantive content: {heading}")
+    if not concrete_code_spans(section_body(text, "## Entry points and code map")):
+        errors.append("Stable spec code map must cite a concrete path or symbol in backticks.")
+    flow = section_body(text, "## Data flow and contracts")
+    for label in ("Input", "Flow", "Persistence / dependencies", "Output"):
+        if len(labeled_value(flow, label)) < 12:
+            errors.append(f"Stable spec data flow requires a substantive {label}: value.")
+    boundaries = section_body(text, "## Boundaries and failure modes")
+    for label in ("Invariants", "Permissions / concurrency", "Failure / recovery", "Non-goals"):
+        if len(labeled_value(boundaries, label)) < 12:
+            errors.append(f"Stable spec boundaries require a substantive {label}: value.")
+    if not re.search(r"`[^`\r\n]+`", section_body(text, "## Verification")):
+        errors.append("Stable spec Verification must cite at least one reliable command in backticks.")
     return errors
 
 
@@ -1242,8 +1469,9 @@ def finish_change(
     if not handoff or not handoff.is_file():
         print("No active handoff.", file=sys.stderr)
         return 2
+    refresh_handoff_evidence(repo, handoff)
     text = handoff.read_text(encoding="utf-8")
-    errors = handoff_validation_errors(text)
+    errors = handoff_validation_errors(text, repo, config)
     if raw_specs and no_spec:
         errors.append("Use either --spec or --no-spec, not both.")
     if not raw_specs and not no_spec:
@@ -1255,6 +1483,12 @@ def finish_change(
             print(error, file=sys.stderr)
         return 2
     specs = [normalize_spec(repo, config, raw) for raw in raw_specs]
+    for spec in specs:
+        errors.extend(f"{rel_posix(spec, repo)}: {error}" for error in spec_quality_errors(spec))
+    if errors:
+        for error in errors:
+            print(error, file=sys.stderr)
+        return 2
     for spec in specs:
         link_change_to_spec(spec, handoff)
     sync_repo(repo)
@@ -1294,6 +1528,156 @@ def local_links(path: Path) -> list[str]:
 def git_changed_paths(repo: Path, *args: str) -> set[str]:
     output = git_output(repo, "diff", "--name-only", "--diff-filter=ACMRD", *args)
     return {line.strip().replace("\\", "/") for line in output.splitlines() if line.strip()}
+
+
+def handoff_evidence_paths(repo: Path, handoff_text: str) -> list[str]:
+    paths: set[str] = set(git_dirty_paths(repo))
+    base = field_value(handoff_text, "Base commit")
+    if is_git_repo(repo) and base not in {"", "none"} and git_revision(repo, base) != "none":
+        paths.update(git_changed_paths(repo, f"{base}..HEAD"))
+    return sorted(paths)
+
+
+def refresh_handoff_evidence(repo: Path, handoff: Path) -> list[str]:
+    text = handoff.read_text(encoding="utf-8")
+    paths = handoff_evidence_paths(repo, text)
+    lines = [
+        "## Git change evidence",
+        "",
+        f"- Base commit: `{field_value(text, 'Base commit') or 'none'}`",
+        f"- Current commit: `{git_revision(repo)}`",
+        "- Changed paths:",
+    ]
+    lines.extend(f"  - `{raw}`" for raw in paths)
+    if not paths:
+        lines.append("  - None detected.")
+    updated = replace_managed_text(text, EVIDENCE_START, EVIDENCE_END, "\n".join(lines))
+    atomic_write(handoff, updated.rstrip() + "\n")
+    return paths
+
+
+def capture_evidence(repo: Path) -> int:
+    config = load_config(repo)
+    handoff = active_handoff(repo, config)
+    if not handoff or not handoff.is_file():
+        print("No active handoff.", file=sys.stderr)
+        return 2
+    paths = refresh_handoff_evidence(repo, handoff)
+    print(f"Updated Git change evidence in {rel_posix(handoff, repo)}")
+    for raw in paths:
+        print(f"- {raw}")
+    return 0
+
+
+def verification_output_summary(stdout: str, stderr: str) -> str:
+    output = stdout + ("\n" if stdout and stderr else "") + stderr
+    if not output:
+        return "No output."
+    digest = hashlib.sha256(output.encode("utf-8", errors="replace")).hexdigest()
+    return f"sha256:{digest} ({len(output)} characters captured; content not persisted)"
+
+
+def redacted_command(command: list[str]) -> list[str]:
+    sensitive = re.compile(r"(?i)(password|passwd|secret|token|api[-_]?key|authorization)")
+    result: list[str] = []
+    redact_next = False
+    for item in command:
+        if redact_next:
+            result.append("<redacted>")
+            redact_next = False
+            continue
+        if "=" in item:
+            key, _ = item.split("=", 1)
+            if sensitive.search(key):
+                result.append(f"{key}=<redacted>")
+                continue
+        result.append(item)
+        if item.startswith("-") and sensitive.search(item):
+            redact_next = True
+    return result
+
+
+def record_verification(
+    repo: Path,
+    command: list[str],
+    timeout_seconds: int,
+    not_run: bool = False,
+    reason: str = "",
+) -> int:
+    config = load_config(repo)
+    handoff = active_handoff(repo, config)
+    if not handoff or not handoff.is_file():
+        print("No active handoff.", file=sys.stderr)
+        return 2
+    text = handoff.read_text(encoding="utf-8")
+    checks = managed_text(text, CHECKS_START, CHECKS_END)
+    if "No verification recorded yet." in checks:
+        checks = ""
+    recorded = now().isoformat(timespec="seconds")
+    if not_run:
+        if len(reason.strip()) < 20:
+            print("A not-run verification reason must contain at least 20 characters.", file=sys.stderr)
+            return 2
+        entry = f"- Not run — {reason.strip()}\n  - Recorded: {recorded}"
+        checks = "\n".join(item for item in (checks, entry) if item).strip()
+        updated = replace_managed_text(text, CHECKS_START, CHECKS_END, checks)
+        atomic_write(handoff, updated.rstrip() + "\n")
+        print(f"Recorded verification exception in {rel_posix(handoff, repo)}")
+        return 0
+    command = [item for item in command if item != "--"]
+    if not command:
+        print("verify requires a command after --, or --not-run with --reason.", file=sys.stderr)
+        return 2
+    if timeout_seconds < 1 or timeout_seconds > 3600:
+        print("Verification timeout must be from 1 to 3600 seconds.", file=sys.stderr)
+        return 2
+    started = time.monotonic()
+    try:
+        result = subprocess.run(
+            command,
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+        )
+        exit_code = result.returncode
+        stdout, stderr = result.stdout, result.stderr
+        status = "passed" if exit_code == 0 else "failed"
+    except subprocess.TimeoutExpired as exc:
+        exit_code = 124
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        stderr += f"\nTimed out after {timeout_seconds} seconds."
+        status = "failed"
+    except OSError as exc:
+        exit_code = 127
+        stdout, stderr = "", str(exc)
+        status = "failed"
+    duration = time.monotonic() - started
+    display_command = subprocess.list2cmdline(redacted_command(command)).replace("`", "'")
+    entry = (
+        f"- Command: `{display_command}`\n"
+        f"  - Status: {status}\n"
+        f"  - Exit code: {exit_code}\n"
+        f"  - Duration: {duration:.2f}s\n"
+        f"  - Recorded: {recorded}\n"
+        f"  - Output evidence: {verification_output_summary(stdout, stderr)}"
+    )
+    checks = "\n".join(item for item in (checks, entry) if item).strip()
+    updated = replace_managed_text(text, CHECKS_START, CHECKS_END, checks)
+    atomic_write(handoff, updated.rstrip() + "\n")
+    if stdout:
+        print(stdout, end="" if stdout.endswith("\n") else "\n")
+    if stderr:
+        print(stderr, file=sys.stderr, end="" if stderr.endswith("\n") else "\n")
+    print(f"Recorded {status} verification in {rel_posix(handoff, repo)}")
+    return 0 if exit_code == 0 else 1
 
 
 def handoff_features_for_paths(
@@ -1408,7 +1792,7 @@ def check_repo(repo: Path, strict: bool) -> int:
     if current and not current.exists():
         errors.append(f"Active handoff does not exist: {current}")
     if strict and current and current.exists():
-        errors.extend(handoff_validation_errors(current.read_text(encoding="utf-8")))
+        errors.extend(handoff_validation_errors(current.read_text(encoding="utf-8"), repo, config))
     try:
         state = load_context_state(repo)
         paused_seen = set()
@@ -1435,6 +1819,16 @@ def check_repo(repo: Path, strict: bool) -> int:
         errors.append(str(exc))
 
     if strict:
+        for change in all_changes(repo, config):
+            change_text = change.read_text(encoding="utf-8")
+            if is_evidence_quality(change_text) and field_value(change_text, "Status").casefold() == "completed":
+                for error in handoff_validation_errors(
+                    change_text, repo, config, expected_status="completed"
+                ):
+                    errors.append(f"{rel_posix(change, repo)}: {error}")
+        for spec in all_specs(repo, config):
+            for error in spec_quality_errors(spec):
+                errors.append(f"{rel_posix(spec, repo)}: {error}")
         packs_root = ai_root / "context-packs"
         if packs_root.exists():
             for pack in sorted(packs_root.glob("*.md")):
@@ -1456,6 +1850,10 @@ def check_repo(repo: Path, strict: bool) -> int:
             errors.append(f"Unbalanced managed markers: {rel_posix(path, repo)}")
         if text.count(CHANGES_START) != text.count(CHANGES_END):
             errors.append(f"Unbalanced related-change markers: {rel_posix(path, repo)}")
+        if text.count(EVIDENCE_START) != text.count(EVIDENCE_END):
+            errors.append(f"Unbalanced evidence markers: {rel_posix(path, repo)}")
+        if text.count(CHECKS_START) != text.count(CHECKS_END):
+            errors.append(f"Unbalanced verification markers: {rel_posix(path, repo)}")
         for raw_link in local_links(path):
             link = raw_link.split("#", 1)[0].strip()
             if not link or re.match(r"^[a-z][a-z0-9+.-]*:", link, re.I):
@@ -1502,6 +1900,7 @@ def build_parser() -> argparse.ArgumentParser:
     start = sub.add_parser("start", help="Start a behavior-changing work handoff")
     start.add_argument("--title", required=True)
     start.add_argument("--feature", default="", help="Stable feature slug or name")
+    start.add_argument("--language", choices=("auto", "en", "zh-CN"), default="")
     context = sub.add_parser("context", help="Find likely stable background documents")
     context.add_argument("--query", required=True)
     context.add_argument("--limit", type=int, default=5)
@@ -1510,6 +1909,7 @@ def build_parser() -> argparse.ArgumentParser:
     pack.add_argument("--title", default="")
     pack.add_argument("--file", action="append", default=[])
     pack.add_argument("--spec", action="append", default=[])
+    pack.add_argument("--language", choices=("auto", "en", "zh-CN"), default="")
     focus = sub.add_parser("focus", help="Load and validate a feature Context Pack")
     focus.add_argument("--feature", required=True)
     pause = sub.add_parser("pause", help="Pause the active handoff and preserve resume state")
@@ -1522,6 +1922,12 @@ def build_parser() -> argparse.ArgumentParser:
     finish_group.add_argument("--spec", action="append", default=[])
     finish_group.add_argument("--no-spec", action="store_true")
     finish.add_argument("--reason", default="", help="Required explanation when --no-spec is used")
+    sub.add_parser("evidence", help="Refresh the active handoff from actual Git changed paths")
+    verify = sub.add_parser("verify", help="Run and record an actual verification command")
+    verify.add_argument("--timeout", type=int, default=300)
+    verify.add_argument("--not-run", action="store_true")
+    verify.add_argument("--reason", default="")
+    verify.add_argument("verification_command", nargs=argparse.REMAINDER)
     sync = sub.add_parser("sync", help="Regenerate indexes and managed README blocks")
     sync.add_argument(
         "--derived",
@@ -1540,14 +1946,19 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = build_parser().parse_args(argv)
         repo = resolve_repo(args.repo)
-        if args.command in {"init", "start", "pack", "focus", "pause", "resume", "finish", "sync"}:
+        if args.command in {
+            "init", "start", "pack", "focus", "pause", "resume", "finish",
+            "evidence", "verify", "sync",
+        }:
             with repo_lock(repo):
                 if args.command == "init":
                     return init_repo(repo)
                 if args.command == "start":
-                    return start_change(repo, args.title, args.feature)
+                    return start_change(repo, args.title, args.feature, args.language)
                 if args.command == "pack":
-                    return refresh_context_pack(repo, args.feature, args.title, args.file, args.spec)
+                    return refresh_context_pack(
+                        repo, args.feature, args.title, args.file, args.spec, args.language
+                    )
                 if args.command == "focus":
                     return focus_context(repo, args.feature)
                 if args.command == "pause":
@@ -1556,6 +1967,15 @@ def main(argv: list[str] | None = None) -> int:
                     return resume_change(repo, args.handoff)
                 if args.command == "finish":
                     return finish_change(repo, args.spec, args.no_spec, args.reason)
+                if args.command == "evidence":
+                    return capture_evidence(repo)
+                if args.command == "verify":
+                    if args.not_run and args.verification_command:
+                        print("Use either a command or --not-run, not both.", file=sys.stderr)
+                        return 2
+                    return record_verification(
+                        repo, args.verification_command, args.timeout, args.not_run, args.reason
+                    )
                 return sync_repo(repo, args.derived)
         if args.command == "context":
             return context_search(repo, args.query, max(1, args.limit))

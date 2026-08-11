@@ -2,6 +2,9 @@
 
 Status: active
 Feature: {{FEATURE}}
+Quality profile: evidence-v1
+Language: {{LANGUAGE}}
+Detail: {{DETAIL}}
 Handoff ID: {{HANDOFF_ID}}
 Actor: {{ACTOR}}
 Branch: {{BRANCH}}
@@ -18,24 +21,46 @@ Spec exception:
 
 ## Intent
 
-TODO: Explain the requested outcome and why it matters.
+TODO: State the requested outcome, why it matters, and the observable acceptance result.
 
 ## Changed behavior
 
-TODO: Describe the observable before/after behavior.
+Before: TODO: Describe the observable behavior before this change.
+
+After: TODO: Describe the observable behavior after this change.
 
 ## Code paths
 
-TODO: List the entry points and important files changed.
+| Path / symbol | Responsibility | Actual change |
+| --- | --- | --- |
+| `TODO:path-or-symbol` | TODO: State its role in the flow. | TODO: State what changed here. |
 
 ## Boundaries and risks
 
-TODO: Record invariants, exclusions, compatibility concerns, and failure modes.
+- Invariant: TODO: State behavior that must remain true.
+- Failure / recovery: TODO: State failure handling and recovery, or why it does not apply.
+- Not changed: TODO: State adjacent behavior deliberately left unchanged.
 
 ## Verification
 
-TODO: List checks actually run and their results.
+Record checks with `ledger.py verify`; do not type claimed results manually.
+
+<!-- repo-context-ledger:checks:start -->
+- No verification recorded yet.
+<!-- repo-context-ledger:checks:end -->
 
 ## Documentation updates
 
-TODO: List stable specs and README summaries updated for this change.
+Updated: TODO: List documentation paths in backticks, or write `None — <reason>`.
+
+Reason: TODO: Explain why those documents changed or why no documentation applies.
+
+## Open questions
+
+TODO: Record unresolved facts or write `None.` Never present an inference as confirmed behavior.
+
+<!-- repo-context-ledger:evidence:start -->
+## Git change evidence
+
+- Evidence has not been captured yet.
+<!-- repo-context-ledger:evidence:end -->

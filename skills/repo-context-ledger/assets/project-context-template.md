@@ -1,8 +1,12 @@
 # Project context
 
+Quality profile: evidence-v1
+Language: {{LANGUAGE}}
+Detail: {{DETAIL}}
+
 ## Repository purpose
 
-TODO: Summarize what this repository delivers and who uses it.
+TODO: Summarize what this repository delivers and who uses it, separating confirmed facts from unknowns.
 
 ## Architecture map
 

@@ -18,13 +18,15 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 - what changed, why it changed, and how it was verified;
 - which project and module README summaries need refreshing.
 
-## What's new in v0.3.0
+## What's new in v0.4.0
 
-- Branch/worktree-safe state: each Git branch and worktree has its own active task and paused stack outside tracked files.
-- Collision-proof handoffs: timestamp, Git actor, and a unique token identify every change record.
-- Team conflict checks: `team-check` detects overlapping code paths, same-feature handoffs, stale Context Pack bases, and generated-index edits before a pull request.
-- Merge-friendly derived docs: feature branches skip shared monthly indexes and README summaries; the default branch rebuilds them deterministically after merge.
-- Automatic v2 migration: shared `.active-handoff` and context state move safely to private v3 workspace state.
+- Evidence-first records: new handoffs, specs, and Context Packs use the backward-compatible `evidence-v1` quality profile.
+- Real verification capture: `verify` executes the check and records its command, status, exit code, duration, and output hash without persisting command output.
+- Git-derived evidence: `evidence` records actual changed paths so agents do not rely on memory.
+- Language policy: choose `auto`, `en`, or `zh-CN` while preserving source identifiers and commands.
+- Configurable detail: choose `concise`, `standard`, or `detailed`; Context Packs have a size limit.
+- Purpose-specific forms: handoffs capture Before/After evidence, specs capture current truth, and Context Packs remain minimal loading routes.
+- Legacy-safe adoption: existing records keep their language, format, filenames, and content until explicitly upgraded.
 
 ## What it maintains
 
@@ -35,6 +37,7 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 - Private branch/worktree state: the current handoff and paused tasks are stored under Git metadata and are never committed.
 - Root and module `README.md` files: generated navigation blocks without rewriting human prose.
 - `AGENTS.md`, `CLAUDE.md`, and Cursor rules: durable instructions that tell coding agents to run the workflow autonomously.
+- `.context-ledger/writing-quality.md`: local evidence, language, and record-form rules available to every AI tool.
 
 ## Compatibility
 
@@ -96,13 +99,27 @@ You do **not** need to run `ctx begin`, name a handoff, or remember lifecycle co
 
 1. retrieve the relevant repository and feature context;
 2. start a change handoff before implementation;
-3. update code and tests;
-4. record the affected code path, decisions, boundaries, and verification;
+3. update code and execute claimed checks through the verification recorder;
+4. derive changed paths from Git and record Before/After behavior, boundaries, and evidence;
 5. update the stable feature spec and Context Pack;
 6. refresh affected module README files and the root README summary;
 7. close the handoff and validate the ledger.
 
 On a feature branch, shared monthly indexes and README summary blocks are intentionally left unchanged until merge.
+
+### Recording language and form
+
+The default quality policy is:
+
+```json
+{
+  "language": "auto",
+  "detail": "standard",
+  "max_context_pack_lines": 180
+}
+```
+
+With `auto`, the agent follows nearby repository documentation, then the user's language when no convention exists. Paths, symbols, commands, protocol fields, and error text stay in their source form. Handoffs, stable specs, and Context Packs deliberately use different Markdown structures because they answer different questions; existing documents are not reformatted during upgrade.
 
 ### 3. Switch tasks naturally
 
@@ -170,6 +187,8 @@ The exact month is generated from the completion date. Monthly grouping keeps th
 - Feature branches avoid shared derived files by default, and `team-check` reports likely team conflicts before review.
 - Active work cannot silently switch to another feature; it must be paused with resumable state first.
 - Context Packs detect missing or modified tracked files with SHA-256 fingerprints.
+- Evidence-quality records reject unresolved language, placeholders, vague standalone claims, missing concrete paths, incomplete Before/After behavior, and unverified results.
+- Verification output is shown to the active agent but only a hash and metadata are persisted; common secret-bearing command arguments are redacted.
 - Managed files use atomic replacement, and mutating commands use a short repository lock to prevent concurrent writers.
 - The runtime uses the Python 3.10+ standard library and requires no API key.
 - Semantic documentation remains the agent's responsibility; scripts enforce deterministic structure, lifecycle state, and links.

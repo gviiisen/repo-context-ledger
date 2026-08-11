@@ -2,6 +2,8 @@
 
 Use three layers of repository knowledge.
 
+New v0.4 records use `Quality profile: evidence-v1`. Their language and detail metadata come from `.context-ledger/config.json`; legacy documents remain valid and are not rewritten automatically. Use [writing-quality.md](writing-quality.md) for evidence, language, and purpose-specific form rules.
+
 ## `docs/ai/`: repository orientation
 
 Store information that applies across features: repository purpose, major modules, shared architecture, environment conventions, and navigation guidance. Keep it concise and link to stable feature specs.
@@ -11,6 +13,8 @@ Store information that applies across features: repository purpose, major module
 Keep one compact Context Pack per feature or bounded subsystem. Use it as the first document loaded after a context switch. Record the minimum load order, entry points, contracts, boundaries, verification, stable-spec links, and tracked-file fingerprints.
 
 Context Packs route an agent to current truth; they do not replace stable specs. Refresh a pack after its tracked files change. Strict validation treats changed or missing fingerprints as stale context.
+
+Use a compact navigation form: `Read first`, `Read if needed`, and `Do not load by default`. Context Packs have a configurable maximum line count.
 
 ## `docs/specs/`: current feature truth
 
@@ -24,6 +28,8 @@ Create one document per durable feature, interface, or bounded subsystem. Descri
 - related historical changes.
 
 Update this layer when the current implementation changes. Do not append chronological notes to the narrative; the managed related-changes block provides history.
+
+Use a current-state form: concrete path/symbol ownership, input → flow → persistence/dependency → output, boundaries, and reliable verification commands. Never copy a handoff's chronological narration into a spec.
 
 ## `docs/changes/`: chronological handoffs
 
@@ -40,6 +46,8 @@ docs/changes/YYYY/MM/<individual-change>.md
 The root history index lists months only. Each monthly index lists that month's individual changes, preventing a single document from growing without bound.
 
 Each handoff has a unique timestamp/actor/token filename plus `Handoff ID`, `Actor`, and `Branch` metadata. This allows contributors to create changes concurrently without claiming the same path.
+
+Use a chronological evidence form: Before/After behavior, path/symbol responsibilities, invariants, failure/recovery, deliberate non-changes, documentation impact, open questions, Git-derived changed paths, and verification executed by the runtime.
 
 Paused handoffs keep `Status: paused`, a resume summary, the next action, base commit, and dirty paths. In a Git repository, active handoff, active feature, paused stack, and recent features are private workspace state under Git metadata and isolated by branch/worktree. They are not committed. In a non-Git directory, the fallback state remains `.context-ledger/context-state.json`. Agents use `status` and lifecycle commands rather than editing state directly.
 
@@ -58,3 +66,4 @@ Context Packs record both a source commit and a base branch/commit. `team-check`
 - Prefer adding indexes and managed blocks over reorganizing a mature repository.
 - Configure exceptional paths in `.context-ledger/config.json` instead of duplicating documents.
 - Re-running `init` migrates v2 shared `.active-handoff` and context state into private v3 workspace state after the new state is safely written.
+- Upgrading to v0.4 adds the quality policy and templates without changing existing record language, format, filenames, or content. Strict evidence checks apply only to documents marked `evidence-v1`.

@@ -1,6 +1,6 @@
 ---
 name: repo-context-ledger
-description: Maintain durable, AI-friendly repository context whenever an agent initializes a repository, implements or fixes behavior, refactors code, changes an interface, pauses or switches tasks, resumes prior work, hands work to another AI session, collaborates across Git branches or worktrees, prepares a pull request, or completes a coding task. Use this skill to create and update Context Packs, docs/ai, stable feature specifications, branch-safe active and paused handoffs, change history, and managed README summaries without asking the user to run bookkeeping commands.
+description: Maintain durable, evidence-based repository context whenever an agent initializes a repository, implements or fixes behavior, refactors code, changes an interface, pauses or switches tasks, resumes prior work, hands work to another AI session, collaborates across Git branches or worktrees, prepares a pull request, or completes a coding task. Use this skill to create and validate language-aware Context Packs, docs/ai, stable feature specifications, branch-safe handoffs, verified change history, and managed README summaries without asking the user to run bookkeeping commands.
 ---
 
 # Repo Context Ledger
@@ -25,8 +25,9 @@ When the user asks to initialize, adopt, or configure repository context documen
 
 1. Run `python <skill-dir>/scripts/ledger.py --repo <repository-root> init`.
 2. Inspect the generated `.context-ledger/config.json`, detected modules, and existing documentation.
-3. Preserve existing `AGENTS.md`, `CLAUDE.md`, README content, and documentation. Only managed blocks may be regenerated.
-4. Summarize what was added. Do not require the user to learn internal lifecycle commands.
+3. Set `quality.language` (`auto`, `en`, or `zh-CN`) and `quality.detail` (`concise`, `standard`, or `detailed`) only when the repository needs a non-default policy.
+4. Preserve existing `AGENTS.md`, `CLAUDE.md`, README content, and documentation. Only managed blocks may be regenerated.
+5. Summarize what was added. Do not require the user to learn internal lifecycle commands.
 
 Read [document-model.md](references/document-model.md) when choosing where information belongs or migrating an existing documentation layout.
 
@@ -35,13 +36,14 @@ Read [document-model.md](references/document-model.md) when choosing where infor
 Apply this workflow autonomously for features, bug fixes, refactors, interface changes, and other changes that alter behavior. Do not ask the user to run ledger commands.
 
 1. Before editing code, run `python .context-ledger/ledger.py status`. Active state is private to the current Git branch and worktree; do not look for or create a shared `.active-handoff` file.
-2. If there is no active handoff, run:
+2. Resolve the record language. Follow configured language; for `auto`, use nearby documentation or the user's language. Keep code identifiers in source form.
+3. If there is no active handoff, run:
 
    ```text
-   python .context-ledger/ledger.py start --title "<concise task title>"
+   python .context-ledger/ledger.py start --title "<concise task title>" --language <en|zh-CN>
    ```
 
-3. Load the feature Context Pack:
+4. Load the feature Context Pack:
 
    ```text
    python .context-ledger/ledger.py focus --feature "<feature>"
@@ -53,18 +55,18 @@ Apply this workflow autonomously for features, bug fixes, refactors, interface c
    python .context-ledger/ledger.py pack --feature "<feature>" --file <important-file> --spec <related-spec>
    ```
 
-4. When the feature is not yet known, retrieve likely background documents:
+5. When the feature is not yet known, retrieve likely background documents:
 
    ```text
    python .context-ledger/ledger.py context --query "<feature, interface, or module>"
    ```
 
-5. Read the returned stable specs and relevant project context before broad code exploration.
-6. Implement and verify the code change.
-7. Update the active handoff with intent, changed behavior, code paths, boundaries, verification, and documentation impact. Remove every `TODO` placeholder.
-8. Refresh the Context Pack fingerprints and content when its tracked code paths changed.
-9. Update an existing file under the configured stable-spec directory (default `docs/specs/`) when current behavior, boundaries, contracts, or code navigation changed. Create one from `.context-ledger/templates/spec-template.md` when no suitable stable spec exists.
-10. Finish and link the change to every affected stable spec:
+6. Read the returned stable specs and relevant project context before broad code exploration.
+7. Implement the code change. Run every claimed check through `python .context-ledger/ledger.py verify -- <command>`. If verification is unavailable, record it with `verify --not-run --reason "<substantive reason>"`.
+8. Run `python .context-ledger/ledger.py evidence`, then update the handoff from the generated changed paths. Read [.context-ledger/writing-quality.md](.context-ledger/writing-quality.md) and remove every `TODO` placeholder.
+9. Refresh the Context Pack fingerprints and content when its tracked code paths changed.
+10. Update an existing file under the configured stable-spec directory (default `docs/specs/`) when current behavior, boundaries, contracts, or code navigation changed. Create one from `.context-ledger/templates/spec-template.md` when no suitable stable spec exists; resolve its language and detail metadata.
+11. Finish and link the change to every affected stable spec:
 
    ```text
    python .context-ledger/ledger.py finish --spec docs/specs/<feature>.md
@@ -76,7 +78,7 @@ Apply this workflow autonomously for features, bug fixes, refactors, interface c
    python .context-ledger/ledger.py finish --no-spec --reason "<why no stable spec applies>"
    ```
 
-11. Run `python .context-ledger/ledger.py check --strict` and resolve failures before reporting completion.
+12. Run `python .context-ledger/ledger.py check --strict` and resolve failures before reporting completion.
 
 On a feature branch, normal lifecycle commands intentionally leave shared README blocks and monthly indexes unchanged. This prevents generated-file conflicts between contributors. The handoff, stable spec, and Context Pack remain normal reviewable files.
 
@@ -140,12 +142,10 @@ For read-only analysis, questions, formatting-only edits, or tasks that do not c
 
 ## Writing rules
 
-- Record current truth in `docs/specs/`; do not turn stable specs into chronological diaries.
-- Record why and what changed in `docs/changes/`.
-- Keep each change in its own file. Let the runtime build small per-month indexes; never accumulate all change narratives in one document.
+- Apply [writing-quality.md](references/writing-quality.md) to `evidence-v1` records. Preserve legacy records unless explicitly upgrading them.
+- Record current truth in `docs/specs/`, chronological evidence in `docs/changes/`, and minimal loading routes in Context Packs.
+- Keep each change in its own file and let the runtime build monthly indexes.
 - Keep the runtime-generated handoff ID, actor, and branch metadata. Unique filenames are intentional and prevent two contributors from creating the same history path.
-- Record cross-cutting repository orientation in `docs/ai/`.
-- Keep each `docs/ai/context-packs/<feature>.md` file concise. Link to stable specs and track only the minimum code paths required to resume work.
-- Include concrete code paths, entry points, boundaries, failure modes, and verification commands.
+- Keep Context Packs under the configured line limit and track only the minimum paths required to resume work.
 - Never rewrite README prose outside managed markers.
-- Never invent tests, behavior, or code paths that were not inspected.
+- Never persist secrets in records or invent tests, behavior, or code paths that were not inspected.

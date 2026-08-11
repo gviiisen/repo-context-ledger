@@ -41,6 +41,7 @@ class LedgerFlowTests(unittest.TestCase):
             text=True,
             capture_output=True,
             encoding="utf-8",
+            errors="replace",
         )
         if result.returncode != expected:
             self.fail(
@@ -55,6 +56,7 @@ class LedgerFlowTests(unittest.TestCase):
             text=True,
             capture_output=True,
             encoding="utf-8",
+            errors="replace",
         )
         if result.returncode != expected:
             self.fail(
@@ -77,15 +79,65 @@ class LedgerFlowTests(unittest.TestCase):
 
     def fill_context_pack(self, path: Path):
         text = path.read_text(encoding="utf-8")
+        text = text.replace("Language: auto", "Language: en")
         replacements = [
             "Keeps authentication behavior understandable across fresh AI sessions.",
-            "Read the linked spec first, followed by the tracked implementation file.",
-            "The public entry point is the tracked authentication service module.",
+            "Read `docs/specs/authentication.md` followed by `src/auth.py`.",
+            "Read `src/auth.py` only when authentication implementation details are required.",
+            "Do not load unrelated payment modules for authentication work.",
+            "src/auth.py", "Provides the public authentication service entry point.",
             "Preserve credential validation, permissions, and existing failure behavior.",
-            "Run the authentication unit tests and the strict ledger validation.",
+            "Authentication failures remain explicit and callers retry through the existing flow.",
+            "Payment processing and unrelated authorization policy remain out of scope.",
+            "Run `python -m unittest` to verify authentication behavior without claiming a result.",
         ]
         for replacement in replacements:
-            text = re.sub(r"(?m)^TODO:.*$", replacement, text, count=1)
+            text = re.sub(r"TODO:[^|`\r\n]*", replacement, text, count=1)
+        path.write_text(text, encoding="utf-8")
+
+    def fill_handoff(self, path: Path, code_path: str, docs_path: str):
+        text = path.read_text(encoding="utf-8")
+        text = text.replace("Language: auto", "Language: en")
+        replacements = [
+            "Deliver the requested behavior and make its acceptance result observable to callers.",
+            "The previous behavior returned the uncorrected result for the affected request.",
+            "The corrected behavior now returns the expected result while preserving compatibility.",
+            code_path,
+            "Owns the affected request path and its behavior.",
+            "Applies the focused behavior correction without unrelated refactoring.",
+            "Existing public contracts and authorization rules remain unchanged.",
+            "Failures keep the existing error contract and recovery remains retry-safe.",
+            "Unrelated modules, persistence schemas, and public routes are not changed.",
+            f"`{docs_path}`",
+            "The stable specification records the current behavior and links this change.",
+            "None.",
+        ]
+        for replacement in replacements:
+            text = re.sub(r"TODO:[^|`\r\n]*", replacement, text, count=1)
+        path.write_text(text, encoding="utf-8")
+
+    def fill_spec(self, path: Path):
+        text = path.read_text(encoding="utf-8")
+        text = text.replace("{{TITLE}}", "Validation behavior")
+        text = text.replace("{{LANGUAGE}}", "en")
+        text = text.replace("{{DETAIL}}", "standard")
+        text = text.replace("{{DATE}}", "2026-08-11")
+        replacements = [
+            "Validation returns explicit errors for unsupported requests and preserves accepted behavior.",
+            "src/validation.py",
+            "Owns request validation and the public error mapping.",
+            "Requests contain validated fields and reject unsupported values before processing.",
+            "The validator applies ordered rules before calling downstream dependencies.",
+            "No durable state is written and dependency errors preserve their existing contract.",
+            "Callers receive the accepted value or an explicit validation error.",
+            "Accepted requests preserve their existing validation invariants.",
+            "Authorization remains upstream and validation is deterministic under concurrent calls.",
+            "Invalid requests fail before side effects and callers can correct then retry.",
+            "Persistence and unrelated request routing remain outside this feature.",
+            "Run `python -m unittest` to verify the validation contract.",
+        ]
+        for replacement in replacements:
+            text = re.sub(r"TODO:[^|`\r\n]*", replacement, text, count=1)
         path.write_text(text, encoding="utf-8")
 
     def test_end_to_end_preserves_readmes_and_links_specs(self):
@@ -106,10 +158,16 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertTrue((repo / ".cursor/rules/repo-context-ledger.mdc").exists())
             self.assertTrue((repo / ".context-ledger/context-state.json").exists())
             self.assertTrue((repo / ".context-ledger/templates/context-pack-template.md").exists())
+            self.assertTrue((repo / ".context-ledger/writing-quality.md").exists())
             self.assertEqual(
-                3,
+                4,
                 json.loads((repo / ".context-ledger/config.json").read_text(encoding="utf-8"))["schema_version"],
             )
+            quality = json.loads(
+                (repo / ".context-ledger/config.json").read_text(encoding="utf-8")
+            )["quality"]
+            self.assertEqual("auto", quality["language"])
+            self.assertEqual("standard", quality["detail"])
             self.assertIn("Keep this text.", (repo / "AGENTS.md").read_text(encoding="utf-8"))
 
             # Re-initializing from the repository-local runtime is safe and idempotent.
@@ -131,7 +189,8 @@ class LedgerFlowTests(unittest.TestCase):
                 "## Verification\n\nRun payment tests.\n",
                 encoding="utf-8",
             )
-            handoff.write_text(handoff.read_text(encoding="utf-8").replace("TODO:", "Recorded:"), encoding="utf-8")
+            self.fill_handoff(handoff, "apps/payments/status.ts", "docs/specs/payment-status.md")
+            self.run_ledger(repo, "verify", "--", sys.executable, "-c", "print('payment verification passed')")
             self.run_ledger(repo, "finish", "--spec", "docs/specs/payment-status.md")
             completed_state = json.loads(
                 (repo / ".context-ledger/context-state.json").read_text(encoding="utf-8")
@@ -287,7 +346,178 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertRegex(LEDGER_MODULE.field_value(text, "Handoff ID"), r"^\d{14}-alice-[0-9a-f]{10}$")
             self.assertIn("-alice-", handoff.name)
 
-    def test_v2_git_state_and_active_pointer_migrate_to_private_v3_state(self):
+    def test_evidence_quality_records_git_paths_and_real_verification(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            started = self.run_ledger(
+                repo,
+                "start",
+                "--title",
+                "Repair service behavior",
+                "--feature",
+                "service",
+                "--language",
+                "zh-CN",
+            )
+            handoff = repo / started.stdout.strip().splitlines()[-1]
+            source = repo / "src/service.py"
+            source.write_text("VALUE = 2\n", encoding="utf-8")
+            self.fill_handoff(handoff, "src/service.py", "docs/specs/service.md")
+
+            verified = self.run_ledger(
+                repo,
+                "verify",
+                "--",
+                sys.executable,
+                "-c",
+                "import sys; print(sys.argv[-1])",
+                "--token",
+                "super-secret-value",
+            )
+            self.assertIn("Recorded passed verification", verified.stdout)
+            captured = self.run_ledger(repo, "evidence")
+            self.assertIn("src/service.py", captured.stdout)
+            text = handoff.read_text(encoding="utf-8")
+            self.assertEqual("zh-CN", LEDGER_MODULE.field_value(text, "Language"))
+            self.assertIn("- Status: passed", text)
+            self.assertIn("<redacted>", text)
+            self.assertNotIn("super-secret-value", text)
+            self.assertIn("content not persisted", text)
+            self.assertIn("`src/service.py`", LEDGER_MODULE.managed_text(
+                text, LEDGER_MODULE.EVIDENCE_START, LEDGER_MODULE.EVIDENCE_END
+            ))
+
+            self.run_ledger(
+                repo,
+                "finish",
+                "--no-spec",
+                "--reason",
+                "This focused test fixture has no durable product specification to maintain.",
+            )
+            self.assertEqual("completed", field_from_file(handoff, "Status"))
+            degraded = re.sub(
+                r"(?m)^Before:.*$", "Before: vague", handoff.read_text(encoding="utf-8"), count=1
+            )
+            handoff.write_text(degraded, encoding="utf-8")
+            strict = self.run_ledger(repo, "check", "--strict", expected=2)
+            self.assertIn("requires a substantive Before", strict.stderr)
+
+    def test_failed_verification_blocks_quality_handoff_until_a_check_passes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            started = self.run_ledger(
+                repo, "start", "--title", "Repair validation", "--language", "en"
+            )
+            handoff = repo / started.stdout.strip().splitlines()[-1]
+            self.fill_handoff(handoff, "src/validation.py", "docs/specs/validation.md")
+            self.run_ledger(
+                repo, "verify", "--", sys.executable, "-c", "raise SystemExit(3)", expected=1
+            )
+            blocked = self.run_ledger(
+                repo,
+                "finish",
+                "--no-spec",
+                "--reason",
+                "This fixture intentionally has no durable product specification.",
+                expected=2,
+            )
+            self.assertIn("failed verification", blocked.stderr)
+            self.run_ledger(repo, "verify", "--", sys.executable, "-c", "print('passed')")
+            self.run_ledger(
+                repo,
+                "finish",
+                "--no-spec",
+                "--reason",
+                "This fixture intentionally has no durable product specification.",
+            )
+
+    def test_quality_handoff_accepts_substantive_verification_exception(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            started = self.run_ledger(
+                repo, "start", "--title", "Document external behavior", "--language", "en"
+            )
+            handoff = repo / started.stdout.strip().splitlines()[-1]
+            self.fill_handoff(handoff, "config/external-service.json", "docs/specs/external-service.md")
+            self.run_ledger(
+                repo,
+                "verify",
+                "--not-run",
+                "--reason",
+                "The external sandbox is unavailable in this isolated test environment.",
+            )
+            self.run_ledger(
+                repo,
+                "finish",
+                "--no-spec",
+                "--reason",
+                "This fixture intentionally has no durable product specification.",
+            )
+
+    def test_quality_handoff_rejects_auto_language_and_vague_claims(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            started = self.run_ledger(repo, "start", "--title", "Repair vague behavior")
+            handoff = repo / started.stdout.strip().splitlines()[-1]
+            text = handoff.read_text(encoding="utf-8")
+            text = re.sub(r"TODO:[^|`\r\n]*", "updated relevant files", text)
+            handoff.write_text(text, encoding="utf-8")
+            blocked = self.run_ledger(
+                repo,
+                "finish",
+                "--no-spec",
+                "--reason",
+                "This fixture intentionally has no durable product specification.",
+                expected=2,
+            )
+            self.assertIn("Language must resolve", blocked.stderr)
+            self.assertIn("vague standalone claim", blocked.stderr)
+
+    def test_evidence_quality_validates_specs_and_context_pack_size(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            source = repo / "src/validation.py"
+            source.parent.mkdir(parents=True)
+            source.write_text("ENABLED = True\n", encoding="utf-8")
+            self.run_ledger(repo, "init")
+
+            spec = repo / "docs/specs/validation.md"
+            shutil.copy2(repo / ".context-ledger/templates/spec-template.md", spec)
+            invalid = self.run_ledger(repo, "check", "--strict", expected=2)
+            self.assertIn("Stable spec still contains template placeholders", invalid.stderr)
+            self.fill_spec(spec)
+            self.run_ledger(repo, "check", "--strict")
+
+            created = self.run_ledger(
+                repo,
+                "pack",
+                "--feature",
+                "validation",
+                "--language",
+                "en",
+                "--file",
+                "src/validation.py",
+                "--spec",
+                "docs/specs/validation.md",
+            )
+            pack = repo / created.stdout.splitlines()[0]
+            self.fill_context_pack(pack)
+            config_path = repo / ".context-ledger/config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["quality"]["max_context_pack_lines"] = 60
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            pack.write_text(
+                pack.read_text(encoding="utf-8") + "\n".join("Extra evidence line." for _ in range(30)) + "\n",
+                encoding="utf-8",
+            )
+            oversized = self.run_ledger(repo, "focus", "--feature", "validation", expected=2)
+            self.assertIn("configured maximum is 60", oversized.stderr)
+
+    def test_v2_git_state_and_active_pointer_migrate_to_private_v4_state(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw) / "repo"
             self.init_git_repo(repo, "Alice")
@@ -319,13 +549,13 @@ class LedgerFlowTests(unittest.TestCase):
             config_path.write_text(json.dumps(config), encoding="utf-8")
 
             migrated = self.run_ledger(repo, "init")
-            self.assertIn("Migrated shared v0.2 state to workspace-local v0.3 state", migrated.stdout)
+            self.assertIn("Migrated shared pre-v0.3 state to workspace-local state", migrated.stdout)
             state = json.loads(LEDGER_MODULE.context_state_path(repo).read_text(encoding="utf-8"))
             self.assertEqual(handoff_rel, state["active_handoff"])
             self.assertEqual("authentication", state["active_feature"])
             self.assertFalse(legacy_state.exists())
             self.assertFalse(legacy_pointer.exists())
-            self.assertEqual(3, json.loads(config_path.read_text(encoding="utf-8"))["schema_version"])
+            self.assertEqual(4, json.loads(config_path.read_text(encoding="utf-8"))["schema_version"])
 
     def test_git_worktrees_have_independent_active_state(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -510,15 +740,17 @@ class LedgerFlowTests(unittest.TestCase):
             self.run_ledger(repo, "check", "--strict")
             self.assertTrue((repo / "knowledge/changes/README.md").exists())
 
-    def test_legacy_repository_migrates_to_v3_without_losing_docs(self):
+    def test_legacy_repository_migrates_to_v4_without_losing_docs(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
             self.run_ledger(repo, "init")
             project_context = repo / "docs/ai/project-context.md"
             project_context.write_text(
-                project_context.read_text(encoding="utf-8").replace(
-                    "TODO: Summarize what this repository delivers and who uses it.",
+                re.sub(
+                    r"TODO: Summarize what this repository delivers and who uses it[^\n]*",
                     "Preserved project purpose.",
+                    project_context.read_text(encoding="utf-8"),
+                    count=1,
                 ),
                 encoding="utf-8",
             )
@@ -531,7 +763,7 @@ class LedgerFlowTests(unittest.TestCase):
 
             self.run_ledger(repo, "init")
             migrated = json.loads(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(3, migrated["schema_version"])
+            self.assertEqual(4, migrated["schema_version"])
             self.assertTrue((repo / ".context-ledger/context-state.json").exists())
             self.assertTrue((repo / ".context-ledger/templates/context-pack-template.md").exists())
             self.assertIn("Preserved project purpose.", project_context.read_text(encoding="utf-8"))

@@ -1,4 +1,4 @@
 interface:
   display_name: "Repo Context Ledger"
-  short_description: "Preserve team coding context across branches"
-  default_prompt: "Use $repo-context-ledger to maintain this repository's feature context and coordinate branch-safe handoffs."
+  short_description: "Maintain verified, language-aware coding context"
+  default_prompt: "Use $repo-context-ledger to maintain evidence-based repository context and verified handoffs."
