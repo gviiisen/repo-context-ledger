@@ -18,7 +18,16 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 - what changed, why it changed, and how it was verified;
 - which project and module README summaries need refreshing.
 
-## What's new in v0.4.0
+## What's new in v0.4.1
+
+- Mature-repository adoption: existing `YYYY-MM/...` change trees are grouped at the month root instead of producing an index in every date or feature directory.
+- Existing monthly `YYYY-MM/index.md` files are preserved and reused as the month link; the runtime does not rewrite their human-maintained content.
+- Legacy and native trees for the same calendar month share one root-index entry, preferring an existing human-maintained month index.
+- Safe index cleanup: an obsolete `README.md` is removed only when the runtime can reproduce it byte-for-byte from current sibling records. Ambiguous or human-edited files are retained.
+- Worktree boundaries: module discovery stops at nested Git repositories and worktrees, preventing duplicate module entries and README updates.
+- Correct history counts: monthly `index.md` files are treated as indexes rather than change records.
+
+## Added in v0.4.0
 
 - Evidence-first records: new handoffs, specs, and Context Packs use the backward-compatible `evidence-v1` quality profile.
 - Real verification capture: `verify` executes the check and records its command, status, exit code, duration, and output hash without persisting command output.

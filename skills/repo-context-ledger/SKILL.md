@@ -27,7 +27,8 @@ When the user asks to initialize, adopt, or configure repository context documen
 2. Inspect the generated `.context-ledger/config.json`, detected modules, and existing documentation.
 3. Set `quality.language` (`auto`, `en`, or `zh-CN`) and `quality.detail` (`concise`, `standard`, or `detailed`) only when the repository needs a non-default policy.
 4. Preserve existing `AGENTS.md`, `CLAUDE.md`, README content, and documentation. Only managed blocks may be regenerated.
-5. Summarize what was added. Do not require the user to learn internal lifecycle commands.
+5. Treat nested Git repositories and worktrees as discovery boundaries. When adopting legacy `docs/changes/YYYY-MM/...` trees, preserve and reuse an existing monthly `index.md`; remove an obsolete index only when the runtime can reproduce the whole file byte-for-byte from current sibling records.
+6. Summarize what was added. Do not require the user to learn internal lifecycle commands.
 
 Read [document-model.md](references/document-model.md) when choosing where information belongs or migrating an existing documentation layout.
 

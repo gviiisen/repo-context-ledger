@@ -789,6 +789,140 @@ class LedgerFlowTests(unittest.TestCase):
             config = json.loads((repo / ".context-ledger/config.json").read_text(encoding="utf-8"))
             self.assertEqual([], config["modules"])
 
+    def test_nested_git_repositories_and_worktrees_are_not_modules(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            module = repo / "apps/primary"
+            module.mkdir(parents=True)
+            (module / "package.json").write_text('{"name":"primary"}\n', encoding="utf-8")
+
+            nested_repo = repo / "checkouts/source-checkout"
+            nested_repo.mkdir(parents=True)
+            (nested_repo / ".git").mkdir()
+            (nested_repo / "package.json").write_text('{"name":"nested"}\n', encoding="utf-8")
+
+            nested_worktree = repo / "worktrees/task"
+            nested_module = nested_worktree / "apps/duplicate"
+            nested_module.mkdir(parents=True)
+            (nested_worktree / ".git").write_text("gitdir: C:/tmp/worktree\n", encoding="utf-8")
+            (nested_worktree / "package.json").write_text('{"name":"worktree"}\n', encoding="utf-8")
+            (nested_module / "package.json").write_text('{"name":"duplicate"}\n', encoding="utf-8")
+
+            self.run_ledger(repo, "init")
+            config = json.loads((repo / ".context-ledger/config.json").read_text(encoding="utf-8"))
+            self.assertEqual(["apps/primary"], [item["path"] for item in config["modules"]])
+            self.assertFalse((nested_repo / "README.md").exists())
+            self.assertFalse((nested_module / "README.md").exists())
+
+    def test_legacy_month_layout_reuses_index_and_removes_leaf_indexes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            month = repo / "docs/changes/2026-07"
+            first = month / "2026-07-14/data-import/handoff.md"
+            second = month / "2026-07-15/repair-cache.md"
+            first.parent.mkdir(parents=True)
+            second.parent.mkdir(parents=True)
+            first.write_text("# Import data\n\nStatus: completed\n", encoding="utf-8")
+            second.write_text("# Repair cache\n\nStatus: completed\n", encoding="utf-8")
+            legacy_index = month / "index.md"
+            legacy_index.write_text("# Existing July index\n\nHuman-maintained history.\n", encoding="utf-8")
+
+            generated = (
+                "# Changes in 2026-07-2026-07-14-data-import\n\n"
+                "<!-- repo-context-ledger:start -->\n"
+                "## Changes in 2026-07-2026-07-14-data-import\n\n"
+                "- [Import data](handoff.md) — completed\n"
+                "<!-- repo-context-ledger:end -->\n"
+            )
+            stale_leaf = first.parent / "README.md"
+            stale_leaf.write_text(generated, encoding="utf-8")
+            human_readme = second.parent / "README.md"
+            human_readme.write_text("# Human notes\n\nKeep this file.\n", encoding="utf-8")
+            marked_human_readme = month / "2026-07-16/README.md"
+            marked_human_readme.parent.mkdir(parents=True)
+            marked_human_readme.write_text(
+                "# Changes in 2026-07-2026-07-16\n\n"
+                "<!-- repo-context-ledger:start -->\n"
+                "Human-maintained history inside markers.\n"
+                "<!-- repo-context-ledger:end -->\n",
+                encoding="utf-8",
+            )
+            changed_source = month / "2026-07-17/change.md"
+            changed_source.parent.mkdir(parents=True)
+            changed_source.write_text("# Renamed change\n\nStatus: completed\n", encoding="utf-8")
+            changed_generated_readme = changed_source.parent / "README.md"
+            changed_generated_readme.write_text(
+                "# Changes in 2026-07-2026-07-17\n\n"
+                "<!-- repo-context-ledger:start -->\n"
+                "## Changes in 2026-07-2026-07-17\n\n"
+                "- [Old change name](change.md) — completed\n"
+                "<!-- repo-context-ledger:end -->\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_ledger(repo, "init")
+            self.assertIn("Removed obsolete generated change indexes: 1", result.stdout)
+            self.assertFalse(stale_leaf.exists())
+            self.assertEqual("# Human notes\n\nKeep this file.\n", human_readme.read_text(encoding="utf-8"))
+            self.assertTrue(marked_human_readme.exists())
+            self.assertTrue(changed_generated_readme.exists())
+            self.assertEqual(
+                "# Existing July index\n\nHuman-maintained history.\n",
+                legacy_index.read_text(encoding="utf-8"),
+            )
+            self.assertFalse((month / "README.md").exists())
+            root_index = (repo / "docs/changes/README.md").read_text(encoding="utf-8")
+            self.assertIn("[2026-07](2026-07/index.md) — 3 changes", root_index)
+
+    def test_mixed_month_layouts_share_one_existing_month_index(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            legacy_change = repo / "docs/changes/2026-07/2026-07-14/legacy.md"
+            native_change = repo / "docs/changes/2026/07/native.md"
+            legacy_change.parent.mkdir(parents=True)
+            native_change.parent.mkdir(parents=True)
+            legacy_change.write_text("# Legacy\n\nStatus: completed\n", encoding="utf-8")
+            native_change.write_text("# Native\n\nStatus: completed\n", encoding="utf-8")
+            legacy_index = repo / "docs/changes/2026-07/index.md"
+            legacy_index.write_text("# Existing index\n", encoding="utf-8")
+
+            self.run_ledger(repo, "init")
+            root_index = (repo / "docs/changes/README.md").read_text(encoding="utf-8")
+            self.assertEqual(1, root_index.count("[2026-07]"))
+            self.assertIn("[2026-07](2026-07/index.md) — 2 changes", root_index)
+            self.assertFalse((repo / "docs/changes/2026/07/README.md").exists())
+            self.assertEqual("# Existing index\n", legacy_index.read_text(encoding="utf-8"))
+
+    def test_non_month_directories_keep_their_leaf_indexes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            change = repo / "docs/changes/releases/v1/change.md"
+            change.parent.mkdir(parents=True)
+            change.write_text("# Release change\n\nStatus: completed\n", encoding="utf-8")
+
+            self.run_ledger(repo, "init")
+            self.assertTrue((change.parent / "README.md").exists())
+            self.assertFalse((repo / "docs/changes/releases/README.md").exists())
+
+    def test_native_month_layout_still_uses_one_managed_readme(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            first = repo / "docs/changes/2026/07/task/handoff.md"
+            second = repo / "docs/changes/2026/07/repair.md"
+            first.parent.mkdir(parents=True)
+            second.parent.mkdir(parents=True, exist_ok=True)
+            first.write_text("# Task\n\nStatus: completed\n", encoding="utf-8")
+            second.write_text("# Repair\n\nStatus: completed\n", encoding="utf-8")
+
+            self.run_ledger(repo, "init")
+            month_index = repo / "docs/changes/2026/07/README.md"
+            self.assertTrue(month_index.exists())
+            self.assertIn("Task", month_index.read_text(encoding="utf-8"))
+            self.assertIn("Repair", month_index.read_text(encoding="utf-8"))
+            self.assertFalse((first.parent / "README.md").exists())
+            root_index = (repo / "docs/changes/README.md").read_text(encoding="utf-8")
+            self.assertIn("[2026-07](2026/07/README.md) — 2 changes", root_index)
+
     def test_invalid_config_is_not_silently_overwritten(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)

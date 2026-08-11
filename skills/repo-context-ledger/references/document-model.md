@@ -64,6 +64,8 @@ Context Packs record both a source commit and a base branch/commit. `team-check`
 - Reuse an existing `docs/specs/` or equivalent stable documentation area when it already serves this purpose.
 - Preserve existing files and prose.
 - Prefer adding indexes and managed blocks over reorganizing a mature repository.
+- Recognize mature `docs/changes/YYYY-MM/...` trees as a legacy monthly layout. Reuse an existing `YYYY-MM/index.md` without rewriting its human content, group nested handoffs at that month root, and do not create per-date or per-feature indexes. Delete a stale generated index only when its full content is reproducible from current sibling records; preserve ambiguous files.
+- Treat nested Git repositories and worktrees as module-discovery boundaries.
 - Configure exceptional paths in `.context-ledger/config.json` instead of duplicating documents.
 - Re-running `init` migrates v2 shared `.active-handoff` and context state into private v3 workspace state after the new state is safely written.
 - Upgrading to v0.4 adds the quality policy and templates without changing existing record language, format, filenames, or content. Strict evidence checks apply only to documents marked `evidence-v1`.

@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 VERSION = 4
-TOOL_VERSION = "0.4.0"
+TOOL_VERSION = "0.4.1"
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
 BLOCK_END = "<!-- repo-context-ledger:end -->"
@@ -45,6 +45,9 @@ MODULE_MANIFESTS = {
     "package.json", "pyproject.toml", "Cargo.toml", "go.mod", "pom.xml",
     "build.gradle", "build.gradle.kts", "composer.json", "Gemfile",
 }
+YEAR_PATTERN = re.compile(r"^\d{4}$")
+MONTH_PATTERN = re.compile(r"^(0[1-9]|1[0-2])$")
+LEGACY_MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 REQUIRED_HANDOFF_HEADINGS = (
     "## Intent", "## Changed behavior", "## Code paths",
     "## Boundaries and risks", "## Verification", "## Documentation updates",
@@ -588,6 +591,9 @@ def discover_modules(repo: Path) -> list[dict[str, str]]:
         try:
             relative = current_path.relative_to(repo)
         except ValueError:
+            continue
+        if relative.parts and (current_path / ".git").exists():
+            dirs[:] = []
             continue
         dirs[:] = [d for d in dirs if d not in IGNORED_DIRS and not d.startswith(".")]
         if len(relative.parts) >= 3:
@@ -1165,8 +1171,88 @@ def all_specs(repo: Path, config: dict) -> list[Path]:
 
 def all_changes(repo: Path, config: dict) -> list[Path]:
     base = safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes")
-    paths = [p for p in base.rglob("*.md") if p.name.casefold() != "readme.md"]
+    paths = [p for p in base.rglob("*.md") if not is_change_index(p, base)]
     return sorted(paths, key=lambda p: p.as_posix(), reverse=True)
+
+
+def recognized_month_bucket(parent_parts: tuple[str, ...], changes_root: Path) -> tuple[str, Path] | None:
+    if (
+        len(parent_parts) >= 2
+        and YEAR_PATTERN.fullmatch(parent_parts[0])
+        and MONTH_PATTERN.fullmatch(parent_parts[1])
+    ):
+        label = f"{parent_parts[0]}-{parent_parts[1]}"
+        return label, changes_root / parent_parts[0] / parent_parts[1]
+    if parent_parts and LEGACY_MONTH_PATTERN.fullmatch(parent_parts[0]):
+        return parent_parts[0], changes_root / parent_parts[0]
+    return None
+
+
+def is_change_index(path: Path, changes_root: Path) -> bool:
+    name = path.name.casefold()
+    if name == "readme.md":
+        return True
+    if name != "index.md":
+        return False
+    relative = path.relative_to(changes_root)
+    parent_parts = relative.parts[:-1]
+    if not parent_parts:
+        return True
+    bucket = recognized_month_bucket(parent_parts, changes_root)
+    return bucket is not None and bucket[1] == path.parent
+
+
+def change_month_bucket(change: Path, changes_root: Path) -> tuple[str, Path, bool]:
+    relative_parent = change.parent.relative_to(changes_root)
+    parent_parts = relative_parent.parts
+    recognized = recognized_month_bucket(parent_parts, changes_root)
+    if recognized:
+        return recognized[0], recognized[1], True
+    if parent_parts:
+        return relative_parent.as_posix().replace("/", "-"), change.parent, False
+    return "legacy", changes_root / "legacy", False
+
+
+def unchanged_generated_change_index(path: Path, changes_root: Path) -> bool:
+    """Return true only when the old generated file can be reproduced byte-for-byte."""
+    try:
+        relative_parent = path.parent.relative_to(changes_root)
+        text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    except (OSError, UnicodeError):
+        return False
+    if not relative_parent.parts:
+        return False
+    label = relative_parent.as_posix().replace("/", "-")
+    source_changes = sorted(
+        (candidate for candidate in path.parent.glob("*.md") if candidate.name.casefold() != "readme.md"),
+        key=lambda candidate: candidate.as_posix(),
+        reverse=True,
+    )
+    if not source_changes:
+        return False
+    entries = markdown_items(source_changes, path.parent)
+    expected = (
+        f"# Changes in {label}\n\n"
+        f"{BLOCK_START}\n"
+        f"## Changes in {label}\n\n"
+        + "\n".join(entries)
+        + f"\n{BLOCK_END}\n"
+    )
+    return text == expected
+
+
+def remove_obsolete_change_indexes(changes_root: Path, expected: set[Path]) -> int:
+    removed = 0
+    root_index = (changes_root / "README.md").resolve()
+    expected_resolved = {path.resolve() for path in expected}
+    for candidate in changes_root.rglob("README.md"):
+        resolved = candidate.resolve()
+        if resolved == root_index or resolved in expected_resolved:
+            continue
+        if unchanged_generated_change_index(candidate, changes_root):
+            candidate.unlink()
+            removed += 1
+    return removed
 
 
 def readme_body(repo: Path, config: dict, readme: Path, module: str | None) -> str:
@@ -1233,29 +1319,42 @@ def sync_repo(repo: Path, derived: bool = False) -> int:
     spec_lines = markdown_items(specs, spec_index.parent) or ["- No stable feature specs yet."]
     replace_block(spec_index, BLOCK_START, BLOCK_END, "## Index\n\n" + "\n".join(spec_lines), "# Stable feature context")
 
-    months: dict[tuple[str, Path], list[Path]] = {}
+    months: dict[tuple[str, str], dict[str, object]] = {}
     for change in changes:
-        relative_parent = change.parent.relative_to(changes_root)
-        if relative_parent.parts:
-            label = relative_parent.as_posix().replace("/", "-")
-            month_dir = change.parent
-        else:
-            label = "legacy"
-            month_dir = changes_root / "legacy"
-        months.setdefault((label, month_dir), []).append(change)
+        label, month_dir, recognized = change_month_bucket(change, changes_root)
+        key = ("month", label) if recognized else ("path", month_dir.as_posix())
+        bucket = months.setdefault(key, {"label": label, "directories": set(), "changes": []})
+        bucket["directories"].add(month_dir)
+        bucket["changes"].append(change)
     month_lines = []
-    for label, month_dir in sorted(months, key=lambda item: item[0], reverse=True):
-        month_index = month_dir / "README.md"
-        entries = markdown_items(months[(label, month_dir)], month_dir)
-        replace_block(
-            month_index,
-            BLOCK_START,
-            BLOCK_END,
-            f"## Changes in {label}\n\n" + "\n".join(entries),
-            f"# Changes in {label}",
-        )
+    expected_indexes: set[Path] = set()
+    ordered_months = sorted(months.values(), key=lambda item: str(item["label"]), reverse=True)
+    for bucket in ordered_months:
+        label = str(bucket["label"])
+        directories = sorted(bucket["directories"], key=lambda path: path.as_posix())
+        month_dir = next((path for path in directories if (path / "index.md").is_file()), None)
+        if month_dir is None:
+            month_dir = next((path for path in directories if (path / "README.md").is_file()), None)
+        if month_dir is None:
+            month_dir = next(
+                (path for path in directories if LEGACY_MONTH_PATTERN.fullmatch(path.name)),
+                directories[0],
+            )
+        legacy_index = month_dir / "index.md"
+        month_index = legacy_index if legacy_index.is_file() else month_dir / "README.md"
+        expected_indexes.add(month_index)
+        entries = markdown_items(bucket["changes"], month_dir)
+        if month_index.name.casefold() == "readme.md":
+            replace_block(
+                month_index,
+                BLOCK_START,
+                BLOCK_END,
+                f"## Changes in {label}\n\n" + "\n".join(entries),
+                f"# Changes in {label}",
+            )
         link = os.path.relpath(month_index, changes_root).replace(os.sep, "/")
         month_lines.append(f"- [{label}]({link}) — {len(entries)} changes")
+    removed_indexes = remove_obsolete_change_indexes(changes_root, expected_indexes)
     replace_block(
         change_index,
         BLOCK_START,
@@ -1272,6 +1371,8 @@ def sync_repo(repo: Path, derived: bool = False) -> int:
             continue
         readme = safe_repo_path(repo, module["readme"], "config.modules.readme")
         replace_block(readme, BLOCK_START, BLOCK_END, readme_body(repo, config, readme, module["path"]), f"# {Path(module['path']).name}")
+    if removed_indexes:
+        print(f"Removed obsolete generated change indexes: {removed_indexes}")
     return 0
 
 
