@@ -1,0 +1,100 @@
+{
+  "manifest_version": 1,
+  "tool_version": "0.5.4",
+  "default_branch": "main",
+  "project_context": "docs/ai/project-context.md",
+  "docs": {
+    "ai": "docs/ai",
+    "specs": "docs/specs",
+    "changes": "docs/changes"
+  },
+  "features": [
+    {
+      "feature": "coverage-integrity",
+      "title": "Coverage Integrity",
+      "context_pack": "docs/ai/context-packs/coverage-integrity.md",
+      "status": "current",
+      "source_commit": "0745c24226099bffc29daee4e08715b254621205",
+      "last_refreshed": "2026-08-12T18:39:20+08:00",
+      "stable_specs": [
+        "docs/specs/coverage-integrity.md"
+      ],
+      "tracked_files": [
+        "skills/repo-context-ledger/scripts/ledger.py",
+        "tests/test_ledger.py"
+      ],
+      "recent_changes": [
+        {
+          "path": "docs/changes/2026/08/20260812003845-gviiisen-5857b9529e-readme.md",
+          "title": "修正受管 README 路径分类",
+          "status": "completed"
+        },
+        {
+          "path": "docs/changes/2026/08/20260812002950-gviiisen-495d91c753-coverage-context-pack.md",
+          "title": "修正 Coverage 分类与 Context Pack 关联",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "feature": "native-context-bridge",
+      "title": "Native Context Bridge",
+      "context_pack": "docs/ai/context-packs/native-context-bridge.md",
+      "status": "current",
+      "source_commit": "0745c24226099bffc29daee4e08715b254621205",
+      "last_refreshed": "2026-08-12T18:39:21+08:00",
+      "stable_specs": [
+        "docs/specs/native-context-bridge.md"
+      ],
+      "tracked_files": [
+        "skills/repo-context-ledger/scripts/ledger.py",
+        "skills/repo-context-ledger/SKILL.md",
+        "skills/repo-context-ledger/agents/openai.yaml",
+        "skills/repo-context-ledger/assets/handoff-template.md",
+        "skills/repo-context-ledger/references/document-model.md",
+        "tests/test_ledger.py"
+      ],
+      "recent_changes": [
+        {
+          "path": "docs/changes/2026/08/20260811211310-gviiisen-5a44822643-implement-native-context-bridge.md",
+          "title": "Implement native context bridge",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "feature": "task-session-integrity",
+      "title": "Task Session Integrity",
+      "context_pack": "docs/ai/context-packs/task-session-integrity.md",
+      "status": "current",
+      "source_commit": "0745c24226099bffc29daee4e08715b254621205",
+      "last_refreshed": "2026-08-12T18:39:21+08:00",
+      "stable_specs": [
+        "docs/specs/task-session-integrity.md"
+      ],
+      "tracked_files": [
+        "skills/repo-context-ledger/scripts/ledger.py",
+        "skills/repo-context-ledger/SKILL.md",
+        "skills/repo-context-ledger/assets/handoff-template.md",
+        "tests/test_ledger.py"
+      ],
+      "recent_changes": [
+        {
+          "path": "docs/changes/2026/08/20260812041915-gviiisen-c1688f4523-evidence-finish.md",
+          "title": "隔离并发任务的 evidence 与 finish 校验",
+          "status": "completed"
+        },
+        {
+          "path": "docs/changes/2026/08/20260812034448-gviiisen-6c5673170f-handoff.md",
+          "title": "将并发 handoff 改为私有草稿并安全归档",
+          "status": "completed"
+        },
+        {
+          "path": "docs/changes/2026/08/20260812025946-gviiisen-ec71978b50-change.md",
+          "title": "隔离并发任务会话与验证锁",
+          "status": "completed"
+        }
+      ]
+    }
+  ]
+}
