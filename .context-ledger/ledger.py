@@ -21,7 +21,7 @@ from pathlib import Path
 
 
 VERSION = 7
-TOOL_VERSION = "0.5.4"
+TOOL_VERSION = "0.5.6"
 MANIFEST_VERSION = 1
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
@@ -91,11 +91,40 @@ def rel_posix(path: Path, root: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
 
 
-def resolve_repo(raw: str) -> Path:
-    repo = Path(raw).expanduser().resolve()
-    if not repo.is_dir():
-        raise LedgerError(f"Repository directory does not exist: {repo}")
-    return repo
+def resolve_repo(raw: str, explicit: bool = False) -> Path:
+    start = Path(raw).expanduser().resolve()
+    if not start.is_dir():
+        raise LedgerError(f"Repository directory does not exist: {start}")
+    if explicit:
+        return start
+    return discover_repo(start)
+
+
+def argv_has_explicit_repo(argv: list[str] | None) -> bool:
+    values = argv if argv is not None else sys.argv[1:]
+    return any(item == "--repo" or item.startswith("--repo=") for item in values)
+
+
+def has_git_boundary(path: Path) -> bool:
+    git = path / ".git"
+    return git.is_dir() or git.is_file()
+
+
+def has_ledger_config(path: Path) -> bool:
+    return (path / ".context-ledger" / "config.json").is_file()
+
+
+def discover_repo(start: Path) -> Path:
+    current = start.resolve()
+    while True:
+        if has_ledger_config(current):
+            return current
+        if has_git_boundary(current):
+            return current
+        parent = current.parent
+        if parent == current:
+            return start.resolve()
+        current = parent
 
 
 def write_if_missing(path: Path, content: str) -> bool:
@@ -223,6 +252,25 @@ def concrete_code_spans(text: str) -> list[str]:
         for item in spans
         if "/" in item or "\\" in item or re.search(r"\.[A-Za-z0-9]{1,8}(?::|$)", item)
     ]
+
+
+def cited_code_path(span: str) -> str:
+    item = span.strip().replace("\\", "/")
+    item = item.split("::", 1)[0]
+    item = re.sub(r":\d+(?:-\d+)?$", "", item)
+    if re.search(r"\.[A-Za-z0-9]{1,8}:[A-Za-z_]", item):
+        item = item.rsplit(":", 1)[0]
+    return item
+
+
+def evidence_path_cited(evidence: str, cited_paths: set[str]) -> bool:
+    if evidence in cited_paths:
+        return True
+    return any(
+        evidence.endswith("/" + cited) or cited.endswith("/" + evidence)
+        for cited in cited_paths
+        if cited
+    )
 
 
 def slugify(value: str) -> str:
@@ -1137,6 +1185,12 @@ def start_change(repo: Path, title: str, feature: str = "", language: str = "") 
     return 0
 
 
+CONTEXT_NEAR_SCORE_RATIO = 0.85
+AUTO_EVIDENCE_IMPLEMENTATION_LIMIT = 24
+FAILURE_CAPSULE_LINES = 8
+FAILURE_CAPSULE_CHARS = 800
+
+
 def query_tokens(query: str) -> list[str]:
     chunks = re.findall(r"[a-z0-9_.:/-]+|[\u3400-\u9fff]+", query.casefold())
     tokens: list[str] = []
@@ -1147,27 +1201,146 @@ def query_tokens(query: str) -> list[str]:
     return list(dict.fromkeys(token for token in tokens if token))
 
 
+def pack_purpose_text(text: str) -> str:
+    body = section_body(text, "## Purpose")
+    if not body:
+        return ""
+    return body.split("\n\n", 1)[0].strip()
+
+
+def pack_fingerprint_current(repo: Path, entries: list[tuple[str, str]]) -> bool:
+    for raw, digest in entries:
+        target = repo / normalize_git_path(raw)
+        if not target.is_file() or file_digest(target) != digest:
+            return False
+    return True
+
+
+def load_live_context_packs(repo: Path, config: dict) -> list[dict[str, object]]:
+    ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
+    packs_root = ai_root / "context-packs"
+    packs: list[dict[str, object]] = []
+    if not packs_root.is_dir():
+        return packs
+    for path in sorted(packs_root.glob("*.md")):
+        if path.name.casefold() == "readme.md":
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        tracked = pack_file_entries(text)
+        specs: list[str] = []
+        for raw in pack_spec_paths(text):
+            target = (path.parent / raw).resolve()
+            try:
+                specs.append(rel_posix(target, repo))
+            except ValueError:
+                specs.append(raw.replace("\\", "/"))
+        packs.append({
+            "path": path,
+            "rel": rel_posix(path, repo),
+            "feature": feature_slug(field_value(text, "Feature") or path.stem),
+            "title": first_heading(path).removesuffix(" context pack"),
+            "status": (field_value(text, "Status") or "unknown").casefold(),
+            "superseded_by": field_value(text, "Superseded by"),
+            "purpose": pack_purpose_text(text),
+            "tracked": [raw for raw, _ in tracked],
+            "specs": specs,
+            "fingerprints_ok": pack_fingerprint_current(repo, tracked),
+            "refreshed": field_value(text, "Last refreshed"),
+        })
+    return packs
+
+
+def score_context_pack(pack: dict[str, object], query: str, tokens: list[str]) -> tuple[int, list[str]]:
+    reasons: list[str] = []
+    score = 0
+    folded = query.casefold()
+    feature = str(pack["feature"])
+    title = str(pack["title"]).casefold()
+    feature_space = feature.replace("-", " ")
+    if feature and (feature in folded.replace(" ", "-") or feature_space in folded):
+        score += 10000
+        reasons.append(f"feature={feature}")
+    if title and title in folded:
+        score += 8000
+        reasons.append("title")
+    tracked = [str(item) for item in pack["tracked"]]
+    for raw in tracked:
+        name = Path(raw).name.casefold()
+        stem = Path(raw).stem.casefold()
+        if raw.casefold() in folded or name in folded or (stem and stem in folded.split()):
+            score += 5000
+            reasons.append(f"tracked={raw}")
+            break
+    for token in tokens:
+        if "/" not in token and "." not in token:
+            continue
+        for raw in tracked:
+            if token in raw.casefold():
+                score += 4000
+                reasons.append(f"path={raw}")
+                break
+        else:
+            continue
+        break
+    haystack = " ".join([feature, title, str(pack["purpose"]).casefold(), " ".join(tracked).casefold()])
+    for token in tokens:
+        if token in haystack:
+            score += 20 * max(1, len(token))
+    status = str(pack["status"])
+    if pack["superseded_by"] or status == "superseded":
+        score //= 4
+        reasons.append("superseded")
+    elif status and status != "current":
+        score //= 2
+        reasons.append(f"status={status}")
+    if not pack["fingerprints_ok"]:
+        score = int(score * 0.6)
+        reasons.append("stale-fingerprint")
+    return score, reasons
+
+
 def context_search(repo: Path, query: str, limit: int) -> int:
     config = load_config(repo)
     tokens = query_tokens(query)
-    candidates: list[tuple[int, Path]] = []
-    for key in ("ai", "specs"):
-        base = repo / config["docs"][key]
-        for path in base.rglob("*.md"):
-            try:
-                text = path.read_text(encoding="utf-8").casefold()
-            except (OSError, UnicodeError):
-                continue
-            title = first_heading(path).casefold()
-            score = sum((text.count(token) + 4 * title.count(token)) * max(1, len(token)) for token in tokens)
-            if score or not tokens:
-                candidates.append((score, path))
-    candidates.sort(key=lambda item: (-item[0], rel_posix(item[1], repo)))
-    if not candidates:
-        print("No matching context documents. Inspect docs/ai and docs/specs indexes.")
+    packs = load_live_context_packs(repo, config)
+    if not packs:
+        print("No Context Packs found. Inspect docs/ai/context-packs.")
         return 1
-    for score, path in candidates[:limit]:
-        print(f"{rel_posix(path, repo)}\t{first_heading(path)}\tscore={score}")
+    ranked: list[tuple[int, dict[str, object], list[str]]] = []
+    for pack in packs:
+        score, reasons = score_context_pack(pack, query, tokens)
+        if score > 0:
+            ranked.append((score, pack, reasons))
+    ranked.sort(key=lambda item: (-item[0], str(item[1]["rel"])))
+    if not ranked:
+        print("No matching Context Pack. Create one with pack --feature or inspect docs/ai/context-packs.")
+        return 1
+    best_score, primary, reasons = ranked[0]
+    print(f"Primary pack: {primary['rel']}")
+    print(f"Feature: {primary['feature']}")
+    print(f"Title: {primary['title']}")
+    print(f"Status: {primary['status']}")
+    print(f"Why: {', '.join(reasons) or 'token overlap'}")
+    print(f"Score: {best_score}")
+    print(f"Fingerprints: {'current' if primary['fingerprints_ok'] else 'stale'}")
+    print("Stable specs:")
+    specs = [str(item) for item in primary["specs"]]
+    if specs:
+        for spec in specs:
+            print(f"- {spec}")
+    else:
+        print("- none")
+    near = [
+        item for item in ranked[1:]
+        if item[0] >= int(best_score * CONTEXT_NEAR_SCORE_RATIO)
+    ][: max(0, limit - 1)]
+    if near:
+        print("Close candidates:")
+        for score, pack, why in near:
+            print(f"- {pack['rel']} score={score} why={', '.join(why) or 'token overlap'}")
     return 0
 
 
@@ -1990,8 +2163,13 @@ def evidence_handoff_errors(repo: Path, config: dict, text: str) -> list[str]:
     evidence = managed_text(text, EVIDENCE_START, EVIDENCE_END)
     if not evidence or "Evidence has not been captured yet" in evidence:
         errors.append("Handoff Git change evidence has not been captured.")
-    evidence_paths = [path for path in concrete_code_spans(evidence) if is_implementation_path(config, path)]
-    if evidence_paths and not any(path in code_refs for path in evidence_paths):
+    cited_paths = {normalize_git_path(cited_code_path(item)) for item in code_refs}
+    evidence_paths = [
+        normalize_git_path(path)
+        for path in concrete_code_spans(evidence)
+        if is_implementation_path(config, path)
+    ]
+    if evidence_paths and not any(evidence_path_cited(path, cited_paths) for path in evidence_paths):
         errors.append("Handoff Code paths must cite at least one implementation path from Git change evidence.")
     semantic = "\n".join(section_body(text, heading) for heading in REQUIRED_HANDOFF_HEADINGS)
     if has_vague_standalone_text(semantic):
@@ -2191,13 +2369,32 @@ def handoff_evidence_paths(
     return sorted(selected)
 
 
+def filter_auto_evidence_paths(repo: Path, config: dict, paths: list[str]) -> list[str]:
+    kept: list[str] = []
+    for raw in paths:
+        kind = coverage_path_kind(config, raw)
+        if kind in {"generated", "ignored", "managed"}:
+            continue
+        kept.append(raw)
+    return kept
+
+
 def refresh_handoff_evidence(
     repo: Path,
     handoff: Path,
     raw_paths: list[str] | None = None,
 ) -> list[str]:
+    config = load_config(repo)
     text = handoff.read_text(encoding="utf-8")
     paths = handoff_evidence_paths(repo, text, raw_paths)
+    if raw_paths is None:
+        paths = filter_auto_evidence_paths(repo, config, paths)
+        impl = [raw for raw in paths if is_implementation_path(config, raw)]
+        if len(impl) > AUTO_EVIDENCE_IMPLEMENTATION_LIMIT:
+            raise LedgerError(
+                f"Automatic evidence found {len(impl)} implementation paths; "
+                "run evidence --path for only this task."
+            )
     lines = [
         "## Git change evidence",
         "",
@@ -2300,12 +2497,93 @@ def capture_evidence(
     return 0
 
 
-def verification_output_summary(stdout: str, stderr: str) -> str:
+def secret_values_from_command(command: list[str]) -> list[str]:
+    sensitive = re.compile(r"(?i)(password|passwd|secret|token|api[-_]?key|authorization)")
+    values: list[str] = []
+    redact_next = False
+    for item in command:
+        if redact_next:
+            if item:
+                values.append(item)
+            redact_next = False
+            continue
+        if "=" in item:
+            key, value = item.split("=", 1)
+            if sensitive.search(key) and value:
+                values.append(value)
+        if item.startswith("-") and sensitive.search(item):
+            redact_next = True
+    return values
+
+
+def redact_secret_text(text: str, extra_values: list[str] | None = None) -> str:
+    text = re.sub(
+        r"(?i)\b(password|passwd|secret|token|api[-_]?key|authorization|bearer|cookie|set-cookie)=([^\s,;]+)",
+        r"\1=<redacted>",
+        text,
+    )
+    text = re.sub(r"(?i)\b(authorization|bearer)\s+\S+", r"\1 <redacted>", text)
+    text = re.sub(
+        r"(?i)\b(?:postgres|postgresql|mysql|mongodb|redis|amqp|https?)://\S+",
+        "<redacted-url>",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b[A-Za-z]:\\Users\\[^\\\s]+",
+        r"<redacted-home>",
+        text,
+    )
+    text = re.sub(r"(?i)/home/[^/\s]+", "<redacted-home>", text)
+    text = re.sub(r"\b[A-Za-z0-9_-]{32,}\b", "<redacted-token>", text)
+    for value in extra_values or []:
+        if value and len(value) >= 4:
+            text = text.replace(value, "<redacted>")
+    return text
+
+
+def last_nonempty_line(text: str) -> str:
+    for line in reversed(text.splitlines()):
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return ""
+
+
+def failure_capsule(stdout: str, stderr: str, extra_values: list[str] | None = None) -> str:
+    combined = redact_secret_text((stderr or "") + "\n" + (stdout or ""), extra_values)
+    lines = [line.strip() for line in combined.splitlines() if line.strip()]
+    interesting = [
+        line for line in lines
+        if re.search(r"(?i)fail|error|panic|fatal|denied|traceback|exception|assert", line)
+    ]
+    chosen = (interesting or lines)[-FAILURE_CAPSULE_LINES:]
+    if not chosen:
+        return "no captured error lines"
+    summary = " | ".join(chosen)
+    if len(summary) > FAILURE_CAPSULE_CHARS:
+        return summary[:FAILURE_CAPSULE_CHARS].rstrip() + "…"
+    return summary
+
+
+def verification_output_summary(
+    stdout: str,
+    stderr: str,
+    status: str = "passed",
+    extra_values: list[str] | None = None,
+) -> str:
     output = stdout + ("\n" if stdout and stderr else "") + stderr
     if not output:
         return "No output."
     digest = hashlib.sha256(output.encode("utf-8", errors="replace")).hexdigest()
-    return f"sha256:{digest} ({len(output)} characters captured; content not persisted)"
+    prefix = f"sha256:{digest} ({len(output)} characters captured; content not persisted"
+    if status == "passed":
+        last = redact_secret_text(last_nonempty_line(stdout or stderr), extra_values)
+        if last:
+            if len(last) > 160:
+                last = last[:160].rstrip() + "…"
+            return f"{prefix}; last={last})"
+        return f"{prefix})"
+    return f"{prefix}; failure={failure_capsule(stdout, stderr, extra_values)})"
 
 
 def redacted_command(command: list[str]) -> list[str]:
@@ -2392,7 +2670,11 @@ def record_verification(
         stdout, stderr = "", str(exc)
         status = "failed"
     duration = time.monotonic() - started
-    display_command = subprocess.list2cmdline(redacted_command(command)).replace("`", "'")
+    extras = secret_values_from_command(command)
+    display_command = redact_secret_text(
+        subprocess.list2cmdline(redacted_command(command)).replace("`", "'"),
+        extras,
+    )
     recorded = now().isoformat(timespec="seconds")
     entry = (
         f"- Command: `{display_command}`\n"
@@ -2400,7 +2682,7 @@ def record_verification(
         f"  - Exit code: {exit_code}\n"
         f"  - Duration: {duration:.2f}s\n"
         f"  - Recorded: {recorded}\n"
-        f"  - Output evidence: {verification_output_summary(stdout, stderr)}"
+        f"  - Output evidence: {verification_output_summary(stdout, stderr, status, extras)}"
     )
     try:
         with repo_lock(repo):
@@ -2843,7 +3125,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     try:
         args = build_parser().parse_args(argv)
-        repo = resolve_repo(args.repo)
+        repo = resolve_repo(args.repo, explicit=argv_has_explicit_repo(argv))
         mutating = args.command in {
             "init", "start", "pack", "focus", "checkpoint", "pause", "resume", "finish",
             "evidence", "sync",

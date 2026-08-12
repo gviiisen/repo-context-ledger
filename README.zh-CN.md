@@ -18,6 +18,15 @@ Repo Context Ledger 为每个 AI 会话提供一份精简、持久的项目地�
 - 本次修改了什么、为什么修改、如何验证；
 - 哪些项目级和模块级 README 摘要需要同步更新。
 
+## v0.5.6 新增能力
+
+- `context --query` 改为 Context Pack 路由器：读取 live Pack 元数据，优先匹配 feature/title/tracked path，降低 superseded 或指纹过期 Pack 的优先级，并返回一个主 Pack、关联 spec 和选择原因。
+- 省略 `--repo` 时从当前目录向上寻找 `.context-ledger/config.json`，遇到嵌套 Git 仓库边界即停止。显式 `--repo` 仍然优先。
+- `verify` 失败只记录脱敏后的 Failure Capsule；成功仍只保留 hash 和最后一行结果，不持久化原始日志。
+- Handoff 的 Code paths 可以写 `file.go::Symbol`，用路径部分与 Git evidence 对齐。
+- 单 session 自动 evidence 会跳过 generated/managed 路径；实现文件过多时拒绝整树吞入。
+- Skill 把最短路径放在前面：只读用 `context`/`focus`，小修复走 `start → verify → finish`，完整 evidence/spec/Pack 流程留给中大改动。
+
 ## v0.5.4 新增能力
 
 - 并行 session 的 evidence 改为显式路径集合：存在其他任务 session 时，`evidence --session <id>` 必须重复传入 `--path <path>`，拒绝把整个共享 worktree 的 dirty paths 塞进当前草稿。

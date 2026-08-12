@@ -3,6 +3,7 @@
 <!-- repo-context-ledger:start -->
 ## Changes in 2026-08
 
+- [Context Router 失败摘要与仓库根发现](20260813020044-gviiisen-418ac132d0-context-router.md) — completed
 - [隔离并发任务的 evidence 与 finish 校验](20260812041915-gviiisen-c1688f4523-evidence-finish.md) — completed
 - [将并发 handoff 改为私有草稿并安全归档](20260812034448-gviiisen-6c5673170f-handoff.md) — completed
 - [隔离并发任务会话与验证锁](20260812025946-gviiisen-ec71978b50-change.md) — completed

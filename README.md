@@ -18,6 +18,15 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 - what changed, why it changed, and how it was verified;
 - which project and module README summaries need refreshing.
 
+## What's new in v0.5.6
+
+- `context --query` is a Context Pack router: it reads live Pack metadata, prefers feature/title/tracked-path matches, demotes superseded or stale Packs, and returns one primary Pack plus linked specs and the selection reason.
+- Omitting `--repo` walks up from the current directory to the nearest `.context-ledger/config.json` and stops at a nested Git repository boundary. An explicit `--repo` still wins.
+- Failed `verify` records a redacted Failure Capsule instead of only a hash. Success still stores a hash plus the last result line. Raw logs are not persisted.
+- Handoff Code paths may cite `file.go::Symbol`; the path part is matched against Git evidence.
+- Automatic single-session evidence skips generated/managed paths and refuses oversized dirty trees, so a shared worktree cannot silently swallow unrelated files.
+- The Skill now leads with the shortest path: read-only `context`/`focus`, small single-task `start → verify → finish`, and the full evidence/spec/Pack flow only for larger work.
+
 ## What's new in v0.5.4
 
 - Parallel-session evidence is explicit: when another task session exists, `evidence --session <id>` requires repeated `--path <path>` values and refuses to absorb the shared worktree's entire dirty set.
@@ -299,5 +308,5 @@ python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 - [Change history](docs/changes/README.md)
 - [Feature Context Packs](docs/ai/context-packs)
 - Relevant specs: [Coverage Integrity](docs/specs/coverage-integrity.md), [Native Context Bridge](docs/specs/native-context-bridge.md), [Task session integrity](docs/specs/task-session-integrity.md)
-- Latest recorded change: [隔离并发任务的 evidence 与 finish 校验](docs/changes/2026/08/20260812041915-gviiisen-c1688f4523-evidence-finish.md)
+- Latest recorded change: [Context Router 失败摘要与仓库根发现](docs/changes/2026/08/20260813020044-gviiisen-418ac132d0-context-router.md)
 <!-- repo-context-ledger:end -->

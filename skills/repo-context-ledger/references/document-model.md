@@ -16,6 +16,8 @@ Keep one compact Context Pack per feature or bounded subsystem. Use it as the fi
 
 Context Packs route an agent to current truth; they do not replace stable specs. Refresh a pack after its tracked files change. Strict validation treats changed or missing fingerprints as stale context.
 
+`context --query` is a router over live Context Packs. It prefers exact feature, title, tracked path, and path-token matches, demotes superseded or stale Packs, and prints one primary Pack plus its linked specs and the selection reason. It does not rank every Markdown file by word count. The Context Manifest may accelerate discovery when it matches live Packs; live Pack metadata remains authoritative because feature branches may defer derived-index updates. Two current Packs may track the same shared file; only an explicit `Superseded by` or `status: superseded` relationship demotes a Pack.
+
 Use a compact navigation form: `Read first`, `Read if needed`, and `Do not load by default`. Context Packs have a configurable maximum line count.
 
 ## `docs/specs/`: current feature truth

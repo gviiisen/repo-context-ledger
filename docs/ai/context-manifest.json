@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "tool_version": "0.5.4",
+  "tool_version": "0.5.6",
   "default_branch": "main",
   "project_context": "docs/ai/project-context.md",
   "docs": {
@@ -14,8 +14,8 @@
       "title": "Coverage Integrity",
       "context_pack": "docs/ai/context-packs/coverage-integrity.md",
       "status": "current",
-      "source_commit": "0745c24226099bffc29daee4e08715b254621205",
-      "last_refreshed": "2026-08-12T18:39:20+08:00",
+      "source_commit": "16b83b3771dd6b29073a6d015bf5c6e5f3a7e2fe",
+      "last_refreshed": "2026-08-13T02:23:34+08:00",
       "stable_specs": [
         "docs/specs/coverage-integrity.md"
       ],
@@ -41,8 +41,8 @@
       "title": "Native Context Bridge",
       "context_pack": "docs/ai/context-packs/native-context-bridge.md",
       "status": "current",
-      "source_commit": "0745c24226099bffc29daee4e08715b254621205",
-      "last_refreshed": "2026-08-12T18:39:21+08:00",
+      "source_commit": "16b83b3771dd6b29073a6d015bf5c6e5f3a7e2fe",
+      "last_refreshed": "2026-08-13T02:23:33+08:00",
       "stable_specs": [
         "docs/specs/native-context-bridge.md"
       ],
@@ -56,6 +56,11 @@
       ],
       "recent_changes": [
         {
+          "path": "docs/changes/2026/08/20260813020044-gviiisen-418ac132d0-context-router.md",
+          "title": "Context Router 失败摘要与仓库根发现",
+          "status": "completed"
+        },
+        {
           "path": "docs/changes/2026/08/20260811211310-gviiisen-5a44822643-implement-native-context-bridge.md",
           "title": "Implement native context bridge",
           "status": "completed"
@@ -67,8 +72,8 @@
       "title": "Task Session Integrity",
       "context_pack": "docs/ai/context-packs/task-session-integrity.md",
       "status": "current",
-      "source_commit": "0745c24226099bffc29daee4e08715b254621205",
-      "last_refreshed": "2026-08-12T18:39:21+08:00",
+      "source_commit": "16b83b3771dd6b29073a6d015bf5c6e5f3a7e2fe",
+      "last_refreshed": "2026-08-13T02:23:34+08:00",
       "stable_specs": [
         "docs/specs/task-session-integrity.md"
       ],
