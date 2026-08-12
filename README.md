@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-An open Agent Skill that keeps repository context, feature documentation, change handoffs, and README summaries synchronized after AI-assisted code changes.
+An open Agent Skill that bridges verified repository context across Codex, Claude, Cursor, GitHub Copilot, Grok, and other coding agents while keeping feature documentation, change handoffs, and README summaries synchronized.
 
 You make ordinary coding requests. The AI owns the documentation lifecycle.
 
@@ -18,7 +18,50 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 - what changed, why it changed, and how it was verified;
 - which project and module README summaries need refreshing.
 
-## What's new in v0.4.1
+## What's new in v0.5.4
+
+- Parallel-session evidence is explicit: when another task session exists, `evidence --session <id>` requires repeated `--path <path>` values and refuses to absorb the shared worktree's entire dirty set.
+- `finish` now uses a session-scoped gate. It validates only the selected draft, its recorded paths, explicit specs, and relevant Context Pack fingerprints.
+- Dirty paths and stale Context Packs belonging to another session no longer block the current session's publication; the current session's own stale Pack still fails closed.
+- Repository-wide `check --strict --coverage` remains the integration/PR gate instead of being an implicit per-session finish dependency.
+- Generated Agent rules explicitly forbid contacting another task because of foreign dirt, a stale Pack, or a failed global check.
+
+## Added in v0.5.3
+
+- Active and paused handoffs are private session drafts under worktree Git metadata; `start`, `checkpoint`, `evidence`, and `verify` no longer add unfinished records to `docs/changes/`.
+- `finish` reserves a unique history path, validates the draft, atomically publishes one completed change, and deletes only that session's private draft after repository checks pass.
+- Interrupted publication is idempotent: a matching completed record can be validated and cleaned up on retry without duplicating history.
+- Registered v0.5.2 active or paused records migrate into private v7 drafts while completed and legacy history remains unchanged.
+- Ledger concurrency is explicitly limited to bookkeeping. It does not copy, lock, claim, merge, or coordinate source-code files; the host Agent and Git retain that responsibility.
+
+## Added in v0.5.2
+
+- Task-scoped sessions replace the single active-handoff pointer: multiple coding tasks can keep independent active or paused handoffs in one worktree.
+- Every lifecycle command accepts `--session <id>`; when several sessions match, omission fails closed instead of selecting, pausing, or completing another task.
+- `verify` binds its target under a short lock, runs the external command without the repository write lock, then records the result under another short lock.
+- Generated Agent instructions prohibit unsolicited cross-task messages, delegation, steering, and interruption. Sharing a worktree does not grant coordination authority.
+- Existing v2-v5 active and paused state migrates into v6 task sessions without rewriting historical change records.
+
+## Added in v0.5.1
+
+- Coverage path classes distinguish production implementation from tests, CI, configuration, generated output, managed ledger files, and project-specific ignored paths.
+- Repository-relative glob policies under `coverage` are validated, persisted by `init`, and remain optional for existing v5 repositories.
+- Context Pack coverage is now relational: every changed production path must be tracked by a Context Pack, and that related Pack must be refreshed.
+- Changing an unrelated Context Pack no longer satisfies `check --coverage`.
+- Coverage failures name the uncovered implementation path and the related Pack that was not updated.
+- Root translated READMEs and configured module READMEs are treated as managed documentation rather than production implementation.
+
+## Added in v0.5.0
+
+- Native Context Bridge: `AGENTS.md`, `CLAUDE.md`, Cursor rules, and GitHub Copilot instructions route every supported agent to the same Git-tracked source of truth.
+- Context Manifest: `docs/ai/context-manifest.json` provides a deterministic machine-readable map from features to Context Packs, stable specs, tracked code paths, and recent changes.
+- Cross-agent checkpoints: an active task can record its verified state and next action without pausing, allowing another agent in the same worktree to continue it.
+- Adapter lifecycle: `adapters sync/check/status` preserves user prose while detecting missing or drifted native entry files.
+- Git-diff coverage gate: `check --coverage` reports behavior-changing paths that lack handoff evidence, a stable spec or explicit exception, or an updated Context Pack.
+- Private-memory boundary: Codex, Cursor, Claude, and Copilot Memory remain private caches; only code-verified facts are promoted to the shared ledger.
+- Schema v5 migration preserves existing records, custom documentation paths, mature history layouts, and README prose.
+
+## Added in v0.4.1
 
 - Mature-repository adoption: existing `YYYY-MM/...` change trees are grouped at the month root instead of producing an index in every date or feature directory.
 - Existing monthly `YYYY-MM/index.md` files are preserved and reused as the month link; the runtime does not rewrite their human-maintained content.
@@ -40,17 +83,18 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 ## What it maintains
 
 - `docs/ai/`: concise repository-wide orientation for fresh AI sessions.
+- `docs/ai/context-manifest.json`: generated feature-to-context routes for machine discovery.
 - `docs/ai/context-packs/`: minimal feature context, load order, boundaries, tests, and tracked-file fingerprints.
 - `docs/specs/`: current feature behavior, code maps, contracts, and boundaries.
 - `docs/changes/`: chronological implementation and repair handoffs, grouped as `YYYY/MM/<change>.md` with a small monthly index.
-- Private branch/worktree state: the current handoff and paused tasks are stored under Git metadata and are never committed.
+- Private branch/worktree state: independent active and paused drafts are stored under Git metadata and are never committed; only completed changes enter formal history.
 - Root and module `README.md` files: generated navigation blocks without rewriting human prose.
-- `AGENTS.md`, `CLAUDE.md`, and Cursor rules: durable instructions that tell coding agents to run the workflow autonomously.
+- `AGENTS.md`, `CLAUDE.md`, Cursor rules, and `.github/copilot-instructions.md`: thin native adapters that route coding agents to the same ledger.
 - `.context-ledger/writing-quality.md`: local evidence, language, and record-form rules available to every AI tool.
 
 ## Compatibility
 
-The core skill follows the open Agent Skills `SKILL.md` format. It is designed for Codex, Claude Code, Cursor, and other agents that support Agent Skills.
+The core skill follows the open Agent Skills `SKILL.md` format. It is designed for Codex, Claude Code, Cursor, GitHub Copilot, Grok, and other agents that support Agent Skills or repository instruction files.
 
 Initialized repositories also receive plain instruction files, so tools without native Skill discovery can follow the same workflow. Native discovery and exact installation locations vary by product.
 
@@ -88,6 +132,10 @@ Import this GitHub repository from Cursor's Skills/Rules settings, or copy the s
 .agents/skills/repo-context-ledger/
 ```
 
+### GitHub Copilot
+
+Install the Skill through a compatible Agent Skills client, or let an initialized repository's `.github/copilot-instructions.md` route Copilot to the ledger. The runtime preserves existing Copilot prose outside its managed block.
+
 ## Tutorial
 
 ### 1. Initialize a repository once
@@ -112,7 +160,7 @@ You do **not** need to run `ctx begin`, name a handoff, or remember lifecycle co
 4. derive changed paths from Git and record Before/After behavior, boundaries, and evidence;
 5. update the stable feature spec and Context Pack;
 6. refresh affected module README files and the root README summary;
-7. close the handoff and validate the ledger.
+7. close the handoff and validate structure plus Git-diff documentation coverage.
 
 On a feature branch, shared monthly indexes and README summary blocks are intentionally left unchanged until merge.
 
@@ -130,17 +178,36 @@ The default quality policy is:
 
 With `auto`, the agent follows nearby repository documentation, then the user's language when no convention exists. Paths, symbols, commands, protocol fields, and error text stay in their source form. Handoffs, stable specs, and Context Packs deliberately use different Markdown structures because they answer different questions; existing documents are not reformatted during upgrade.
 
-### 3. Switch tasks naturally
+Coverage classification is configured separately in `.context-ledger/config.json`:
+
+```json
+{
+  "coverage": {
+    "implementation_globs": ["**"],
+    "test_globs": ["tests/**", "**/*.test.*", "**/*.spec.*"],
+    "ci_globs": [".github/**", ".gitlab-ci.yml"],
+    "config_globs": ["pyproject.toml", "package.json"],
+    "generated_globs": ["dist/**", "build/**"],
+    "ignore_globs": []
+  }
+}
+```
+
+The runtime applies ignored, generated, test, CI, and configuration rules before the implementation fallback. Projects can replace the defaults with repository-specific globs. A changed production path only passes Context Pack coverage when that exact path is tracked by a changed Pack; updating an unrelated Pack is not accepted.
+
+### 3. Continue in another agent or switch tasks naturally
+
+When another agent or window will continue the same active task, the current agent records a checkpoint containing completed work, Git-derived changed paths, and the next concrete action. The task remains active; users do not run a checkpoint command themselves.
 
 Tell the agent what you want in ordinary language:
 
 > Pause the withdrawal monitoring fix and switch to the login timeout issue.
 
-The agent records the current progress and next step, pauses that handoff, loads the login Context Pack, and starts the new work. Later, say:
+For an actual task switch, the agent records a checkpoint, pauses that handoff, loads the login Context Pack, and starts the new work. Later, say:
 
 > Continue the previous withdrawal monitoring task.
 
-The agent restores the handoff, checks whether the repository or tracked files changed, and reloads only the relevant context. Internal `pause`, `focus`, `pack`, and `resume` commands are agent-owned bookkeeping; users do not need to run them.
+The agent restores the handoff, checks whether the repository or tracked files changed, and reloads only the relevant context. Internal `checkpoint`, `pause`, `focus`, `pack`, and `resume` commands are agent-owned bookkeeping; users do not need to run them.
 
 ### 4. Collaborate with teammates
 
@@ -164,7 +231,7 @@ These are still agent-owned lifecycle commands. The user can simply say, “chec
 
 ### 5. Start a new AI session
 
-Tell the new agent which feature or interface you want to change. It can read the compact generated index and relevant spec instead of scanning a large part of the repository for background context.
+Tell the new agent which feature or interface you want to change. Its native adapter points to the shared Context Manifest; the agent then loads the matching Context Pack and stable spec instead of scanning a large part of the repository. It never needs access to the previous product's private Memory.
 
 ### 6. Review the result
 
@@ -173,6 +240,7 @@ After a completed change, expect to see:
 ```text
 docs/
 ├── ai/
+│   ├── context-manifest.json
 │   └── context-packs/
 │       └── withdrawal-monitoring.md
 ├── specs/
@@ -189,6 +257,7 @@ The exact month is generated from the completion date. Monthly grouping keeps th
 
 - Initialization is idempotent.
 - Existing documentation and README prose are preserved.
+- Existing `AGENTS.md`, `CLAUDE.md`, and GitHub Copilot prose outside managed blocks is preserved.
 - Only explicitly marked generated blocks are replaced.
 - Every configured path is validated to remain inside the repository before writes occur.
 - Handoff files use collision-safe creation and never overwrite existing history.
@@ -196,6 +265,9 @@ The exact month is generated from the completion date. Monthly grouping keeps th
 - Feature branches avoid shared derived files by default, and `team-check` reports likely team conflicts before review.
 - Active work cannot silently switch to another feature; it must be paused with resumable state first.
 - Context Packs detect missing or modified tracked files with SHA-256 fingerprints.
+- The Context Manifest is derived from packs, specs, and handoffs and is checked for drift on the default branch.
+- Optional Git-diff coverage catches behavior paths omitted from handoff evidence, stable specs, or Context Packs.
+- Private vendor Memory is never imported as authoritative repository knowledge.
 - Evidence-quality records reject unresolved language, placeholders, vague standalone claims, missing concrete paths, incomplete Before/After behavior, and unverified results.
 - Verification output is shown to the active agent but only a hash and metadata are persisted; common secret-bearing command arguments are redacted.
 - Managed files use atomic replacement, and mutating commands use a short repository lock to prevent concurrent writers.

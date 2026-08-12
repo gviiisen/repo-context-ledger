@@ -1,4 +1,4 @@
 interface:
   display_name: "Repo Context Ledger"
-  short_description: "Maintain verified, language-aware coding context"
-  default_prompt: "Use $repo-context-ledger to maintain evidence-based repository context and verified handoffs."
+  short_description: "Bridge verified context with private task drafts"
+  default_prompt: "Use $repo-context-ledger to maintain private task drafts and publish verified repository context."
