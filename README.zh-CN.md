@@ -20,6 +20,8 @@ Repo Context Ledger 为每个 AI 会话提供一份精简、持久的项目地�
 
 ## v0.5.6 新增能力
 
+> 说明：v0.5.5 原计划用于 `init --dry-run`，但从未正式发布；不存在被删除的 Release 或功能缺失。
+
 - `context --query` 改为 Context Pack 路由器：读取 live Pack 元数据，优先匹配 feature/title/tracked path，降低 superseded 或指纹过期 Pack 的优先级，并返回一个主 Pack、关联 spec 和选择原因。
 - 省略 `--repo` 时从当前目录向上寻找 `.context-ledger/config.json`，遇到嵌套 Git 仓库边界即停止。显式 `--repo` 仍然优先。
 - `verify` 失败只记录脱敏后的 Failure Capsule；成功仍只保留 hash 和最后一行结果，不持久化原始日志。

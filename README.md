@@ -20,6 +20,8 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 
 ## What's new in v0.5.6
 
+> Note: v0.5.5 was reserved for the planned `init --dry-run` work but was never released. No published release or functionality is missing.
+
 - `context --query` is a Context Pack router: it reads live Pack metadata, prefers feature/title/tracked-path matches, demotes superseded or stale Packs, and returns one primary Pack plus linked specs and the selection reason.
 - Omitting `--repo` walks up from the current directory to the nearest `.context-ledger/config.json` and stops at a nested Git repository boundary. An explicit `--repo` still wins.
 - Failed `verify` records a redacted Failure Capsule instead of only a hash. Success still stores a hash plus the last result line. Raw logs are not persisted.
