@@ -14,8 +14,8 @@
       "title": "Coverage Integrity",
       "context_pack": "docs/ai/context-packs/coverage-integrity.md",
       "status": "current",
-      "source_commit": "05336ec3034d7b925e01a3bee431c6f6e952b7b4",
-      "last_refreshed": "2026-08-13T02:40:47+08:00",
+      "source_commit": "e009aa650ed1928cfda06285b410c37aabb806be",
+      "last_refreshed": "2026-08-13T02:46:27+08:00",
       "stable_specs": [
         "docs/specs/coverage-integrity.md"
       ],
@@ -41,8 +41,8 @@
       "title": "Native Context Bridge",
       "context_pack": "docs/ai/context-packs/native-context-bridge.md",
       "status": "current",
-      "source_commit": "05336ec3034d7b925e01a3bee431c6f6e952b7b4",
-      "last_refreshed": "2026-08-13T02:40:47+08:00",
+      "source_commit": "e009aa650ed1928cfda06285b410c37aabb806be",
+      "last_refreshed": "2026-08-13T02:46:27+08:00",
       "stable_specs": [
         "docs/specs/native-context-bridge.md"
       ],
@@ -82,8 +82,8 @@
       "title": "Task Session Integrity",
       "context_pack": "docs/ai/context-packs/task-session-integrity.md",
       "status": "current",
-      "source_commit": "05336ec3034d7b925e01a3bee431c6f6e952b7b4",
-      "last_refreshed": "2026-08-13T02:40:48+08:00",
+      "source_commit": "e009aa650ed1928cfda06285b410c37aabb806be",
+      "last_refreshed": "2026-08-13T02:46:27+08:00",
       "stable_specs": [
         "docs/specs/task-session-integrity.md"
       ],
