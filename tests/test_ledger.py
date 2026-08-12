@@ -1626,14 +1626,21 @@ class LedgerFlowTests(unittest.TestCase):
                 "--",
                 sys.executable,
                 "-c",
-                "print('postgres://user:hunter2@db.internal/app'); raise SystemExit('FAIL token=super-secret-value')",
+                (
+                    "print('postgres://user:hunter2@db.internal/app'); "
+                    "print('password: colon-secret-value'); "
+                    "print('\\\"token\\\": \\\"json-secret-value\\\"'); "
+                    "raise SystemExit('FAIL api_key whitespace-secret-value')"
+                ),
                 expected=1,
             )
             text = handoff.read_text(encoding="utf-8")
             self.assertIn("- Status: failed", text)
             self.assertIn("failure=", text)
             self.assertNotIn("hunter2", text)
-            self.assertNotIn("super-secret-value", text)
+            self.assertNotIn("colon-secret-value", text)
+            self.assertNotIn("json-secret-value", text)
+            self.assertNotIn("whitespace-secret-value", text)
             self.assertIn("<redacted", text)
 
     def test_cited_code_path_strips_symbol_and_matches_evidence(self):

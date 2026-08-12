@@ -308,5 +308,5 @@ python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 - [Change history](docs/changes/README.md)
 - [Feature Context Packs](docs/ai/context-packs)
 - Relevant specs: [Coverage Integrity](docs/specs/coverage-integrity.md), [Native Context Bridge](docs/specs/native-context-bridge.md), [Task session integrity](docs/specs/task-session-integrity.md)
-- Latest recorded change: [Context Router 失败摘要与仓库根发现](docs/changes/2026/08/20260813020044-gviiisen-418ac132d0-context-router.md)
+- Latest recorded change: [隔离并发任务的 evidence 与 finish 校验](docs/changes/2026/08/20260812041915-gviiisen-c1688f4523-evidence-finish.md)
 <!-- repo-context-ledger:end -->

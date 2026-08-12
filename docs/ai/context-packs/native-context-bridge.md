@@ -5,10 +5,10 @@ Feature: native-context-bridge
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: 16b83b3771dd6b29073a6d015bf5c6e5f3a7e2fe
+Source commit: 727b10eec08e544e9272fbc61fd2b8a4f9be2112
 Base branch: main
 Base commit: 16b83b3771dd6b29073a6d015bf5c6e5f3a7e2fe
-Last refreshed: 2026-08-13T02:23:33+08:00
+Last refreshed: 2026-08-13T02:35:47+08:00
 
 ## Purpose
 
@@ -32,7 +32,7 @@ Native Context Bridge 将不同编码 Agent 的仓库入口连接到同一份 Gi
 ## Contracts and boundaries
 
 - Invariants and contracts: Git 内的 spec、change 与 Context Pack 是跨 Agent 共享事实；工具专用入口仅作薄适配器，且只修改受管区块；共享 worktree 不构成跨任务协调授权。并行 session 必须显式记录自己拥有的 evidence paths，不能把共享 worktree 的完整 dirty 集合吸收到当前草稿。
-- Failure / recovery: 当前 session 的证据或相关 Pack 不一致时 `finish` 必须失败并保留私有草稿；其他 session 的 dirty path、stale Pack 或全仓集成检查失败不能触发跨任务消息、暂停或修复。adapter 漂移与全仓 Coverage 由所有任务稳定后的集成检查处理。
+- Failure / recovery: 当前 session 的证据或相关 Pack 不一致时 `finish` 必须失败并保留私有草稿；失败验证只保留有上限的 Failure Capsule，并在命令与输出两侧脱敏常见的等号、冒号、JSON 与空格分隔凭据。其他 session 的 dirty path、stale Pack 或全仓集成检查失败不能触发跨任务消息、暂停或修复。adapter 漂移与全仓 Coverage 由所有任务稳定后的集成检查处理。
 - Non-goals: 不解密、导入或同步 Codex、Cursor、Claude、Copilot 等工具的私有 Memory，也不保存完整聊天记录。
 
 ## Verification
@@ -48,10 +48,10 @@ Native Context Bridge 将不同编码 Agent 的仓库入口连接到同一份 Gi
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:f3ad2d49ac44e165b6d41e5565c761d5465bebe9eb369aa2844dd20f8614df4c`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:33c3a9eaf78eda8199a686e3d937be6f217d6ec75677d59562b78754ee66e1c7`
 - `skills/repo-context-ledger/SKILL.md` — `sha256:9ce8ae0180b0c92c9495693f719f2fa11462bac3ea21d31d1bc81319b5af9ebc`
 - `skills/repo-context-ledger/agents/openai.yaml` — `sha256:dc78c15dba0364f25f59f2c5ace283f1c64e200f3f88c4b03feedfe99b64c329`
 - `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:f0acc36162fd1e36a8dee438fd7160ad03845df4da6739c1811994b366271ec1`
 - `skills/repo-context-ledger/references/document-model.md` — `sha256:35752cc0cae464c9b0d5bbda84eaef1770ff12515f0cf66fa0b597cb4c6c011b`
-- `tests/test_ledger.py` — `sha256:a2bac0cca075ac66b46644359180940be079eea71e40eb7d30e2ed14d1c607d2`
+- `tests/test_ledger.py` — `sha256:cbcae4722293cdbc0485328d823b717c17de2012dc8c5fa26256221499e9b143`
 <!-- repo-context-ledger:pack-files:end -->

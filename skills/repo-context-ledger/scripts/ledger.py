@@ -2513,16 +2513,39 @@ def secret_values_from_command(command: list[str]) -> list[str]:
                 values.append(value)
         if item.startswith("-") and sensitive.search(item):
             redact_next = True
-    return values
+        for match in re.finditer(
+            r'''(?ix)
+            (?:\\?["'])?\b(?:password|passwd|secret|token|api[-_]?key|authorization|bearer|cookie|set-cookie)
+            (?:\\?["'])?\s*(?:=|:|\s)\s*(?:\\?["'])?
+            ([^\s,;}}\]"'\\]+)
+            ''',
+            item,
+        ):
+            value = match.group(1)
+            if value:
+                values.append(value)
+    return list(dict.fromkeys(values))
 
 
 def redact_secret_text(text: str, extra_values: list[str] | None = None) -> str:
+    secret_label = r"(?:password|passwd|secret|token|api[-_]?key|authorization|bearer|cookie|set-cookie)"
     text = re.sub(
-        r"(?i)\b(password|passwd|secret|token|api[-_]?key|authorization|bearer|cookie|set-cookie)=([^\s,;]+)",
-        r"\1=<redacted>",
+        rf'''(?ix)
+        (?P<prefix>["']?\b{secret_label}["']?\s*(?:=|:)\s*)
+        (?:
+            "(?:\\.|[^"\\\r\n])*"
+            | '(?:\\.|[^'\\\r\n])*'
+            | [^\s,;}}\]]+
+        )
+        ''',
+        lambda match: f"{match.group('prefix')}<redacted>",
         text,
     )
-    text = re.sub(r"(?i)\b(authorization|bearer)\s+\S+", r"\1 <redacted>", text)
+    text = re.sub(
+        rf"(?i)\b({secret_label})\s+(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s,;]+)",
+        r"\1 <redacted>",
+        text,
+    )
     text = re.sub(
         r"(?i)\b(?:postgres|postgresql|mysql|mongodb|redis|amqp|https?)://\S+",
         "<redacted-url>",

@@ -22,7 +22,7 @@ Repo Context Ledger 将编码 Agent 的原生仓库指令入口连接到 Git 中
 ## Data flow and contracts
 
 - Input: Agent 根据自然语言任务确定 feature。`context --query` 读取 live Context Pack 元数据，按 feature/title/tracked path 选择一个主 Pack 及其关联 spec，并说明选择原因。
-- Flow: 原生 Agent 入口指向仓库规则；省略 `--repo` 时从当前目录向上寻找 `.context-ledger/config.json` 并在嵌套 Git 边界停下。完成或切换时将已验证状态保存为 checkpoint/handoff。`verify` 失败只持久化脱敏后的 Failure Capsule，成功只保留 hash 与最后一行结果。
+- Flow: 原生 Agent 入口指向仓库规则；省略 `--repo` 时从当前目录向上寻找 `.context-ledger/config.json` 并在嵌套 Git 边界停下。完成或切换时将已验证状态保存为 checkpoint/handoff。`verify` 失败只持久化脱敏后的 Failure Capsule；脱敏同时覆盖命令显示与输出摘要中常见的 `key=value`、`key: value`、JSON 和空格分隔凭据形式。成功只保留 hash 与经同样脱敏的最后一行结果。
 - Persistence / dependencies: 共享知识仅持久化为普通 Git 文件；工作区当前状态继续保存在 Git metadata，派生索引由运行时确定性生成。
 - Output: 新 Agent 获得最小加载路径、当前事实、验证命令和下一步；检查命令报告适配器漂移、过期上下文或缺少关联记录。
 
@@ -40,6 +40,7 @@ Repo Context Ledger 将编码 Agent 的原生仓库指令入口连接到 Git 中
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Harden Failure Capsule redaction before v0.5.6 release](../changes/2026/08/20260813023156-gviiisen-640b12d3d4-harden-failure-capsule-redaction-before-v0-5-6-r.md)
 - [Context Router 失败摘要与仓库根发现](../changes/2026/08/20260813020044-gviiisen-418ac132d0-context-router.md)
 - [Implement native context bridge](../changes/2026/08/20260811211310-gviiisen-5a44822643-implement-native-context-bridge.md)
 <!-- repo-context-ledger:changes:end -->
