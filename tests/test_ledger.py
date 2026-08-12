@@ -234,7 +234,22 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertNotIn(final_handoff.name, root_change_index)
             self.run_ledger(repo, "check", "--strict")
 
+            status_file = repo / "apps/payments/status.ts"
+            status_file.write_text("export const status = 'ok'\n", encoding="utf-8")
+            self.run_ledger(
+                repo,
+                "pack",
+                "--feature",
+                "payment-status",
+                "--title",
+                "Payment status",
+                "--file",
+                "apps/payments/status.ts",
+                "--spec",
+                "docs/specs/payment-status.md",
+            )
             context = self.run_ledger(repo, "context", "--query", "payment status")
+            self.assertIn("Primary pack: docs/ai/context-packs/payment-status.md", context.stdout)
             self.assertIn("docs/specs/payment-status.md", context.stdout)
 
     def test_native_adapters_preserve_copilot_prose_and_detect_drift(self):
@@ -297,7 +312,7 @@ class LedgerFlowTests(unittest.TestCase):
 
             manifest = json.loads((repo / "docs/ai/context-manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(1, manifest["manifest_version"])
-            self.assertEqual("0.5.4", manifest["tool_version"])
+            self.assertEqual("0.5.6", manifest["tool_version"])
             route = manifest["features"][0]
             self.assertEqual("authentication", route["feature"])
             self.assertEqual("docs/ai/context-packs/authentication.md", route["context_pack"])
@@ -1523,6 +1538,126 @@ class LedgerFlowTests(unittest.TestCase):
             result = self.run_ledger(repo, "sync", expected=2)
             self.assertIn("Another Repo Context Ledger write is active", result.stderr)
             self.assertEqual("existing writer", lock.read_text(encoding="utf-8"))
+
+    def test_context_router_prefers_live_pack_feature_and_tracked_path(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            (repo / "src").mkdir()
+            authority = repo / "src/authority.go"
+            authority.write_text("package authority\n", encoding="utf-8")
+            worker = repo / "src/worker.go"
+            worker.write_text("package worker\n", encoding="utf-8")
+            self.run_ledger(
+                repo, "pack", "--feature", "authority", "--title", "Asset Authority",
+                "--file", "src/authority.go", "--spec", "docs/specs/README.md",
+            )
+            self.run_ledger(
+                repo, "pack", "--feature", "announcement-worker", "--title", "Announcement Worker",
+                "--file", "src/worker.go", "--spec", "docs/specs/README.md",
+            )
+            long_spec = repo / "docs/specs/market-data-to-spread-pipeline.md"
+            long_spec.write_text(
+                "# 17 所行情采集与差价计算链路\n\n"
+                "This long document mentions Asset Authority many times. "
+                "Asset Authority Asset Authority Asset Authority.\n",
+                encoding="utf-8",
+            )
+            result = self.run_ledger(repo, "context", "--query", "Asset Authority")
+            self.assertIn("Primary pack: docs/ai/context-packs/authority.md", result.stdout)
+            self.assertIn("Feature: authority", result.stdout)
+            self.assertIn("Why:", result.stdout)
+            self.assertNotIn("market-data-to-spread-pipeline.md", result.stdout)
+            self.assertNotIn("\tscore=", result.stdout)
+
+    def test_context_router_demotes_superseded_pack(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            (repo / "src").mkdir()
+            source = repo / "src/authority.go"
+            source.write_text("package authority\n", encoding="utf-8")
+            self.run_ledger(
+                repo, "pack", "--feature", "legacy-authority", "--title", "Legacy Authority",
+                "--file", "src/authority.go",
+            )
+            self.run_ledger(
+                repo, "pack", "--feature", "authority", "--title", "Asset Authority",
+                "--file", "src/authority.go",
+            )
+            legacy = repo / "docs/ai/context-packs/legacy-authority.md"
+            text = legacy.read_text(encoding="utf-8")
+            text = text.replace("Status: current", "Status: superseded")
+            if "Superseded by:" not in text:
+                text = text.replace("Status: superseded", "Status: superseded\nSuperseded by: authority")
+            legacy.write_text(text, encoding="utf-8")
+            result = self.run_ledger(repo, "context", "--query", "authority")
+            self.assertIn("Primary pack: docs/ai/context-packs/authority.md", result.stdout)
+            self.assertNotIn("Primary pack: docs/ai/context-packs/legacy-authority.md", result.stdout)
+
+    def test_discover_repo_finds_ledger_config_and_stops_at_nested_git(self):
+        with tempfile.TemporaryDirectory() as raw:
+            outer = Path(raw) / "outer"
+            self.init_git_repo(outer, "Alice")
+            inner = outer / "vendor" / "nested"
+            inner.mkdir(parents=True)
+            self.run_git(inner, "init", "-b", "main")
+            self.assertEqual(inner.resolve(), LEDGER_MODULE.discover_repo(inner).resolve())
+            child = outer / "app" / "module"
+            child.mkdir(parents=True)
+            self.assertEqual(outer.resolve(), LEDGER_MODULE.discover_repo(child).resolve())
+            self.assertEqual(
+                child.resolve(),
+                LEDGER_MODULE.resolve_repo(str(child), explicit=True).resolve(),
+            )
+
+    def test_failed_verification_records_redacted_failure_capsule(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            started = self.run_ledger(
+                repo, "start", "--title", "Record failure capsule", "--language", "en"
+            )
+            handoff = private_draft(repo, started)
+            self.fill_handoff(handoff, "src/service.py::Run", "docs/specs/service.md")
+            self.run_ledger(
+                repo,
+                "verify",
+                "--",
+                sys.executable,
+                "-c",
+                (
+                    "print('postgres://user:hunter2@db.internal/app'); "
+                    "print('password: colon-secret-value'); "
+                    "print('\\\"token\\\": \\\"json-secret-value\\\"'); "
+                    "raise SystemExit('FAIL api_key whitespace-secret-value')"
+                ),
+                expected=1,
+            )
+            text = handoff.read_text(encoding="utf-8")
+            self.assertIn("- Status: failed", text)
+            self.assertIn("failure=", text)
+            self.assertNotIn("hunter2", text)
+            self.assertNotIn("colon-secret-value", text)
+            self.assertNotIn("json-secret-value", text)
+            self.assertNotIn("whitespace-secret-value", text)
+            self.assertIn("<redacted", text)
+
+            escaped = LEDGER_MODULE.verification_output_summary(
+                "",
+                r'ERROR payload={\"token\": \"escaped-json-secret-value\"}',
+                "failed",
+            )
+            self.assertNotIn("escaped-json-secret-value", escaped)
+            self.assertIn("<redacted>", escaped)
+
+    def test_cited_code_path_strips_symbol_and_matches_evidence(self):
+        self.assertEqual("src/service.py", LEDGER_MODULE.cited_code_path("src/service.py::Run"))
+        self.assertEqual("engine/foo.go", LEDGER_MODULE.cited_code_path("engine/foo.go:12"))
+        self.assertTrue(LEDGER_MODULE.evidence_path_cited("src/service.py", {"src/service.py"}))
+        self.assertTrue(
+            LEDGER_MODULE.evidence_path_cited("longshort-data/engine/foo.go", {"engine/foo.go"})
+        )
 
 
 if __name__ == "__main__":

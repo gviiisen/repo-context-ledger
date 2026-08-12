@@ -19,6 +19,19 @@ python .context-ledger/ledger.py <command>
 
 Use `python3` instead of `python` when that is the available interpreter.
 
+`--repo` is optional. If omitted, the runtime walks up from the current directory to the nearest `.context-ledger/config.json`, and stops at a nested Git repository boundary.
+
+## Choose the shortest path
+
+Do not run the full lifecycle for every request.
+
+- **Read-only understanding**: `context --query "<task>"`, then `focus --feature "<feature>"`. Do not `start` a session.
+- **Single-task small fix**: `status` → `start --feature` → implement → `verify -- <command>` → `finish --spec`. `finish` records evidence automatically when this is the only session. If the worktree is large or another session exists, pass `evidence --path`.
+- **Parallel tasks**: pass `--session <id>` on every lifecycle command. Capture evidence with repeated `--path` values for only this task.
+- **Medium or large change**: also refresh the related Context Pack, update the stable spec, and write Before/After evidence before `finish`.
+
+`context` returns one primary Context Pack, its linked specs, and why it was chosen. Read that Pack's load order before scanning the rest of the repository.
+
 ## Initialize a repository
 
 When the user asks to initialize, adopt, or configure repository context documentation:
@@ -35,49 +48,24 @@ Read [document-model.md](references/document-model.md) when choosing where infor
 
 ## Complete behavior-changing work
 
-Apply this workflow autonomously for features, bug fixes, refactors, interface changes, and other changes that alter behavior. Do not ask the user to run ledger commands.
+Apply this workflow autonomously when code behavior changes. Follow [Choose the shortest path](#choose-the-shortest-path). Do not ask the user to run ledger commands.
 
-1. Before editing code, run `python .context-ledger/ledger.py status`. Each task owns a private draft session under worktree Git metadata. Never adopt, pause, publish, or rewrite another task's draft.
-2. Resolve the record language. Follow configured language; for `auto`, use nearby documentation or the user's language. Keep code identifiers in source form.
-3. If there is no active handoff, run:
-
-   ```text
-   python .context-ledger/ledger.py start --title "<concise task title>" --language <en|zh-CN>
-   ```
-
-   Keep the returned session ID. `start` must not create an unfinished file under `docs/changes/`. When more than one task is active, pass `--session <id>` to lifecycle commands; omission must fail rather than select another task.
-
-4. Query the live route index, then load the feature Context Pack:
+1. Run `python .context-ledger/ledger.py status`. Reuse only this task's private draft. Never adopt, pause, publish, or rewrite another task's draft.
+2. Resolve the record language. Keep code identifiers in source form.
+3. If this task will change behavior and has no session, `start --title "<title>" --feature "<feature>"`. Keep the session ID. When more than one task is active, pass `--session <id>`; omission must fail.
+4. Route context, then read the primary Pack and its specs:
 
    ```text
    python .context-ledger/ledger.py context --query "<feature, interface, or module>"
    python .context-ledger/ledger.py focus --feature "<feature>"
    ```
 
-   If no Context Pack exists, create one, fill every semantic section, then focus it:
-
-   ```text
-   python .context-ledger/ledger.py pack --feature "<feature>" --file <important-file> --spec <related-spec>
-   ```
-
-5. Read the returned stable specs and relevant project context before broad code exploration.
-6. Implement the code change. Run every claimed check through `python .context-ledger/ledger.py verify --session <id> -- <command>`. Verification runs outside the repository write lock and records its result under a short lock afterward. If verification is unavailable, record it with `verify --session <id> --not-run --reason "<substantive reason>"`.
-7. Run `python .context-ledger/ledger.py evidence`, then update this session's private draft from the generated changed paths. When any foreign session exists, pass repeated `--path <path>` arguments for only the files this task owns; omission must fail instead of copying the whole worktree diff into this draft. Read [.context-ledger/writing-quality.md](.context-ledger/writing-quality.md) and remove every `TODO` placeholder.
-8. Refresh every Context Pack whose tracked production paths changed, then update its navigation content when code ownership or boundaries moved. Coverage is relational: changing an unrelated Pack never covers an implementation path.
-9. Update an existing file under the configured stable-spec directory (default `docs/specs/`) when current behavior, boundaries, contracts, or code navigation changed. Create one from `.context-ledger/templates/spec-template.md` when no suitable stable spec exists; resolve its language and detail metadata.
-10. Finish and atomically publish the private draft, then link the completed change to every affected stable spec. `finish` validates only this session's recorded evidence, explicit specs, and relevant Context Pack fingerprints; foreign dirty paths and foreign stale Packs are not blockers:
-
-   ```text
-   python .context-ledger/ledger.py finish --spec docs/specs/<feature>.md
-   ```
-
-   Repeat `--spec` for multiple specs. When no stable behavior exists to document, make the exception explicit and auditable:
-
-   ```text
-   python .context-ledger/ledger.py finish --no-spec --reason "<why no stable spec applies>"
-   ```
-
-11. Run repository-wide `python .context-ledger/ledger.py check --strict --coverage` at integration or pull-request time when foreign sessions are not actively changing the shared worktree. Do not contact another task or edit its docs merely to make a current task pass the global gate. Adjust validated `coverage` globs in `.context-ledger/config.json` when repository conventions differ from the defaults.
+   If no Context Pack exists, create one with `pack --feature`, fill every semantic section, then focus it.
+5. Implement the change. Record every claimed check with `verify --session <id> -- <command>`. Failed output is stored as a redacted failure capsule, never as a raw log. If verification is unavailable, use `verify --not-run --reason "<substantive reason>"`.
+6. For a small single-session fix, `finish` can collect evidence. If another session exists, or automatic collection finds too many implementation paths, run `evidence --path` for only this task. Read [.context-ledger/writing-quality.md](.context-ledger/writing-quality.md) and remove every `TODO`. Code paths may cite `file.go::Symbol`; the path part is matched against evidence.
+7. On medium or large changes, refresh every related Context Pack after tracked production paths change, and update the stable spec when current behavior or contracts changed.
+8. Finish with `finish --spec docs/specs/<feature>.md`, or `finish --no-spec --reason "<why>"`. `finish` validates only this session.
+9. Run `check --strict --coverage` at integration or pull-request time, not to unblock a parallel session.
 
 ## Bridge native Agent entry points
 
