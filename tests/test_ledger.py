@@ -1643,6 +1643,14 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertNotIn("whitespace-secret-value", text)
             self.assertIn("<redacted", text)
 
+            escaped = LEDGER_MODULE.verification_output_summary(
+                "",
+                r'ERROR payload={\"token\": \"escaped-json-secret-value\"}',
+                "failed",
+            )
+            self.assertNotIn("escaped-json-secret-value", escaped)
+            self.assertIn("<redacted>", escaped)
+
     def test_cited_code_path_strips_symbol_and_matches_evidence(self):
         self.assertEqual("src/service.py", LEDGER_MODULE.cited_code_path("src/service.py::Run"))
         self.assertEqual("engine/foo.go", LEDGER_MODULE.cited_code_path("engine/foo.go:12"))

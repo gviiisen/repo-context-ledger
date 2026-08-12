@@ -2531,18 +2531,14 @@ def redact_secret_text(text: str, extra_values: list[str] | None = None) -> str:
     secret_label = r"(?:password|passwd|secret|token|api[-_]?key|authorization|bearer|cookie|set-cookie)"
     text = re.sub(
         rf'''(?ix)
-        (?P<prefix>["']?\b{secret_label}["']?\s*(?:=|:)\s*)
-        (?:
-            "(?:\\.|[^"\\\r\n])*"
-            | '(?:\\.|[^'\\\r\n])*'
-            | [^\s,;}}\]]+
-        )
+        (?P<prefix>(?:\\?["'])?\b{secret_label}(?:\\?["'])?\s*(?:=|:)\s*)
+        [^\r\n,;}}\]]+
         ''',
         lambda match: f"{match.group('prefix')}<redacted>",
         text,
     )
     text = re.sub(
-        rf"(?i)\b({secret_label})\s+(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s,;]+)",
+        rf"(?i)\b({secret_label})\s+[^\r\n,;}}\]]+",
         r"\1 <redacted>",
         text,
     )
