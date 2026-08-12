@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-一个开放的 Agent Skill。AI 完成代码新增或修复后，它会同步维护项目上下文、功能说明、变更交接记录以及各级 README 摘要。
+一个开放的 Agent Skill。它在 Codex、Claude、Cursor、GitHub Copilot、Grok 等编码 Agent 之间桥接经过验证的仓库上下文，并在代码新增或修复后同步维护功能说明、变更交接记录以及各级 README 摘要。
 
 用户只需正常描述开发需求，文档生命周期由 AI 自主完成。
 
@@ -17,6 +17,49 @@ Repo Context Ledger 为每个 AI 会话提供一份精简、持久的项目地�
 - 哪些接口契约与边界情况必须保持稳定；
 - 本次修改了什么、为什么修改、如何验证；
 - 哪些项目级和模块级 README 摘要需要同步更新。
+
+## v0.5.4 新增能力
+
+- 并行 session 的 evidence 改为显式路径集合：存在其他任务 session 时，`evidence --session <id>` 必须重复传入 `--path <path>`，拒绝把整个共享 worktree 的 dirty paths 塞进当前草稿。
+- `finish` 改为 session-scoped gate，只校验所选草稿、其已记录路径、明确 spec 以及相关 Context Pack 指纹。
+- 其他 session 产生的 dirty paths 与 stale Context Pack 不再阻塞当前 session；当前任务自己的 stale Pack 仍然 fail closed。
+- 全仓 `check --strict --coverage` 保留为集成/PR 阶段门禁，不再作为每个 session 完成时的隐式依赖。
+- 生成的 Agent 规则进一步禁止因为外部 dirty、stale Pack 或全仓检查失败而主动联系其他任务。
+
+## v0.5.3 新增能力
+
+- active/paused handoff 改为 worktree Git 元数据中的私有 session draft；`start`、`checkpoint`、`evidence`、`verify` 不再把未完成记录写进 `docs/changes/`。
+- `finish` 预留唯一历史路径，验证草稿后原子发布一份 completed change；仓库检查通过后只删除当前 session 的私有草稿。
+- 发布中断可幂等恢复：重试时识别同一 Session ID 的 completed record，不重复生成历史文件。
+- v0.5.2 已登记的 active/paused 记录迁移到 v7 私有草稿；completed 与旧式历史原文保持不变。
+- Ledger 的并发职责明确限定为账本隔离：不复制、不锁定、不认领、不合并、也不协调源码文件；代码冲突继续交给宿主 Agent 与 Git。
+
+## v0.5.2 新增能力
+
+- 以任务会话替代单一 active handoff 指针：同一 worktree 可以同时保存多个互不覆盖的 active/paused handoff。
+- 所有生命周期命令支持 `--session <id>`；存在多个候选会话时，省略会话 ID 会直接拒绝，不会猜测、暂停或完成别的任务。
+- `verify` 只在绑定目标和写回结果时短暂持锁，外部测试命令运行期间不再占用仓库写锁。
+- 生成的 Agent 指令明确禁止未经用户授权的跨任务消息、委派、引导和中断；共享 worktree 不等于获得协调权限。
+- v2-v5 的 active/paused 状态会迁移到 v6 task session，历史 change 原文不被重写。
+
+## v0.5.1 新增能力
+
+- Coverage 路径分类会区分生产实现、测试、CI、配置、生成文件、Ledger 受管文件以及项目自定义忽略路径。
+- `.context-ledger/config.json` 中的仓库相对 glob 会经过校验并由 `init` 持久化；已有 v5 仓库不配置也能使用默认值。
+- Context Pack 覆盖改为真实关联：每个发生变化的生产路径都必须由某个 Context Pack 跟踪，而且对应 Pack 必须刷新。
+- 修改无关 Context Pack 不再能让 `check --coverage` 通过。
+- Coverage 失败会指出未覆盖的生产路径，以及没有更新的关联 Pack。
+- 根目录翻译版 README 与配置中的模块 README 会被视为受管文档，而不是生产实现。
+
+## v0.5.0 新增能力
+
+- Native Context Bridge：`AGENTS.md`、`CLAUDE.md`、Cursor Rule 与 GitHub Copilot Instructions 都指向同一份 Git 事实源。
+- Context Manifest：`docs/ai/context-manifest.json` 确定性记录功能对应的 Context Pack、稳定 spec、关键代码路径与近期 change。
+- 跨 Agent checkpoint：当前任务无需暂停即可保存已验证进度和下一步，让同一 worktree 中的另一个 Agent 继续工作。
+- Adapter 生命周期：`adapters sync/check/status` 在保留用户原文的同时发现缺失或漂移的 Agent 入口。
+- Git diff 覆盖门禁：`check --coverage` 会报告缺少 handoff 证据、稳定 spec/明确例外或 Context Pack 更新的行为代码。
+- 私有 Memory 边界：Codex、Cursor、Claude、Copilot Memory 只作为各自缓存；只有通过代码验证的事实才能进入共享 Ledger。
+- Schema v5 升级保留已有记录、自定义文档路径、成熟历史目录和 README 人工内容。
 
 ## v0.4.1 新增能力
 
@@ -40,17 +83,18 @@ Repo Context Ledger 为每个 AI 会话提供一份精简、持久的项目地�
 ## 它会维护什么
 
 - `docs/ai/`：供新 AI 会话快速了解整个项目的精简说明。
+- `docs/ai/context-manifest.json`：供 Agent 机器读取的功能上下文路由表。
 - `docs/ai/context-packs/`：按功能保存最小上下文、加载顺序、边界、测试和文件指纹。
 - `docs/specs/`：当前有效的功能行为、代码地图、接口契约和边界。
 - `docs/changes/`：按 `年/月/变更.md` 归档的新增与修复记录，每月都有独立的小型索引。
-- 分支/worktree 私有状态：当前交接与暂停任务存放在 Git 元数据中，不会被提交。
+- 分支/worktree 私有状态：相互独立的 active/paused 草稿存放在 Git 元数据中，不会被提交；只有 completed change 才进入正式历史。
 - 根目录及模块目录中的 `README.md`：只刷新受控摘要区块，不改写人工内容。
-- `AGENTS.md`、`CLAUDE.md` 和 Cursor 规则：让不同 AI 工具都能自主执行同一套流程的持久指令。
+- `AGENTS.md`、`CLAUDE.md`、Cursor Rule 和 `.github/copilot-instructions.md`：把各家 Agent 指向同一 Ledger 的薄适配器。
 - `.context-ledger/writing-quality.md`：供所有 AI 工具读取的证据、语言和记录形式标准。
 
 ## 兼容性
 
-核心 Skill 遵循开放的 Agent Skills `SKILL.md` 格式，面向 Codex、Claude Code、Cursor 以及其他支持 Agent Skills 的工具。
+核心 Skill 遵循开放的 Agent Skills `SKILL.md` 格式，面向 Codex、Claude Code、Cursor、GitHub Copilot、Grok，以及其他支持 Agent Skills 或仓库指令文件的工具。
 
 初始化后的项目还会包含普通指令文件，因此即使某个工具不能原生发现 Skill，也能遵循相同工作流。不同产品的原生发现方式和安装目录可能有所区别。
 
@@ -88,6 +132,10 @@ Repo Context Ledger 为每个 AI 会话提供一份精简、持久的项目地�
 .agents/skills/repo-context-ledger/
 ```
 
+### GitHub Copilot
+
+可以通过兼容 Agent Skills 的客户端安装，也可以让初始化后生成的 `.github/copilot-instructions.md` 把 Copilot 引导到 Ledger。运行时只维护标记区块，保留已有 Copilot 人工说明。
+
 ## 使用教程
 
 ### 1. 每个项目只初始化一次
@@ -112,7 +160,7 @@ Agent 会创建文档结构、私有工作区状态和持久的 AI 指令，同�
 4. 从 Git 获取实际变更路径，记录 Before/After 行为、边界和证据；
 5. 更新长期有效的功能说明和 Context Pack；
 6. 刷新相关模块 README 和根目录 README 摘要；
-7. 完成交接并校验整个 Ledger。
+7. 完成交接，并校验 Ledger 结构及 Git diff 文档覆盖。
 
 如果当前处于功能分支，共享月度索引和 README 摘要区块会暂时保持不变，等合并后再统一生成。
 
@@ -130,17 +178,36 @@ Agent 会创建文档结构、私有工作区状态和持久的 AI 指令，同�
 
 使用 `auto` 时，Agent 优先遵循项目附近文档的主要语言；如果没有既定习惯，则使用用户的语言。文件路径、函数名、接口字段、命令和错误文本保持源码原文。handoff、稳定 spec 和 Context Pack 会采用不同的 Markdown 结构，因为它们解决的问题不同；升级时不会重新格式化旧文档。
 
-### 3. 使用自然语言切换任务
+Coverage 路径分类在 `.context-ledger/config.json` 中单独配置：
+
+```json
+{
+  "coverage": {
+    "implementation_globs": ["**"],
+    "test_globs": ["tests/**", "**/*.test.*", "**/*.spec.*"],
+    "ci_globs": [".github/**", ".gitlab-ci.yml"],
+    "config_globs": ["pyproject.toml", "package.json"],
+    "generated_globs": ["dist/**", "build/**"],
+    "ignore_globs": []
+  }
+}
+```
+
+运行时会先应用忽略、生成文件、测试、CI 与配置规则，最后才使用生产实现兜底规则。项目可以用自己的 glob 替换默认值。发生变化的生产路径只有被某个已更新 Context Pack 精确跟踪时才算覆盖；修改无关 Pack 不会被接受。
+
+### 3. 在另一个 Agent 中继续，或者自然切换任务
+
+如果只是换到另一个 Agent 或窗口继续同一个任务，当前 Agent 会先保存 checkpoint，包括已完成工作、Git 变更路径和下一步；任务仍保持 active，用户不用执行任何 checkpoint 命令。
 
 像平时一样告诉 Agent：
 
 > 先暂停提现监控修复，切到登录超时问题。
 
-Agent 会记录当前进度和下一步，暂停当前交接，加载登录功能的 Context Pack，然后开始新任务。之后只需说：
+真正切换到另一项任务时，Agent 会先保存 checkpoint，再暂停当前交接，加载登录功能的 Context Pack，然后开始新任务。之后只需说：
 
 > 继续刚才的提现监控任务。
 
-Agent 会恢复交接，检查仓库提交和被跟踪文件是否已经变化，并且只重新加载相关上下文。`pause`、`focus`、`pack`、`resume` 都是 Agent 内部维护命令，用户不需要执行。
+Agent 会恢复交接，检查仓库提交和被跟踪文件是否已经变化，并且只重新加载相关上下文。`checkpoint`、`pause`、`focus`、`pack`、`resume` 都是 Agent 内部维护命令，用户不需要执行。
 
 ### 4. 与同事协作
 
@@ -164,7 +231,7 @@ python .context-ledger/ledger.py sync --derived
 
 ### 5. 在新的 AI 窗口中继续工作
 
-只需要告诉新 Agent 想修改哪个功能或接口。它可以先读取精简索引和对应功能说明，不必为了背景上下文重新扫描一大片代码。
+只需要告诉新 Agent 想修改哪个功能或接口。原生适配器会先把它指向共享 Context Manifest，再加载对应 Context Pack 和稳定 spec，不必重新扫描大段代码，也不需要读取上一种工具的私有 Memory。
 
 ### 6. 查看生成结果
 
@@ -173,6 +240,7 @@ python .context-ledger/ledger.py sync --derived
 ```text
 docs/
 ├── ai/
+│   ├── context-manifest.json
 │   └── context-packs/
 │       └── withdrawal-monitoring.md
 ├── specs/
@@ -189,6 +257,7 @@ docs/
 
 - 初始化可重复执行，不会反复破坏结构。
 - 已有文档和 README 人工内容会被保留。
+- `AGENTS.md`、`CLAUDE.md` 与 GitHub Copilot 指令中受管标记之外的人工内容会被保留。
 - 只有带明确标记的自动生成区块会被替换。
 - 写入前会验证所有配置路径仍位于目标仓库内部。
 - 交接文件采用防冲突创建方式，不会覆盖既有历史。
@@ -196,6 +265,9 @@ docs/
 - 功能分支默认不改共享派生文档，`team-check` 会在评审前报告潜在团队冲突。
 - 当前任务不能被静默替换；切换功能前必须保存可恢复状态并暂停。
 - Context Pack 使用 SHA-256 文件指纹发现被删除或发生变化的代码。
+- Context Manifest 从 Context Pack、spec 和 handoff 派生，并在默认分支检查是否漂移。
+- 可选 Git diff 覆盖门禁会发现没有写入 handoff 证据、稳定 spec 或 Context Pack 的行为代码。
+- 不会把任何工具的私有 Memory 导入为仓库权威事实。
 - `evidence-v1` 记录会拒绝未确定语言、残留占位符、空泛陈述、缺少具体路径、不完整的 Before/After 以及未经真实执行的验证结果。
 - 验证完整输出只展示给当前 Agent，仓库仅保存哈希和元数据；常见的密码/token 命令参数会自动遮蔽。
 - 受管理文件使用原子替换；修改命令使用短时仓库锁，避免并发写入。

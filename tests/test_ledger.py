@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from contextlib import redirect_stdout
@@ -22,6 +23,26 @@ LEDGER_SPEC.loader.exec_module(LEDGER_MODULE)
 
 def field_from_file(path: Path, field: str) -> str:
     return LEDGER_MODULE.field_value(path.read_text(encoding="utf-8"), field)
+
+
+def session_from_result(result) -> str:
+    for line in result.stdout.splitlines():
+        if line.startswith("Session: "):
+            return line.removeprefix("Session: ").strip()
+    raise AssertionError(f"start output did not contain a session ID: {result.stdout}")
+
+
+def session_record(repo: Path, result) -> dict:
+    state = json.loads(LEDGER_MODULE.context_state_path(repo).read_text(encoding="utf-8"))
+    return state["task_sessions"][session_from_result(result)]
+
+
+def private_draft(repo: Path, result) -> Path:
+    return LEDGER_MODULE.validate_private_draft_path(repo, session_record(repo, result)["draft"])
+
+
+def publish_target(repo: Path, result) -> Path:
+    return repo / session_record(repo, result)["publish_path"]
 
 
 class LedgerFlowTests(unittest.TestCase):
@@ -156,11 +177,13 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertIn("Human module text.", (module / "README.md").read_text(encoding="utf-8"))
             self.assertTrue((repo / "AGENTS.md").exists())
             self.assertTrue((repo / ".cursor/rules/repo-context-ledger.mdc").exists())
+            self.assertTrue((repo / ".github/copilot-instructions.md").exists())
+            self.assertTrue((repo / "docs/ai/context-manifest.json").exists())
             self.assertTrue((repo / ".context-ledger/context-state.json").exists())
             self.assertTrue((repo / ".context-ledger/templates/context-pack-template.md").exists())
             self.assertTrue((repo / ".context-ledger/writing-quality.md").exists())
             self.assertEqual(
-                4,
+                7,
                 json.loads((repo / ".context-ledger/config.json").read_text(encoding="utf-8"))["schema_version"],
             )
             quality = json.loads(
@@ -175,9 +198,10 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertEqual(1, (repo / "AGENTS.md").read_text(encoding="utf-8").count("<!-- repo-context-ledger:rules:start -->"))
 
             start = self.run_ledger(repo, "start", "--title", "Repair payment status")
-            handoff_rel = start.stdout.strip().splitlines()[-1]
-            handoff = repo / handoff_rel
+            handoff = private_draft(repo, start)
+            final_handoff = publish_target(repo, start)
             self.assertTrue(handoff.exists())
+            self.assertFalse(final_handoff.exists())
 
             spec = repo / "docs/specs/payment-status.md"
             spec.write_text(
@@ -195,29 +219,537 @@ class LedgerFlowTests(unittest.TestCase):
             completed_state = json.loads(
                 (repo / ".context-ledger/context-state.json").read_text(encoding="utf-8")
             )
-            self.assertIsNone(completed_state["active_handoff"])
+            self.assertEqual({}, completed_state["task_sessions"])
             self.assertFalse((repo / "docs/changes/.active-handoff").exists())
+            self.assertTrue(final_handoff.exists())
+            self.assertFalse(handoff.exists())
             self.assertIn("Repair payment status", spec.read_text(encoding="utf-8"))
             self.assertIn("Latest recorded change", (module / "README.md").read_text(encoding="utf-8"))
             self.assertIn("Human root text.", (repo / "README.md").read_text(encoding="utf-8"))
-            month_index = handoff.parent / "README.md"
+            month_index = final_handoff.parent / "README.md"
             self.assertTrue(month_index.exists())
             self.assertIn("Repair payment status", month_index.read_text(encoding="utf-8"))
             root_change_index = (repo / "docs/changes/README.md").read_text(encoding="utf-8")
             self.assertIn(month_index.parent.relative_to(repo / "docs/changes").as_posix(), root_change_index)
-            self.assertNotIn(handoff.name, root_change_index)
+            self.assertNotIn(final_handoff.name, root_change_index)
             self.run_ledger(repo, "check", "--strict")
 
             context = self.run_ledger(repo, "context", "--query", "payment status")
             self.assertIn("docs/specs/payment-status.md", context.stdout)
 
-    def test_different_active_handoff_is_not_overwritten(self):
+    def test_native_adapters_preserve_copilot_prose_and_detect_drift(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            copilot = repo / ".github/copilot-instructions.md"
+            copilot.parent.mkdir(parents=True)
+            copilot.write_text("# Existing Copilot guidance\n\nKeep this prose.\n", encoding="utf-8")
+
+            self.run_ledger(repo, "init")
+            config = json.loads((repo / ".context-ledger/config.json").read_text(encoding="utf-8"))
+            self.assertEqual(7, config["schema_version"])
+            self.assertEqual(
+                {"agents": True, "claude": True, "cursor": True, "copilot": True},
+                config["adapters"],
+            )
+            self.assertEqual(["**"], config["coverage"]["implementation_globs"])
+            self.assertIn(
+                "Never message or steer another user-owned task",
+                (repo / ".cursor/rules/repo-context-ledger.mdc").read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "Never send a message, delegation",
+                (repo / "AGENTS.md").read_text(encoding="utf-8"),
+            )
+            self.assertIn("tests/**", config["coverage"]["test_globs"])
+            self.assertIn("Keep this prose.", copilot.read_text(encoding="utf-8"))
+            checked = self.run_ledger(repo, "adapters", "check")
+            self.assertIn("copilot: current", checked.stdout)
+
+            cursor = repo / ".cursor/rules/repo-context-ledger.mdc"
+            cursor.write_text(cursor.read_text(encoding="utf-8") + "drift\n", encoding="utf-8")
+            drifted = self.run_ledger(repo, "adapters", "check", expected=2)
+            self.assertIn("missing-or-drifted", drifted.stdout)
+            self.run_ledger(repo, "adapters", "sync")
+            self.run_ledger(repo, "adapters", "check")
+            self.assertIn("Keep this prose.", copilot.read_text(encoding="utf-8"))
+
+    def test_context_manifest_indexes_feature_routes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            source = repo / "src/auth.py"
+            source.parent.mkdir(parents=True)
+            source.write_text("def authenticate():\n    return True\n", encoding="utf-8")
+            self.run_ledger(repo, "init")
+            spec = repo / "docs/specs/authentication.md"
+            spec.write_text("# Authentication\n\nStatus: current\n", encoding="utf-8")
+            created = self.run_ledger(
+                repo,
+                "pack",
+                "--feature",
+                "authentication",
+                "--file",
+                "src/auth.py",
+                "--spec",
+                "docs/specs/authentication.md",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            self.run_ledger(repo, "manifest", "sync")
+
+            manifest = json.loads((repo / "docs/ai/context-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(1, manifest["manifest_version"])
+            self.assertEqual("0.5.4", manifest["tool_version"])
+            route = manifest["features"][0]
+            self.assertEqual("authentication", route["feature"])
+            self.assertEqual("docs/ai/context-packs/authentication.md", route["context_pack"])
+            self.assertEqual(["docs/specs/authentication.md"], route["stable_specs"])
+            self.assertEqual(["src/auth.py"], route["tracked_files"])
+            self.run_ledger(repo, "manifest", "check")
+
+    def test_checkpoint_keeps_handoff_active_and_records_resume_evidence(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            started = self.run_ledger(
+                repo, "start", "--title", "Repair service", "--feature", "service"
+            )
+            handoff = private_draft(repo, started)
+            (repo / "src/service.py").write_text("VALUE = 2\n", encoding="utf-8")
+            self.run_ledger(
+                repo,
+                "checkpoint",
+                "--summary",
+                "Service behavior is implemented and focused verification remains.",
+                "--next",
+                "Run the focused service test.",
+            )
+            text = handoff.read_text(encoding="utf-8")
+            self.assertEqual("active", field_from_file(handoff, "Status"))
+            self.assertEqual("Alice", field_from_file(handoff, "Checkpoint actor"))
+            self.assertIn("implemented", field_from_file(handoff, "Resume summary"))
+            self.assertIn("src/service.py", text)
+
+    def test_coverage_requires_handoff_spec_and_context_pack(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            source = repo / "src/service.py"
+            source.write_text("VALUE = 2\n", encoding="utf-8")
+            missing = self.run_ledger(repo, "check", "--coverage", expected=2)
+            self.assertIn("no changed record or active private handoff", missing.stderr)
+
+            started = self.run_ledger(
+                repo, "start", "--title", "Change service behavior", "--feature", "service"
+            )
+            self.assertTrue(private_draft(repo, started).is_file())
+            self.assertFalse(publish_target(repo, started).exists())
+            spec = repo / "docs/specs/service.md"
+            spec.write_text(
+                "# Service behavior\n\nStatus: current\n\n"
+                "The service exposes the tested value contract.\n",
+                encoding="utf-8",
+            )
+            created = self.run_ledger(
+                repo,
+                "pack",
+                "--feature",
+                "service",
+                "--file",
+                "src/service.py",
+                "--spec",
+                "docs/specs/service.md",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            self.run_ledger(repo, "evidence")
+            self.run_ledger(repo, "manifest", "sync")
+            self.run_ledger(repo, "check", "--coverage")
+
+    def test_coverage_classifies_tests_ci_config_and_managed_paths(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
             self.run_ledger(repo, "init")
-            self.run_ledger(repo, "start", "--title", "First task")
-            result = self.run_ledger(repo, "start", "--title", "Second task", expected=2)
-            self.assertIn("Another handoff is active", result.stderr)
+            config = LEDGER_MODULE.load_config(repo)
+            self.assertEqual("implementation", LEDGER_MODULE.coverage_path_kind(config, "src/service.py"))
+            self.assertEqual("test", LEDGER_MODULE.coverage_path_kind(config, "tests/test_service.py"))
+            self.assertEqual("test", LEDGER_MODULE.coverage_path_kind(config, "src/service.test.ts"))
+            self.assertEqual("ci", LEDGER_MODULE.coverage_path_kind(config, ".github/workflows/test.yml"))
+            self.assertEqual("config", LEDGER_MODULE.coverage_path_kind(config, "pyproject.toml"))
+            self.assertEqual("generated", LEDGER_MODULE.coverage_path_kind(config, "dist/app.js"))
+            self.assertEqual("managed", LEDGER_MODULE.coverage_path_kind(config, ".context-ledger/config.json"))
+            self.assertEqual("managed", LEDGER_MODULE.coverage_path_kind(config, "README.zh-CN.md"))
+            config["modules"] = [{"path": "apps/api", "readme": "apps/api/README.md", "source": "manual"}]
+            self.assertEqual("managed", LEDGER_MODULE.coverage_path_kind(config, "apps/api/README.md"))
+            config["coverage"]["ignore_globs"] = ["scratch/**"]
+            self.assertEqual("ignored", LEDGER_MODULE.coverage_path_kind(config, "scratch/note.txt"))
+
+    def test_coverage_allows_test_and_ci_only_changes_without_handoff(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            test_file = repo / "tests/test_service.py"
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text("def test_service():\n    assert True\n", encoding="utf-8")
+            workflow = repo / ".github/workflows/test.yml"
+            workflow.parent.mkdir(parents=True)
+            workflow.write_text("name: test\n", encoding="utf-8")
+            self.run_ledger(repo, "check", "--coverage")
+
+    def test_coverage_rejects_an_unrelated_changed_context_pack(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            other = repo / "src/other.py"
+            other.write_text("OTHER = 1\n", encoding="utf-8")
+            self.run_git(repo, "add", "src/other.py")
+            self.run_git(repo, "commit", "-m", "Add other source")
+
+            (repo / "src/service.py").write_text("VALUE = 2\n", encoding="utf-8")
+            self.run_ledger(repo, "start", "--title", "Change service", "--feature", "service")
+            spec = repo / "docs/specs/service.md"
+            spec.write_text("# Service\n\nStatus: current\n\nCurrent service behavior.\n", encoding="utf-8")
+            created = self.run_ledger(
+                repo, "pack", "--feature", "other", "--file", "src/other.py",
+                "--spec", "docs/specs/service.md",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            self.run_ledger(repo, "evidence")
+
+            result = self.run_ledger(repo, "check", "--coverage", expected=2)
+            self.assertIn(
+                "Behavior-changing path has no related Context Pack tracked file: src/service.py",
+                result.stderr,
+            )
+
+    def test_coverage_requires_the_related_context_pack_to_change(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            spec = repo / "docs/specs/service.md"
+            spec.write_text("# Service\n\nStatus: current\n\nThe service returns its configured value.\n", encoding="utf-8")
+            created = self.run_ledger(
+                repo, "pack", "--feature", "service", "--file", "src/service.py",
+                "--spec", "docs/specs/service.md",
+            )
+            pack = repo / created.stdout.splitlines()[0]
+            self.fill_context_pack(pack)
+            self.run_ledger(repo, "manifest", "sync")
+            self.run_git(repo, "add", "-A")
+            self.run_git(repo, "commit", "-m", "Document service context")
+
+            (repo / "src/service.py").write_text("VALUE = 2\n", encoding="utf-8")
+            self.run_ledger(repo, "start", "--title", "Change service", "--feature", "service")
+            spec.write_text(spec.read_text(encoding="utf-8") + "The updated value remains observable.\n", encoding="utf-8")
+            self.run_ledger(repo, "evidence")
+
+            missing = self.run_ledger(repo, "check", "--coverage", expected=2)
+            self.assertIn("Related Context Pack was not changed", missing.stderr)
+
+            self.run_ledger(
+                repo, "pack", "--feature", "service", "--file", "src/service.py",
+                "--spec", "docs/specs/service.md",
+            )
+            self.run_ledger(repo, "check", "--coverage")
+
+    def test_parallel_task_sessions_are_isolated_and_ambiguous_commands_fail_closed(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            first = self.run_ledger(repo, "start", "--title", "First task")
+            second = self.run_ledger(repo, "start", "--title", "Second task")
+            first_session = session_from_result(first)
+            second_session = session_from_result(second)
+            self.assertNotEqual(first_session, second_session)
+            state = json.loads((repo / ".context-ledger/context-state.json").read_text(encoding="utf-8"))
+            self.assertEqual({first_session, second_session}, set(state["task_sessions"]))
+            self.assertTrue(private_draft(repo, first).is_file())
+            self.assertTrue(private_draft(repo, second).is_file())
+            self.assertFalse(publish_target(repo, first).exists())
+            self.assertFalse(publish_target(repo, second).exists())
+            self.assertEqual([], [
+                path for path in (repo / "docs/changes").rglob("*.md")
+                if path.name != "README.md"
+            ])
+            ambiguous = self.run_ledger(repo, "evidence", expected=2)
+            self.assertIn("Multiple active task sessions exist", ambiguous.stderr)
+            first_evidence = self.run_ledger(repo, "evidence", "--session", first_session)
+            self.assertIn(first_session, first_evidence.stdout)
+
+    def test_parallel_evidence_requires_explicit_session_paths(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo)
+            first = self.run_ledger(repo, "start", "--title", "First scoped task")
+            second = self.run_ledger(repo, "start", "--title", "Second scoped task")
+            first_session = session_from_result(first)
+
+            (repo / "src/service.py").write_text("VALUE = 2\n", encoding="utf-8")
+            blocked = self.run_ledger(
+                repo, "evidence", "--session", first_session, expected=2
+            )
+            self.assertIn("pass --path for only this task", blocked.stderr)
+
+            captured = self.run_ledger(
+                repo,
+                "evidence",
+                "--session",
+                first_session,
+                "--path",
+                "src/service.py",
+            )
+            self.assertIn("src/service.py", captured.stdout)
+            evidence = LEDGER_MODULE.managed_text(
+                private_draft(repo, first).read_text(encoding="utf-8"),
+                LEDGER_MODULE.EVIDENCE_START,
+                LEDGER_MODULE.EVIDENCE_END,
+            )
+            self.assertIn("`src/service.py`", evidence)
+            self.assertNotIn(session_from_result(second), evidence)
+
+    def test_finish_ignores_foreign_session_dirty_paths_and_stale_pack(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo)
+            first_source = repo / "src/first.py"
+            foreign_source = repo / "src/foreign.py"
+            first_source.write_text("VALUE = 1\n", encoding="utf-8")
+            foreign_source.write_text("VALUE = 1\n", encoding="utf-8")
+
+            first_pack_result = self.run_ledger(
+                repo, "pack", "--feature", "first-task", "--file", "src/first.py"
+            )
+            first_pack = repo / first_pack_result.stdout.splitlines()[0]
+            self.fill_context_pack(first_pack)
+            foreign_pack_result = self.run_ledger(
+                repo, "pack", "--feature", "foreign-task", "--file", "src/foreign.py"
+            )
+            foreign_pack = repo / foreign_pack_result.stdout.splitlines()[0]
+            self.fill_context_pack(foreign_pack)
+            self.run_git(repo, "add", "-A")
+            self.run_git(repo, "commit", "-m", "Add parallel task fixtures")
+
+            first = self.run_ledger(
+                repo, "start", "--title", "Finish first task", "--language", "en"
+            )
+            second = self.run_ledger(
+                repo, "start", "--title", "Keep foreign task active", "--language", "en"
+            )
+            first_session = session_from_result(first)
+            second_session = session_from_result(second)
+            first_draft = private_draft(repo, first)
+            second_draft = private_draft(repo, second)
+            second_before = second_draft.read_bytes()
+
+            first_source.write_text("VALUE = 2\n", encoding="utf-8")
+            foreign_source.write_text("VALUE = 2\n", encoding="utf-8")
+            self.run_ledger(repo, "pack", "--feature", "first-task")
+            self.fill_handoff(first_draft, "src/first.py", "docs/ai/context-packs/first-task.md")
+            self.run_ledger(
+                repo,
+                "verify",
+                "--session",
+                first_session,
+                "--",
+                sys.executable,
+                "-c",
+                "print('first scoped task passed')",
+            )
+            self.run_ledger(
+                repo,
+                "evidence",
+                "--session",
+                first_session,
+                "--path",
+                "src/first.py",
+                "--path",
+                "docs/ai/context-packs/first-task.md",
+            )
+
+            completed = self.run_ledger(
+                repo,
+                "finish",
+                "--session",
+                first_session,
+                "--no-spec",
+                "--reason",
+                "This isolated fixture has no durable product specification to maintain.",
+            )
+            self.assertIn("Completed", completed.stdout)
+            self.assertEqual(second_before, second_draft.read_bytes())
+            state = LEDGER_MODULE.load_context_state(repo)
+            self.assertNotIn(first_session, state["task_sessions"])
+            self.assertEqual("active", state["task_sessions"][second_session]["status"])
+            self.assertIn(
+                "tracked file changed: src/foreign.py",
+                self.run_ledger(repo, "check", "--strict", expected=2).stderr,
+            )
+
+    def test_finish_still_rejects_the_current_sessions_stale_pack(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo)
+            source = repo / "src/current.py"
+            source.write_text("VALUE = 1\n", encoding="utf-8")
+            pack_result = self.run_ledger(
+                repo, "pack", "--feature", "current-task", "--file", "src/current.py"
+            )
+            pack = repo / pack_result.stdout.splitlines()[0]
+            self.fill_context_pack(pack)
+            self.run_git(repo, "add", "-A")
+            self.run_git(repo, "commit", "-m", "Add current task fixture")
+
+            started = self.run_ledger(
+                repo, "start", "--title", "Reject stale current pack", "--language", "en"
+            )
+            session_id = session_from_result(started)
+            draft = private_draft(repo, started)
+            source.write_text("VALUE = 2\n", encoding="utf-8")
+            pack.write_text(pack.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+            self.fill_handoff(draft, "src/current.py", "docs/ai/context-packs/current-task.md")
+            self.run_ledger(
+                repo,
+                "verify",
+                "--session",
+                session_id,
+                "--",
+                sys.executable,
+                "-c",
+                "print('current task passed')",
+            )
+            self.run_ledger(
+                repo,
+                "evidence",
+                "--session",
+                session_id,
+                "--path",
+                "src/current.py",
+                "--path",
+                "docs/ai/context-packs/current-task.md",
+            )
+            blocked = self.run_ledger(
+                repo,
+                "finish",
+                "--session",
+                session_id,
+                "--no-spec",
+                "--reason",
+                "This isolated fixture has no durable product specification to maintain.",
+                expected=2,
+            )
+            self.assertIn("tracked file changed: src/current.py", blocked.stderr)
+            self.assertTrue(draft.is_file())
+
+    def test_finishing_one_session_publishes_only_its_record(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            first = self.run_ledger(repo, "start", "--title", "First isolated task", "--language", "en")
+            second = self.run_ledger(repo, "start", "--title", "Second isolated task", "--language", "en")
+            first_session = session_from_result(first)
+            second_session = session_from_result(second)
+            first_draft = private_draft(repo, first)
+            second_draft = private_draft(repo, second)
+            second_before = second_draft.read_bytes()
+            first_target = publish_target(repo, first)
+
+            self.fill_handoff(first_draft, "src/first.py", "docs/specs/first.md")
+            self.run_ledger(
+                repo, "verify", "--session", first_session, "--",
+                sys.executable, "-c", "print('first session passed')",
+            )
+            self.run_ledger(
+                repo, "finish", "--session", first_session, "--no-spec", "--reason",
+                "This isolated fixture has no durable product specification to maintain.",
+            )
+
+            self.assertTrue(first_target.is_file())
+            self.assertFalse(first_draft.exists())
+            self.assertEqual(second_before, second_draft.read_bytes())
+            state = LEDGER_MODULE.load_context_state(repo)
+            self.assertNotIn(first_session, state["task_sessions"])
+            self.assertEqual("active", state["task_sessions"][second_session]["status"])
+
+    def test_interrupted_publish_keeps_draft_and_finish_recovers_idempotently(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            started = self.run_ledger(repo, "start", "--title", "Recover publication", "--language", "en")
+            session_id = session_from_result(started)
+            draft = private_draft(repo, started)
+            target = publish_target(repo, started)
+            self.fill_handoff(draft, "src/recovery.py", "docs/specs/recovery.md")
+            self.run_ledger(
+                repo, "verify", "--session", session_id, "--",
+                sys.executable, "-c", "print('recovery passed')",
+            )
+            with redirect_stdout(io.StringIO()):
+                with mock.patch.object(
+                    LEDGER_MODULE,
+                    "task_session_finish_errors",
+                    side_effect=[[], ["Injected post-publication failure."]],
+                ):
+                    self.assertEqual(
+                        2,
+                        LEDGER_MODULE.finish_change(
+                            repo, [], True,
+                            "This recovery fixture has no durable product specification to maintain.",
+                            session_id,
+                        ),
+                    )
+            self.assertTrue(target.is_file())
+            self.assertTrue(draft.is_file())
+            self.assertIn(session_id, LEDGER_MODULE.load_context_state(repo)["task_sessions"])
+
+            with redirect_stdout(io.StringIO()):
+                with mock.patch.object(
+                    LEDGER_MODULE,
+                    "task_session_finish_errors",
+                    side_effect=[[], []],
+                ):
+                    self.assertEqual(
+                        0,
+                        LEDGER_MODULE.finish_change(
+                            repo, [], True,
+                            "This recovery fixture has no durable product specification to maintain.",
+                            session_id,
+                        ),
+                    )
+            self.assertTrue(target.is_file())
+            self.assertFalse(draft.exists())
+            self.assertNotIn(session_id, LEDGER_MODULE.load_context_state(repo)["task_sessions"])
+
+    def test_long_verification_releases_repo_lock_and_records_only_its_session(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            first = self.run_ledger(repo, "start", "--title", "Slow verification")
+            second = self.run_ledger(repo, "start", "--title", "Concurrent evidence")
+            first_session = session_from_result(first)
+            second_session = session_from_result(second)
+            first_handoff = private_draft(repo, first)
+            second_handoff = private_draft(repo, second)
+
+            process = subprocess.Popen(
+                [
+                    sys.executable, str(LEDGER), "--repo", str(repo), "verify",
+                    "--timeout", "10", "--session", first_session, "--",
+                    sys.executable, "-c", "import time; time.sleep(2); print('slow check passed')",
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                encoding="utf-8",
+            )
+            time.sleep(0.4)
+            started = time.monotonic()
+            evidence = self.run_ledger(repo, "evidence", "--session", second_session)
+            elapsed = time.monotonic() - started
+            stdout, stderr = process.communicate(timeout=8)
+
+            self.assertEqual(0, process.returncode, stderr)
+            self.assertLess(elapsed, 1.3)
+            self.assertIn(second_session, evidence.stdout)
+            self.assertIn("slow check passed", stdout)
+            self.assertIn("Status: passed", first_handoff.read_text(encoding="utf-8"))
+            self.assertNotIn("Status: passed", second_handoff.read_text(encoding="utf-8"))
 
     def test_context_pack_focus_and_staleness_detection(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -253,7 +785,7 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertIn("Stable spec: docs/specs/authentication.md", focused.stdout)
             self.assertIn("Tracked file: src/auth.py", focused.stdout)
             state = json.loads((repo / ".context-ledger/context-state.json").read_text(encoding="utf-8"))
-            self.assertEqual("authentication", state["active_feature"])
+            self.assertEqual("authentication", state["recent_features"][0])
             self.run_ledger(repo, "check", "--strict")
 
             source.write_text("def authenticate():\n    return False\n", encoding="utf-8")
@@ -273,7 +805,8 @@ class LedgerFlowTests(unittest.TestCase):
             first = self.run_ledger(
                 repo, "start", "--title", "Repair withdrawals", "--feature", "withdrawals"
             )
-            first_path = first.stdout.strip().splitlines()[-1]
+            first_path = private_draft(repo, first)
+            first_session = session_from_result(first)
             self.run_ledger(
                 repo,
                 "pause",
@@ -281,19 +814,22 @@ class LedgerFlowTests(unittest.TestCase):
                 "Withdrawal behavior has been inspected and no code is changed yet.",
                 "--next",
                 "Update the withdrawal service and its tests.",
+                "--session",
+                first_session,
             )
             paused_state = json.loads(
                 (repo / ".context-ledger/context-state.json").read_text(encoding="utf-8")
             )
-            self.assertIsNone(paused_state["active_handoff"])
+            self.assertEqual("paused", paused_state["task_sessions"][first_session]["status"])
             self.assertFalse((repo / "docs/changes/.active-handoff").exists())
-            self.assertEqual("paused", field_from_file(repo / first_path, "Status"))
-            self.assertNotIn(".write.lock", field_from_file(repo / first_path, "Dirty paths"))
+            self.assertEqual("paused", field_from_file(first_path, "Status"))
+            self.assertNotIn(".write.lock", field_from_file(first_path, "Dirty paths"))
 
             second = self.run_ledger(
                 repo, "start", "--title", "Repair authentication", "--feature", "authentication"
             )
-            second_path = second.stdout.strip().splitlines()[-1]
+            second_path = private_draft(repo, second)
+            second_session = session_from_result(second)
             self.run_ledger(
                 repo,
                 "pause",
@@ -301,13 +837,18 @@ class LedgerFlowTests(unittest.TestCase):
                 "Authentication timeout behavior and tests have been located.",
                 "--next",
                 "Implement the timeout fix and run focused tests.",
+                "--session",
+                second_session,
             )
             state = json.loads((repo / ".context-ledger/context-state.json").read_text(encoding="utf-8"))
-            self.assertEqual([second_path, first_path], state["paused_handoffs"])
+            self.assertEqual("paused", state["task_sessions"][first_session]["status"])
+            self.assertEqual("paused", state["task_sessions"][second_session]["status"])
 
-            resumed_second = self.run_ledger(repo, "resume")
-            self.assertIn(second_path, resumed_second.stdout)
-            self.assertEqual("active", field_from_file(repo / second_path, "Status"))
+            ambiguous = self.run_ledger(repo, "resume", expected=2)
+            self.assertIn("Multiple paused task sessions exist", ambiguous.stderr)
+            resumed_second = self.run_ledger(repo, "resume", "--session", second_session)
+            self.assertIn(second_session, resumed_second.stdout)
+            self.assertEqual("active", field_from_file(second_path, "Status"))
             self.run_ledger(
                 repo,
                 "pause",
@@ -315,13 +856,18 @@ class LedgerFlowTests(unittest.TestCase):
                 "Authentication remains paused after confirming the intended timeout fix.",
                 "--next",
                 "Apply the timeout change when this task becomes active again.",
+                "--session",
+                second_session,
             )
-            resumed_first = self.run_ledger(repo, "resume", "--handoff", first_path)
-            self.assertIn(first_path, resumed_first.stdout)
+            resumed_first = self.run_ledger(repo, "resume", "--session", first_session)
+            self.assertIn(first_session, resumed_first.stdout)
             final_state = json.loads((repo / ".context-ledger/context-state.json").read_text(encoding="utf-8"))
-            self.assertEqual(first_path, final_state["active_handoff"])
-            self.assertEqual("withdrawals", final_state["active_feature"])
-            self.assertEqual([second_path], final_state["paused_handoffs"])
+            self.assertEqual("active", final_state["task_sessions"][first_session]["status"])
+            self.assertEqual(
+                LEDGER_MODULE.session_draft_ref(repo, first_path),
+                final_state["task_sessions"][first_session]["draft"],
+            )
+            self.assertEqual("paused", final_state["task_sessions"][second_session]["status"])
 
     def test_git_workspace_state_is_private_and_handoff_has_identity(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -330,8 +876,8 @@ class LedgerFlowTests(unittest.TestCase):
             started = self.run_ledger(
                 repo, "start", "--title", "Repair authentication", "--feature", "authentication"
             )
-            handoff_rel = started.stdout.strip().splitlines()[-1]
-            handoff = repo / handoff_rel
+            handoff = private_draft(repo, started)
+            final_handoff = publish_target(repo, started)
             state_path = LEDGER_MODULE.context_state_path(repo)
             self.assertTrue(state_path.exists())
             self.assertIn(".git", state_path.parts)
@@ -340,11 +886,12 @@ class LedgerFlowTests(unittest.TestCase):
             status = self.run_git(repo, "status", "--porcelain").stdout
             self.assertNotIn("context-state.json", status)
             self.assertNotIn(".active-handoff", status)
+            self.assertNotIn(final_handoff.relative_to(repo).as_posix(), status.replace("\\", "/"))
             text = handoff.read_text(encoding="utf-8")
             self.assertEqual("Alice", LEDGER_MODULE.field_value(text, "Actor"))
             self.assertEqual("main", LEDGER_MODULE.field_value(text, "Branch"))
             self.assertRegex(LEDGER_MODULE.field_value(text, "Handoff ID"), r"^\d{14}-alice-[0-9a-f]{10}$")
-            self.assertIn("-alice-", handoff.name)
+            self.assertIn("-alice-", final_handoff.name)
 
     def test_evidence_quality_records_git_paths_and_real_verification(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -360,7 +907,8 @@ class LedgerFlowTests(unittest.TestCase):
                 "--language",
                 "zh-CN",
             )
-            handoff = repo / started.stdout.strip().splitlines()[-1]
+            handoff = private_draft(repo, started)
+            final_handoff = publish_target(repo, started)
             source = repo / "src/service.py"
             source.write_text("VALUE = 2\n", encoding="utf-8")
             self.fill_handoff(handoff, "src/service.py", "docs/specs/service.md")
@@ -395,11 +943,12 @@ class LedgerFlowTests(unittest.TestCase):
                 "--reason",
                 "This focused test fixture has no durable product specification to maintain.",
             )
-            self.assertEqual("completed", field_from_file(handoff, "Status"))
+            self.assertFalse(handoff.exists())
+            self.assertEqual("completed", field_from_file(final_handoff, "Status"))
             degraded = re.sub(
-                r"(?m)^Before:.*$", "Before: vague", handoff.read_text(encoding="utf-8"), count=1
+                r"(?m)^Before:.*$", "Before: vague", final_handoff.read_text(encoding="utf-8"), count=1
             )
-            handoff.write_text(degraded, encoding="utf-8")
+            final_handoff.write_text(degraded, encoding="utf-8")
             strict = self.run_ledger(repo, "check", "--strict", expected=2)
             self.assertIn("requires a substantive Before", strict.stderr)
 
@@ -410,7 +959,7 @@ class LedgerFlowTests(unittest.TestCase):
             started = self.run_ledger(
                 repo, "start", "--title", "Repair validation", "--language", "en"
             )
-            handoff = repo / started.stdout.strip().splitlines()[-1]
+            handoff = private_draft(repo, started)
             self.fill_handoff(handoff, "src/validation.py", "docs/specs/validation.md")
             self.run_ledger(
                 repo, "verify", "--", sys.executable, "-c", "raise SystemExit(3)", expected=1
@@ -440,7 +989,7 @@ class LedgerFlowTests(unittest.TestCase):
             started = self.run_ledger(
                 repo, "start", "--title", "Document external behavior", "--language", "en"
             )
-            handoff = repo / started.stdout.strip().splitlines()[-1]
+            handoff = private_draft(repo, started)
             self.fill_handoff(handoff, "config/external-service.json", "docs/specs/external-service.md")
             self.run_ledger(
                 repo,
@@ -462,7 +1011,7 @@ class LedgerFlowTests(unittest.TestCase):
             repo = Path(raw)
             self.run_ledger(repo, "init")
             started = self.run_ledger(repo, "start", "--title", "Repair vague behavior")
-            handoff = repo / started.stdout.strip().splitlines()[-1]
+            handoff = private_draft(repo, started)
             text = handoff.read_text(encoding="utf-8")
             text = re.sub(r"TODO:[^|`\r\n]*", "updated relevant files", text)
             handoff.write_text(text, encoding="utf-8")
@@ -517,14 +1066,19 @@ class LedgerFlowTests(unittest.TestCase):
             oversized = self.run_ledger(repo, "focus", "--feature", "validation", expected=2)
             self.assertIn("configured maximum is 60", oversized.stderr)
 
-    def test_v2_git_state_and_active_pointer_migrate_to_private_v4_state(self):
+    def test_v2_git_state_and_active_pointer_migrate_to_private_v7_draft(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw) / "repo"
             self.init_git_repo(repo, "Alice")
             started = self.run_ledger(
                 repo, "start", "--title", "Repair authentication", "--feature", "authentication"
             )
-            handoff_rel = started.stdout.strip().splitlines()[-1]
+            original_draft = private_draft(repo, started)
+            legacy_handoff = publish_target(repo, started)
+            legacy_handoff.parent.mkdir(parents=True, exist_ok=True)
+            legacy_handoff.write_text(original_draft.read_text(encoding="utf-8"), encoding="utf-8")
+            original_draft.unlink()
+            handoff_rel = legacy_handoff.relative_to(repo).as_posix()
             private_state = LEDGER_MODULE.context_state_path(repo)
             private_state.unlink()
 
@@ -551,11 +1105,16 @@ class LedgerFlowTests(unittest.TestCase):
             migrated = self.run_ledger(repo, "init")
             self.assertIn("Migrated shared pre-v0.3 state to workspace-local state", migrated.stdout)
             state = json.loads(LEDGER_MODULE.context_state_path(repo).read_text(encoding="utf-8"))
-            self.assertEqual(handoff_rel, state["active_handoff"])
-            self.assertEqual("authentication", state["active_feature"])
+            sessions = list(state["task_sessions"].values())
+            self.assertEqual(1, len(sessions))
+            migrated_draft = LEDGER_MODULE.validate_private_draft_path(repo, sessions[0]["draft"])
+            self.assertTrue(migrated_draft.is_file())
+            self.assertEqual(handoff_rel, sessions[0]["publish_path"])
+            self.assertEqual("active", sessions[0]["status"])
+            self.assertFalse(legacy_handoff.exists())
             self.assertFalse(legacy_state.exists())
             self.assertFalse(legacy_pointer.exists())
-            self.assertEqual(4, json.loads(config_path.read_text(encoding="utf-8"))["schema_version"])
+            self.assertEqual(7, json.loads(config_path.read_text(encoding="utf-8"))["schema_version"])
 
     def test_git_worktrees_have_independent_active_state(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -576,12 +1135,14 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertNotEqual(main_state_path, other_state_path)
             main_state = json.loads(main_state_path.read_text(encoding="utf-8"))
             other_state = json.loads(other_state_path.read_text(encoding="utf-8"))
-            self.assertEqual(main_start.stdout.strip().splitlines()[-1], main_state["active_handoff"])
-            self.assertEqual(other_start.stdout.strip().splitlines()[-1], other_state["active_handoff"])
-            self.assertEqual("withdrawals", main_state["active_feature"])
-            self.assertEqual("authentication", other_state["active_feature"])
+            main_record = main_state["task_sessions"][session_from_result(main_start)]
+            other_record = other_state["task_sessions"][session_from_result(other_start)]
+            self.assertTrue(LEDGER_MODULE.validate_private_draft_path(repo, main_record["draft"]).is_file())
+            self.assertTrue(LEDGER_MODULE.validate_private_draft_path(worktree, other_record["draft"]).is_file())
+            self.assertEqual("withdrawals", main_record["feature"])
+            self.assertEqual("authentication", other_record["feature"])
 
-    def test_feature_branch_skips_shared_derived_files(self):
+    def test_active_private_draft_never_updates_shared_derived_files(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw) / "repo"
             self.init_git_repo(repo)
@@ -594,17 +1155,19 @@ class LedgerFlowTests(unittest.TestCase):
             started = self.run_ledger(
                 repo, "start", "--title", "Repair authentication", "--feature", "authentication"
             )
-            handoff = repo / started.stdout.strip().splitlines()[-1]
+            handoff = private_draft(repo, started)
+            target = publish_target(repo, started)
             self.assertTrue(handoff.exists())
+            self.assertFalse(target.exists())
             self.assertEqual(before_readme, readme.read_text(encoding="utf-8"))
             self.assertEqual(before_index, change_index.read_text(encoding="utf-8"))
-            self.assertFalse((handoff.parent / "README.md").exists())
+            self.assertFalse((target.parent / "README.md").exists())
             skipped = self.run_ledger(repo, "sync")
             self.assertIn("Skipped shared README", skipped.stdout)
 
             self.run_ledger(repo, "sync", "--derived")
-            self.assertTrue((handoff.parent / "README.md").exists())
-            self.assertIn("Repair authentication", readme.read_text(encoding="utf-8"))
+            self.assertFalse((target.parent / "README.md").exists())
+            self.assertNotIn("Repair authentication", readme.read_text(encoding="utf-8"))
 
     def test_team_check_detects_same_path_and_feature_changed_upstream(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -631,7 +1194,6 @@ class LedgerFlowTests(unittest.TestCase):
             self.run_git(repo, "switch", "feature/auth")
             checked = self.run_ledger(repo, "team-check", "--base", "main", expected=2)
             self.assertIn("Both this branch and main changed: src/service.py", checked.stderr)
-            self.assertIn("Concurrent handoffs affect the same feature: authentication", checked.stderr)
 
     def test_focus_refuses_to_abandon_another_active_feature(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -659,15 +1221,20 @@ class LedgerFlowTests(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 with mock.patch.object(LEDGER_MODULE, "now", return_value=fixed):
                     self.assertEqual(0, LEDGER_MODULE.start_change(repo, "修复接口"))
-                    config = LEDGER_MODULE.load_config(repo)
-                    first = LEDGER_MODULE.active_handoff(repo, config)
-                    original = first.read_text(encoding="utf-8")
                     state = LEDGER_MODULE.load_context_state(repo)
-                    state["active_handoff"] = None
-                    LEDGER_MODULE.save_context_state(repo, state)
+                    first_session = next(iter(state["task_sessions"]))
+                    first_record = state["task_sessions"][first_session]
+                    first = LEDGER_MODULE.validate_private_draft_path(repo, first_record["draft"])
+                    first_target = repo / first_record["publish_path"]
+                    original = first.read_text(encoding="utf-8")
                     self.assertEqual(0, LEDGER_MODULE.start_change(repo, "修复接口"))
-                    second = LEDGER_MODULE.active_handoff(repo, config)
+                    state = LEDGER_MODULE.load_context_state(repo)
+                    second_session = next(item for item in state["task_sessions"] if item != first_session)
+                    second_record = state["task_sessions"][second_session]
+                    second = LEDGER_MODULE.validate_private_draft_path(repo, second_record["draft"])
+                    second_target = repo / second_record["publish_path"]
             self.assertNotEqual(first, second)
+            self.assertNotEqual(first_target, second_target)
             self.assertEqual(original, first.read_text(encoding="utf-8"))
 
     def test_finish_requires_content_and_explicit_spec_exception(self):
@@ -675,16 +1242,17 @@ class LedgerFlowTests(unittest.TestCase):
             repo = Path(raw)
             self.run_ledger(repo, "init")
             start = self.run_ledger(repo, "start", "--title", "No stable spec change")
-            handoff = repo / start.stdout.strip().splitlines()[-1]
+            handoff = private_draft(repo, start)
+            session_id = session_from_result(start)
             handoff.write_text(
-                "# No stable spec change\n\nStatus: active\nStarted: 2026-08-11\nCompleted:\nSpecs: none\n\n"
+                f"# No stable spec change\n\nStatus: active\nHandoff ID: {session_id}\nStarted: 2026-08-11\nCompleted:\nSpecs: none\n\n"
                 "## Intent\n\n\n## Changed behavior\n\n\n## Code paths\n\n\n"
                 "## Boundaries and risks\n\n\n## Verification\n\n\n## Documentation updates\n",
                 encoding="utf-8",
             )
             self.run_ledger(repo, "finish", expected=2)
             valid = (
-                "# No stable spec change\n\nStatus: active\nStarted: 2026-08-11\nCompleted:\nSpecs: none\n\n"
+                f"# No stable spec change\n\nStatus: active\nHandoff ID: {session_id}\nStarted: 2026-08-11\nCompleted:\nSpecs: none\n\n"
                 "## Intent\n\nRefresh generated navigation only.\n\n"
                 "## Changed behavior\n\nNo runtime behavior changed.\n\n"
                 "## Code paths\n\nOnly generated documentation files changed.\n\n"
@@ -716,6 +1284,17 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertIn("outside the repository", result.stderr)
             self.assertFalse((base / "outside.md").exists())
 
+    def test_coverage_globs_are_validated_as_repository_relative(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            config_path = repo / ".context-ledger/config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["coverage"]["ignore_globs"] = ["../outside/**"]
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            result = self.run_ledger(repo, "check", expected=2)
+            self.assertIn("cannot escape the repository", result.stderr)
+
     def test_custom_doc_paths_are_used_by_sync_and_check(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
@@ -740,7 +1319,7 @@ class LedgerFlowTests(unittest.TestCase):
             self.run_ledger(repo, "check", "--strict")
             self.assertTrue((repo / "knowledge/changes/README.md").exists())
 
-    def test_legacy_repository_migrates_to_v4_without_losing_docs(self):
+    def test_legacy_repository_migrates_to_v7_without_losing_docs(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
             self.run_ledger(repo, "init")
@@ -763,7 +1342,7 @@ class LedgerFlowTests(unittest.TestCase):
 
             self.run_ledger(repo, "init")
             migrated = json.loads(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(4, migrated["schema_version"])
+            self.assertEqual(7, migrated["schema_version"])
             self.assertTrue((repo / ".context-ledger/context-state.json").exists())
             self.assertTrue((repo / ".context-ledger/templates/context-pack-template.md").exists())
             self.assertIn("Preserved project purpose.", project_context.read_text(encoding="utf-8"))
