@@ -86,6 +86,13 @@ class LedgerFlowTests(unittest.TestCase):
             )
         return result
 
+    def repository_snapshot(self, repo: Path) -> dict[str, bytes]:
+        return {
+            path.relative_to(repo).as_posix(): path.read_bytes()
+            for path in sorted(repo.rglob("*"))
+            if path.is_file()
+        }
+
     def init_git_repo(self, repo: Path, actor: str = "Alice"):
         repo.mkdir(parents=True, exist_ok=True)
         self.run_git(repo, "init", "-b", "main")
@@ -178,6 +185,7 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertTrue((repo / "AGENTS.md").exists())
             self.assertTrue((repo / ".cursor/rules/repo-context-ledger.mdc").exists())
             self.assertTrue((repo / ".github/copilot-instructions.md").exists())
+
             self.assertTrue((repo / "docs/ai/context-manifest.json").exists())
             self.assertTrue((repo / ".context-ledger/context-state.json").exists())
             self.assertTrue((repo / ".context-ledger/templates/context-pack-template.md").exists())
@@ -252,6 +260,68 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertIn("Primary pack: docs/ai/context-packs/payment-status.md", context.stdout)
             self.assertIn("docs/specs/payment-status.md", context.stdout)
 
+    def test_init_dry_run_is_read_only_and_matches_real_init_plan(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            (repo / "README.md").write_text("# Demo\n\nHuman root text.\n", encoding="utf-8")
+            (repo / "AGENTS.md").write_text("# Existing rules\n\nKeep this text.\n", encoding="utf-8")
+            module = repo / "apps" / "payments"
+            module.mkdir(parents=True)
+            (module / "package.json").write_text('{"name":"payments"}\n', encoding="utf-8")
+            before = self.repository_snapshot(repo)
+
+            preview = self.run_ledger(repo, "init", "--dry-run")
+
+            self.assertEqual(before, self.repository_snapshot(repo))
+            self.assertFalse((repo / ".context-ledger").exists())
+            self.assertIn("Repo Context Ledger init plan", preview.stdout)
+            self.assertIn("CREATE .context-ledger/ledger.py", preview.stdout)
+            self.assertIn("UPDATE AGENTS.md [managed block]", preview.stdout)
+            self.assertIn("Detected modules: 1", preview.stdout)
+            self.assertIn("Modules:\n- apps/payments (auto)", preview.stdout)
+            self.assertIn("Dry run only. No files were written.", preview.stdout)
+
+            applied = self.run_ledger(repo, "init")
+            preview_operations = [
+                line for line in preview.stdout.splitlines()
+                if line.startswith(("CREATE ", "UPDATE ", "DELETE ", "MIGRATE "))
+            ]
+            applied_operations = [
+                line for line in applied.stdout.splitlines()
+                if line.startswith(("CREATE ", "UPDATE ", "DELETE ", "MIGRATE "))
+            ]
+            self.assertEqual(preview_operations, applied_operations)
+            self.assertTrue((repo / ".context-ledger" / "ledger.py").is_file())
+            self.assertIn("Human root text.", (repo / "README.md").read_text(encoding="utf-8"))
+
+    def test_init_dry_run_on_current_repository_plans_no_file_changes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            before = self.repository_snapshot(repo)
+
+            preview = self.run_ledger(repo, "init", "--dry-run")
+
+            self.assertEqual(before, self.repository_snapshot(repo))
+            self.assertIn("No file changes planned.", preview.stdout)
+            self.assertIn("Dry run only. No files were written.", preview.stdout)
+
+    def test_init_dry_run_does_not_acquire_repository_write_lock(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            output = io.StringIO()
+            with mock.patch.object(
+                LEDGER_MODULE,
+                "repo_lock",
+                side_effect=AssertionError("dry-run attempted to acquire the write lock"),
+            ):
+                with redirect_stdout(output):
+                    result = LEDGER_MODULE.main(["--repo", str(repo), "init", "--dry-run"])
+
+            self.assertEqual(0, result)
+            self.assertIn("Dry run only. No files were written.", output.getvalue())
+            self.assertFalse((repo / ".context-ledger").exists())
+
     def test_native_adapters_preserve_copilot_prose_and_detect_drift(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
@@ -312,7 +382,7 @@ class LedgerFlowTests(unittest.TestCase):
 
             manifest = json.loads((repo / "docs/ai/context-manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(1, manifest["manifest_version"])
-            self.assertEqual("0.5.6", manifest["tool_version"])
+            self.assertEqual("0.5.7", manifest["tool_version"])
             route = manifest["features"][0]
             self.assertEqual("authentication", route["feature"])
             self.assertEqual("docs/ai/context-packs/authentication.md", route["context_pack"])
@@ -1117,7 +1187,25 @@ class LedgerFlowTests(unittest.TestCase):
             config.pop("team", None)
             config_path.write_text(json.dumps(config), encoding="utf-8")
 
+            before_preview = self.repository_snapshot(repo)
+            preview = self.run_ledger(repo, "init", "--dry-run")
+            self.assertEqual(before_preview, self.repository_snapshot(repo))
+            self.assertIn("MIGRATE configuration schema v2 to v7", preview.stdout)
+            self.assertIn("MIGRATE workspace state to session-isolated storage", preview.stdout)
+            self.assertTrue(legacy_handoff.exists())
+            self.assertTrue(legacy_state.exists())
+            self.assertTrue(legacy_pointer.exists())
+
             migrated = self.run_ledger(repo, "init")
+            preview_operations = [
+                line for line in preview.stdout.splitlines()
+                if line.startswith(("CREATE ", "UPDATE ", "DELETE ", "MIGRATE "))
+            ]
+            migrated_operations = [
+                line for line in migrated.stdout.splitlines()
+                if line.startswith(("CREATE ", "UPDATE ", "DELETE ", "MIGRATE "))
+            ]
+            self.assertEqual(preview_operations, migrated_operations)
             self.assertIn("Migrated shared pre-v0.3 state to workspace-local state", migrated.stdout)
             state = json.loads(LEDGER_MODULE.context_state_path(repo).read_text(encoding="utf-8"))
             sessions = list(state["task_sessions"].values())

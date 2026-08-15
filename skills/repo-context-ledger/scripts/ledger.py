@@ -21,7 +21,7 @@ from pathlib import Path
 
 
 VERSION = 7
-TOOL_VERSION = "0.5.6"
+TOOL_VERSION = "0.5.7"
 MANIFEST_VERSION = 1
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
@@ -83,6 +83,190 @@ class LedgerError(Exception):
     """Expected user-facing configuration or workflow error."""
 
 
+class InitFileChange:
+    def __init__(
+        self,
+        path: Path,
+        action: str,
+        kind: str,
+        content: bytes | None,
+        mode: int | None = None,
+    ) -> None:
+        self.path = path
+        self.action = action
+        self.kind = kind
+        self.content = content
+        self.mode = mode
+
+
+class InitPlan:
+    """In-memory filesystem overlay used by both preview and real init."""
+
+    def __init__(self, repo: Path) -> None:
+        self.repo = repo
+        self.baseline: dict[Path, bytes | None] = {}
+        self.writes: dict[Path, bytes] = {}
+        self.deletes: set[Path] = set()
+        self.directories: set[Path] = set()
+        self.kinds: dict[Path, str] = {}
+        self.modes: dict[Path, int] = {}
+        self.migrations: list[str] = []
+
+    def key(self, path: Path) -> Path:
+        return path.resolve()
+
+    def original_bytes(self, path: Path) -> bytes | None:
+        key = self.key(path)
+        if key not in self.baseline:
+            try:
+                self.baseline[key] = key.read_bytes() if key.is_file() else None
+            except OSError as exc:
+                raise LedgerError(f"Cannot read init target {key}: {exc}") from exc
+        return self.baseline[key]
+
+    def exists(self, path: Path) -> bool:
+        key = self.key(path)
+        if key in self.deletes:
+            return False
+        if key in self.writes or key in self.directories:
+            return True
+        return key.exists()
+
+    def is_file(self, path: Path) -> bool:
+        key = self.key(path)
+        if key in self.deletes:
+            return False
+        if key in self.writes:
+            return True
+        return key.is_file()
+
+    def read_bytes(self, path: Path) -> bytes:
+        key = self.key(path)
+        if key in self.deletes:
+            raise FileNotFoundError(key)
+        if key in self.writes:
+            return self.writes[key]
+        return key.read_bytes()
+
+    def read_text(self, path: Path) -> str:
+        return self.read_bytes(path).decode("utf-8")
+
+    def mkdir(self, path: Path) -> None:
+        self.directories.add(self.key(path))
+
+    def write_bytes(self, path: Path, content: bytes, kind: str = "file", mode: int | None = None) -> None:
+        key = self.key(path)
+        self.original_bytes(key)
+        self.writes[key] = content
+        self.deletes.discard(key)
+        self.kinds[key] = kind
+        if mode is not None:
+            self.modes[key] = mode
+
+    def write_text(self, path: Path, content: str, kind: str = "file") -> None:
+        self.write_bytes(path, content.encode("utf-8"), kind)
+
+    def delete(self, path: Path, kind: str = "file") -> None:
+        key = self.key(path)
+        self.original_bytes(key)
+        self.writes.pop(key, None)
+        self.deletes.add(key)
+        self.kinds[key] = kind
+
+    def changes(self) -> list[InitFileChange]:
+        changes = []
+        for path in sorted(set(self.writes) | self.deletes, key=lambda item: item.as_posix()):
+            before = self.original_bytes(path)
+            after = None if path in self.deletes else self.writes[path]
+            if before == after:
+                continue
+            action = "create" if before is None and after is not None else "delete" if after is None else "update"
+            changes.append(InitFileChange(
+                path=path,
+                action=action,
+                kind=self.kinds.get(path, "file"),
+                content=after,
+                mode=self.modes.get(path),
+            ))
+        return changes
+
+    def apply(self) -> None:
+        for directory in sorted(self.directories, key=lambda item: (len(item.parts), item.as_posix())):
+            directory.mkdir(parents=True, exist_ok=True)
+        for change in self.changes():
+            if change.action == "delete":
+                try:
+                    change.path.unlink()
+                except FileNotFoundError:
+                    pass
+                continue
+            change.path.parent.mkdir(parents=True, exist_ok=True)
+            descriptor, raw_temp = tempfile.mkstemp(
+                prefix=f".{change.path.name}.", suffix=".tmp", dir=change.path.parent
+            )
+            temp_path = Path(raw_temp)
+            try:
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(change.content or b"")
+                    handle.flush()
+                os.replace(temp_path, change.path)
+                if change.mode is not None:
+                    os.chmod(change.path, change.mode)
+            finally:
+                if temp_path.exists():
+                    temp_path.unlink()
+
+
+_ACTIVE_INIT_PLAN: InitPlan | None = None
+
+
+@contextmanager
+def capture_init_plan(repo: Path):
+    global _ACTIVE_INIT_PLAN
+    if _ACTIVE_INIT_PLAN is not None:
+        raise LedgerError("Nested init planning is not supported.")
+    plan = InitPlan(repo.resolve())
+    _ACTIVE_INIT_PLAN = plan
+    try:
+        yield plan
+    finally:
+        _ACTIVE_INIT_PLAN = None
+
+
+def planned_exists(path: Path) -> bool:
+    return _ACTIVE_INIT_PLAN.exists(path) if _ACTIVE_INIT_PLAN else path.exists()
+
+
+def planned_is_file(path: Path) -> bool:
+    return _ACTIVE_INIT_PLAN.is_file(path) if _ACTIVE_INIT_PLAN else path.is_file()
+
+
+def planned_read_text(path: Path) -> str:
+    return _ACTIVE_INIT_PLAN.read_text(path) if _ACTIVE_INIT_PLAN else path.read_text(encoding="utf-8")
+
+
+def planned_mkdir(path: Path) -> None:
+    if _ACTIVE_INIT_PLAN:
+        _ACTIVE_INIT_PLAN.mkdir(path)
+    else:
+        path.mkdir(parents=True, exist_ok=True)
+
+
+def planned_copy(source: Path, target: Path, kind: str) -> None:
+    if _ACTIVE_INIT_PLAN:
+        _ACTIVE_INIT_PLAN.write_bytes(target, source.read_bytes(), kind, source.stat().st_mode)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
+def planned_unlink(path: Path, kind: str = "file") -> None:
+    if _ACTIVE_INIT_PLAN:
+        _ACTIVE_INIT_PLAN.delete(path, kind)
+    else:
+        path.unlink()
+
+
 def now() -> dt.datetime:
     return dt.datetime.now().astimezone()
 
@@ -127,17 +311,26 @@ def discover_repo(start: Path) -> Path:
         current = parent
 
 
-def write_if_missing(path: Path, content: str) -> bool:
+def write_if_missing(path: Path, content: str, kind: str = "file") -> bool:
+    normalized = content.rstrip() + "\n"
+    if _ACTIVE_INIT_PLAN:
+        if planned_exists(path):
+            return False
+        _ACTIVE_INIT_PLAN.write_text(path, normalized, kind)
+        return True
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with path.open("x", encoding="utf-8") as handle:
-            handle.write(content.rstrip() + "\n")
+            handle.write(normalized)
         return True
     except FileExistsError:
         return False
 
 
-def atomic_write(path: Path, content: str) -> None:
+def atomic_write(path: Path, content: str, kind: str = "file") -> None:
+    if _ACTIVE_INIT_PLAN:
+        _ACTIVE_INIT_PLAN.write_text(path, content, kind)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, raw_temp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temp_path = Path(raw_temp)
@@ -175,8 +368,8 @@ def repo_lock(repo: Path):
 
 
 def replace_block(path: Path, start: str, end: str, body: str, heading: str | None = None) -> None:
-    if path.exists():
-        text = path.read_text(encoding="utf-8")
+    if planned_is_file(path):
+        text = planned_read_text(path)
     else:
         text = (heading or f"# {path.stem}") + "\n"
     block = f"{start}\n{body.rstrip()}\n{end}"
@@ -185,8 +378,7 @@ def replace_block(path: Path, start: str, end: str, body: str, heading: str | No
         updated = pattern.sub(block, text, count=1)
     else:
         updated = text.rstrip() + "\n\n" + block + "\n"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(path, updated.rstrip() + "\n")
+    atomic_write(path, updated.rstrip() + "\n", "managed block")
 
 
 def first_heading(path: Path) -> str:
@@ -470,10 +662,10 @@ def normalize_context_state(raw: dict) -> dict:
 
 def load_context_state(repo: Path) -> dict:
     path = context_state_path(repo)
-    if not path.exists():
+    if not planned_exists(path):
         return default_context_state()
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw = json.loads(planned_read_text(path))
     except (json.JSONDecodeError, OSError) as exc:
         raise LedgerError(f"Invalid context state: {exc}") from exc
     return normalize_context_state(raw)
@@ -481,7 +673,11 @@ def load_context_state(repo: Path) -> dict:
 
 def save_context_state(repo: Path, state: dict) -> None:
     normalized = normalize_context_state(state)
-    atomic_write(context_state_path(repo), json.dumps(normalized, indent=2, ensure_ascii=False) + "\n")
+    atomic_write(
+        context_state_path(repo),
+        json.dumps(normalized, indent=2, ensure_ascii=False) + "\n",
+        "private workspace state",
+    )
 
 
 def legacy_active_pointer(repo: Path, config: dict) -> Path:
@@ -494,9 +690,9 @@ def migrate_workspace_state(repo: Path, config: dict) -> bool:
     migrated = False
     remove_legacy_state = False
     legacy_state = legacy_context_state_path(repo)
-    if target != legacy_state and legacy_state.exists():
+    if target != legacy_state and planned_exists(legacy_state):
         try:
-            previous = normalize_context_state(json.loads(legacy_state.read_text(encoding="utf-8")))
+            previous = normalize_context_state(json.loads(planned_read_text(legacy_state)))
         except (json.JSONDecodeError, OSError) as exc:
             raise LedgerError(f"Invalid legacy context state: {exc}") from exc
         state["task_sessions"] = {
@@ -509,8 +705,8 @@ def migrate_workspace_state(repo: Path, config: dict) -> bool:
         remove_legacy_state = True
         migrated = True
     pointer = legacy_active_pointer(repo, config)
-    if pointer.exists():
-        raw = pointer.read_text(encoding="utf-8").strip()
+    if planned_exists(pointer):
+        raw = planned_read_text(pointer).strip()
         if raw:
             session_id = legacy_session_id(raw)
             state.setdefault("task_sessions", {}).setdefault(session_id, {
@@ -527,8 +723,8 @@ def migrate_workspace_state(repo: Path, config: dict) -> bool:
         if session_id.startswith("legacy-"):
             try:
                 handoff = resolve_session_draft(repo, config, session_id, record)
-                if handoff.is_file():
-                    stored_id = field_value(handoff.read_text(encoding="utf-8"), "Handoff ID")
+                if planned_is_file(handoff):
+                    stored_id = field_value(planned_read_text(handoff), "Handoff ID")
                     if stored_id:
                         canonical_id = stored_id
             except LedgerError:
@@ -541,14 +737,14 @@ def migrate_workspace_state(repo: Path, config: dict) -> bool:
         )
         private_draft = task_session_draft_path(repo, canonical_id)
         if draft != private_draft:
-            if not draft.is_file():
+            if not planned_is_file(draft):
                 raise LedgerError(f"Legacy task session draft does not exist: {draft}")
-            content = draft.read_text(encoding="utf-8")
-            if private_draft.exists() and private_draft.read_text(encoding="utf-8") != content:
+            content = planned_read_text(draft)
+            if planned_exists(private_draft) and planned_read_text(private_draft) != content:
                 raise LedgerError(f"Private task draft already exists with different content: {private_draft}")
-            atomic_write(private_draft, content)
+            atomic_write(private_draft, content, "private task state")
             if draft == publish_path:
-                draft.unlink()
+                planned_unlink(draft, "legacy task draft")
             migrated = True
         canonical_sessions[canonical_id] = {
             **record,
@@ -559,9 +755,9 @@ def migrate_workspace_state(repo: Path, config: dict) -> bool:
     state["task_sessions"] = canonical_sessions
     save_context_state(repo, state)
     if remove_legacy_state:
-        legacy_state.unlink()
-    if pointer.exists():
-        pointer.unlink()
+        planned_unlink(legacy_state, "legacy workspace state")
+    if planned_exists(pointer):
+        planned_unlink(pointer, "legacy active pointer")
     return migrated
 
 
@@ -606,7 +802,7 @@ def template_source(name: str, repo: Path | None = None) -> Path:
 
 
 def render_template(path: Path, values: dict[str, str]) -> str:
-    text = path.read_text(encoding="utf-8")
+    text = planned_read_text(path)
     for key, value in values.items():
         text = text.replace("{{" + key + "}}", value)
     return text
@@ -784,8 +980,7 @@ def load_config(repo: Path) -> dict:
 def save_config(repo: Path, config: dict) -> None:
     config = validate_config(repo, config)
     path = config_path(repo)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(path, json.dumps(config, indent=2, ensure_ascii=False) + "\n")
+    atomic_write(path, json.dumps(config, indent=2, ensure_ascii=False) + "\n", "configuration")
 
 
 def discover_modules(repo: Path) -> list[dict[str, str]]:
@@ -940,84 +1135,148 @@ def inspect_adapters(repo: Path, config: dict, fail_on_drift: bool) -> int:
     return 0
 
 
-def init_repo(repo: Path) -> int:
-    previous = load_config(repo) if config_path(repo).exists() else {}
-    runtime_dir = safe_repo_path(repo, ".context-ledger", "ledger runtime directory")
-    template_dir = runtime_dir / "templates"
-    template_dir.mkdir(parents=True, exist_ok=True)
-    runtime_target = runtime_dir / "ledger.py"
-    if Path(__file__).resolve() != runtime_target.resolve():
-        shutil.copy2(Path(__file__).resolve(), runtime_target)
-    for name in (
-        "handoff-template.md", "spec-template.md", "project-context-template.md",
-        "context-pack-template.md",
-    ):
-        source = template_source(name, repo)
-        target = template_dir / name
-        if source.resolve() != target.resolve():
-            shutil.copy2(source, target)
-    quality_source = Path(__file__).resolve().parent.parent / "references" / "writing-quality.md"
-    quality_target = runtime_dir / "writing-quality.md"
-    if quality_source.exists() and quality_source.resolve() != quality_target.resolve():
-        shutil.copy2(quality_source, quality_target)
+def build_init_plan(repo: Path) -> tuple[InitPlan, dict, list[dict[str, str]], bool]:
+    with capture_init_plan(repo) as plan:
+        existing_config = config_path(repo)
+        previous_schema: object = None
+        if planned_is_file(existing_config):
+            previous = load_config(repo)
+            try:
+                previous_schema = json.loads(planned_read_text(existing_config)).get("schema_version")
+            except (json.JSONDecodeError, OSError, AttributeError):
+                previous_schema = None
+            if previous_schema != VERSION:
+                label = f"v{previous_schema}" if previous_schema is not None else "legacy"
+                plan.migrations.append(f"configuration schema {label} to v{VERSION}")
+        else:
+            previous = {}
+        runtime_dir = safe_repo_path(repo, ".context-ledger", "ledger runtime directory")
+        template_dir = runtime_dir / "templates"
+        planned_mkdir(template_dir)
+        runtime_target = runtime_dir / "ledger.py"
+        if Path(__file__).resolve() != runtime_target.resolve():
+            planned_copy(Path(__file__).resolve(), runtime_target, "runtime")
+        for name in (
+            "handoff-template.md", "spec-template.md", "project-context-template.md",
+            "context-pack-template.md",
+        ):
+            source = template_source(name, repo)
+            target = template_dir / name
+            if source.resolve() != target.resolve():
+                planned_copy(source, target, "template")
+        quality_source = Path(__file__).resolve().parent.parent / "references" / "writing-quality.md"
+        quality_target = runtime_dir / "writing-quality.md"
+        if quality_source.exists() and quality_source.resolve() != quality_target.resolve():
+            planned_copy(quality_source, quality_target, "quality reference")
 
-    known_modules = {
-        item["path"]: item
-        for item in previous.get("modules", [])
-        if item.get("source") == "manual"
-    }
-    for item in discover_modules(repo):
-        known_modules[item["path"]] = item
-    modules = [known_modules[key] for key in sorted(known_modules)]
-    config = {
-        "schema_version": VERSION,
-        "docs": previous.get("docs") or {"ai": "docs/ai", "specs": "docs/specs", "changes": "docs/changes"},
-        "modules": modules,
-        "readme_managed_blocks": True,
-        "adapters": previous.get("adapters") or {name: True for name in ADAPTER_NAMES},
-        "coverage": previous.get("coverage") or COVERAGE_GLOB_DEFAULTS,
-        "team": previous.get("team") or {
-            "enabled": is_git_repo(repo),
-            "default_branch": detect_default_branch(repo),
-            "derived_updates": "default-branch",
-        },
-        "quality": previous.get("quality") or {
-            "profile": QUALITY_PROFILE,
-            "language": "auto",
-            "detail": "standard",
-            "max_context_pack_lines": 180,
-        },
-    }
-    save_config(repo, config)
+        known_modules = {
+            item["path"]: item
+            for item in previous.get("modules", [])
+            if item.get("source") == "manual"
+        }
+        for item in discover_modules(repo):
+            known_modules[item["path"]] = item
+        modules = [known_modules[key] for key in sorted(known_modules)]
+        config = {
+            "schema_version": VERSION,
+            "docs": previous.get("docs") or {"ai": "docs/ai", "specs": "docs/specs", "changes": "docs/changes"},
+            "modules": modules,
+            "readme_managed_blocks": True,
+            "adapters": previous.get("adapters") or {name: True for name in ADAPTER_NAMES},
+            "coverage": previous.get("coverage") or COVERAGE_GLOB_DEFAULTS,
+            "team": previous.get("team") or {
+                "enabled": is_git_repo(repo),
+                "default_branch": detect_default_branch(repo),
+                "derived_updates": "default-branch",
+            },
+            "quality": previous.get("quality") or {
+                "profile": QUALITY_PROFILE,
+                "language": "auto",
+                "detail": "standard",
+                "max_context_pack_lines": 180,
+            },
+        }
+        save_config(repo, config)
 
-    docs = config["docs"]
-    ai_root = safe_repo_path(repo, docs["ai"], "config.docs.ai")
-    specs_root = safe_repo_path(repo, docs["specs"], "config.docs.specs")
-    changes_root = safe_repo_path(repo, docs["changes"], "config.docs.changes")
-    ai_root.mkdir(parents=True, exist_ok=True)
-    (ai_root / "context-packs").mkdir(parents=True, exist_ok=True)
-    specs_root.mkdir(parents=True, exist_ok=True)
-    changes_root.mkdir(parents=True, exist_ok=True)
-    project_context = ai_root / "project-context.md"
-    write_if_missing(
-        project_context,
-        render_template(template_dir / "project-context-template.md", {
-            "SPECS_INDEX": os.path.relpath(specs_root / "README.md", ai_root).replace(os.sep, "/"),
-            "CHANGES_INDEX": os.path.relpath(changes_root / "README.md", ai_root).replace(os.sep, "/"),
-            "LANGUAGE": record_language(config),
-            "DETAIL": config.get("quality", {}).get("detail", "standard"),
-        }),
+        docs = config["docs"]
+        ai_root = safe_repo_path(repo, docs["ai"], "config.docs.ai")
+        specs_root = safe_repo_path(repo, docs["specs"], "config.docs.specs")
+        changes_root = safe_repo_path(repo, docs["changes"], "config.docs.changes")
+        planned_mkdir(ai_root)
+        planned_mkdir(ai_root / "context-packs")
+        planned_mkdir(specs_root)
+        planned_mkdir(changes_root)
+        project_context = ai_root / "project-context.md"
+        write_if_missing(
+            project_context,
+            render_template(template_dir / "project-context-template.md", {
+                "SPECS_INDEX": os.path.relpath(specs_root / "README.md", ai_root).replace(os.sep, "/"),
+                "CHANGES_INDEX": os.path.relpath(changes_root / "README.md", ai_root).replace(os.sep, "/"),
+                "LANGUAGE": record_language(config),
+                "DETAIL": config.get("quality", {}).get("detail", "standard"),
+            }),
+            "project context",
+        )
+        migrated_state = migrate_workspace_state(repo, config)
+        if migrated_state:
+            plan.migrations.append("workspace state to session-isolated storage")
+        write_if_missing(specs_root / "README.md", "# Stable feature context\n", "index")
+        write_if_missing(changes_root / "README.md", "# Change history\n", "index")
+
+        sync_adapters(repo, config, quiet=True)
+        sync_repo(repo, derived=True, config=config, quiet=True)
+    return plan, config, modules, migrated_state
+
+
+def init_display_path(plan: InitPlan, path: Path) -> str:
+    try:
+        return rel_posix(path, plan.repo)
+    except ValueError:
+        return f"<workspace-state>/{path.name}"
+
+
+def print_init_plan(plan: InitPlan, config: dict, modules: list[dict[str, str]], dry_run: bool) -> None:
+    print(f"Repo Context Ledger init plan for {plan.repo}")
+    changes = plan.changes()
+    for change in changes:
+        suffix = f" [{change.kind}]" if change.kind != "file" else ""
+        print(f"{change.action.upper()} {init_display_path(plan, change.path)}{suffix}")
+    for migration in plan.migrations:
+        print(f"MIGRATE {migration}")
+    if not changes and not plan.migrations:
+        print("No file changes planned.")
+    counts = {action: sum(change.action == action for change in changes) for action in ("create", "update", "delete")}
+    print(
+        "Summary: "
+        f"{counts['create']} create, {counts['update']} update, {counts['delete']} delete, "
+        f"{len(plan.migrations)} migration"
+        f"{'s' if len(plan.migrations) != 1 else ''}."
     )
-    migrated_state = migrate_workspace_state(repo, config)
-    write_if_missing(specs_root / "README.md", "# Stable feature context\n")
-    write_if_missing(changes_root / "README.md", "# Change history\n")
-
-    sync_adapters(repo, config, quiet=True)
-
-    sync_repo(repo, derived=True)
-    print(f"Initialized Repo Context Ledger in {repo}")
     print(f"Detected modules: {len(modules)}")
+    print("Modules:")
+    if modules:
+        for module in modules:
+            print(f"- {module['path']} ({module.get('source', 'unknown')})")
+    else:
+        print("- none")
     print(f"Team mode: {'enabled' if config['team']['enabled'] else 'disabled'}")
+    if dry_run:
+        print("Dry run only. No files were written.")
+
+
+def init_repo(repo: Path, dry_run: bool = False) -> int:
+    plan, config, modules, migrated_state = build_init_plan(repo)
+    print_init_plan(plan, config, modules, dry_run)
+    if dry_run:
+        return 0
+    removed_indexes = sum(
+        change.action == "delete" and change.kind == "generated change index"
+        for change in plan.changes()
+    )
+    plan.apply()
+    if removed_indexes:
+        print(f"Removed obsolete generated change indexes: {removed_indexes}")
+    print(f"Initialized Repo Context Ledger in {repo}")
     if migrated_state:
         print("Migrated shared pre-v0.3 state to workspace-local state.")
     return 0
@@ -1753,7 +2012,7 @@ def context_manifest_data(repo: Path, config: dict) -> dict:
         "manifest_version": MANIFEST_VERSION,
         "tool_version": TOOL_VERSION,
         "default_branch": config.get("team", {}).get("default_branch", "main"),
-        "project_context": rel_posix(project_context, repo) if project_context.is_file() else None,
+        "project_context": rel_posix(project_context, repo) if planned_is_file(project_context) else None,
         "docs": dict(config["docs"]),
         "features": features,
     }
@@ -1871,7 +2130,7 @@ def remove_obsolete_change_indexes(changes_root: Path, expected: set[Path]) -> i
         if resolved == root_index or resolved in expected_resolved:
             continue
         if unchanged_generated_change_index(candidate, changes_root):
-            candidate.unlink()
+            planned_unlink(candidate, "generated change index")
             removed += 1
     return removed
 
@@ -1923,8 +2182,13 @@ def should_update_derived(repo: Path, config: dict) -> bool:
     return git_branch(repo) == team.get("default_branch")
 
 
-def sync_repo(repo: Path, derived: bool = False) -> int:
-    config = load_config(repo)
+def sync_repo(
+    repo: Path,
+    derived: bool = False,
+    config: dict | None = None,
+    quiet: bool = False,
+) -> int:
+    config = config or load_config(repo)
     if not derived and not should_update_derived(repo, config):
         print(
             "Skipped shared README and index regeneration on a feature branch; "
@@ -1993,7 +2257,7 @@ def sync_repo(repo: Path, derived: bool = False) -> int:
         readme = safe_repo_path(repo, module["readme"], "config.modules.readme")
         replace_block(readme, BLOCK_START, BLOCK_END, readme_body(repo, config, readme, module["path"]), f"# {Path(module['path']).name}")
     write_context_manifest(repo, config)
-    if removed_indexes:
+    if removed_indexes and not quiet:
         print(f"Removed obsolete generated change indexes: {removed_indexes}")
     return 0
 
@@ -3073,7 +3337,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"repo-context-ledger {TOOL_VERSION}")
     parser.add_argument("--repo", default=".", help="Repository root (default: current directory)")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("init", help="Initialize or refresh repository integration")
+    init = sub.add_parser("init", help="Initialize or refresh repository integration")
+    init.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview the exact init plan without writing files or workspace state",
+    )
     start = sub.add_parser("start", help="Start a behavior-changing work handoff")
     start.add_argument("--title", required=True)
     start.add_argument("--feature", default="", help="Stable feature slug or name")
@@ -3146,13 +3415,15 @@ def main(argv: list[str] | None = None) -> int:
         args = build_parser().parse_args(argv)
         repo = resolve_repo(args.repo, explicit=argv_has_explicit_repo(argv))
         mutating = args.command in {
-            "init", "start", "pack", "focus", "checkpoint", "pause", "resume", "finish",
+            "start", "pack", "focus", "checkpoint", "pause", "resume", "finish",
             "evidence", "sync",
-        } or (args.command in {"manifest", "adapters"} and args.action == "sync")
+        } or (args.command == "init" and not args.dry_run) or (
+            args.command in {"manifest", "adapters"} and args.action == "sync"
+        )
         if mutating:
             with repo_lock(repo):
                 if args.command == "init":
-                    return init_repo(repo)
+                    return init_repo(repo, args.dry_run)
                 if args.command == "start":
                     return start_change(repo, args.title, args.feature, args.language)
                 if args.command == "pack":
@@ -3178,6 +3449,8 @@ def main(argv: list[str] | None = None) -> int:
                 return sync_repo(repo, args.derived)
         if args.command == "context":
             return context_search(repo, args.query, max(1, args.limit))
+        if args.command == "init":
+            return init_repo(repo, args.dry_run)
         if args.command == "verify":
             if args.not_run and args.verification_command:
                 print("Use either a command or --not-run, not both.", file=sys.stderr)

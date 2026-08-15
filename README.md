@@ -18,9 +18,16 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 - what changed, why it changed, and how it was verified;
 - which project and module README summaries need refreshing.
 
-## What's new in v0.5.6
+## What's new in v0.5.7
 
-> Note: v0.5.5 was reserved for the planned `init --dry-run` work but was never released. No published release or functionality is missing.
+- `init --dry-run` builds the exact same initialization plan as real `init`, then prints file creates, managed-block updates, deletions, migrations, detected modules, and a compact summary without writing repository files or private workspace state.
+- Preview and apply share one in-memory filesystem plan, so the preview cannot drift into a separate approximation of initialization behavior.
+- Dry-run does not acquire the repository write lock and remains read-only even while inspecting legacy workspace-state migrations.
+- Existing prose, mature change history, custom documentation paths, nested Git boundaries, and session drafts keep the same preservation rules during preview and apply.
+
+> Version note: v0.5.5 was reserved for this work but never released. The completed feature ships in v0.5.7; no published release or functionality is missing.
+
+## Added in v0.5.6
 
 - `context --query` is a Context Pack router: it reads live Pack metadata, prefers feature/title/tracked-path matches, demotes superseded or stale Packs, and returns one primary Pack plus linked specs and the selection reason.
 - Omitting `--repo` walks up from the current directory to the nearest `.context-ledger/config.json` and stops at a nested Git repository boundary. An explicit `--repo` still wins.
@@ -155,7 +162,15 @@ Open the target project with your AI coding tool and ask:
 
 > Use repo-context-ledger to initialize this repository.
 
-The agent creates the documentation structure, private workspace state, and durable agent instructions without overwriting existing documentation.
+The agent first previews the exact operation list with `init --dry-run`, then applies the same plan with `init`. It creates the documentation structure, private workspace state, and durable agent instructions without overwriting existing documentation.
+
+For a manual preview, run:
+
+```text
+python path/to/ledger.py --repo path/to/repository init --dry-run
+```
+
+The output is a compact plan, not a full diff. It does not create a lock, repository file, or private session-state file.
 
 ### 2. Work normally
 

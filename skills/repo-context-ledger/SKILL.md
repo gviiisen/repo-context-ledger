@@ -36,13 +36,14 @@ Do not run the full lifecycle for every request.
 
 When the user asks to initialize, adopt, or configure repository context documentation:
 
-1. Run `python <skill-dir>/scripts/ledger.py --repo <repository-root> init`.
-2. Inspect the generated `.context-ledger/config.json`, detected modules, and existing documentation.
-3. Run `python .context-ledger/ledger.py adapters check` and `python .context-ledger/ledger.py manifest check` to confirm native entry files and the shared route index are current.
-4. Set `quality.language` (`auto`, `en`, or `zh-CN`) and `quality.detail` (`concise`, `standard`, or `detailed`) only when the repository needs a non-default policy.
-5. Preserve existing `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, README content, and documentation. Only managed blocks or the dedicated Cursor adapter may be regenerated.
-6. Treat nested Git repositories and worktrees as discovery boundaries. When adopting legacy `docs/changes/YYYY-MM/...` trees, preserve and reuse an existing monthly `index.md`; remove an obsolete index only when the runtime can reproduce the whole file byte-for-byte from current sibling records.
-7. Summarize what was added. Do not require the user to learn internal lifecycle commands.
+1. Run `python <skill-dir>/scripts/ledger.py --repo <repository-root> init --dry-run` and inspect the exact planned files, managed blocks, migrations, and detected modules. The preview must remain read-only.
+2. If the plan matches the user's requested repository scope, run the same command without `--dry-run`. Do not hand-recreate or selectively replay the plan.
+3. Inspect the generated `.context-ledger/config.json`, detected modules, and existing documentation.
+4. Run `python .context-ledger/ledger.py adapters check` and `python .context-ledger/ledger.py manifest check` to confirm native entry files and the shared route index are current.
+5. Set `quality.language` (`auto`, `en`, or `zh-CN`) and `quality.detail` (`concise`, `standard`, or `detailed`) only when the repository needs a non-default policy.
+6. Preserve existing `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, README content, and documentation. Only managed blocks or the dedicated Cursor adapter may be regenerated.
+7. Treat nested Git repositories and worktrees as discovery boundaries. When adopting legacy `docs/changes/YYYY-MM/...` trees, preserve and reuse an existing monthly `index.md`; remove an obsolete index only when the runtime can reproduce the whole file byte-for-byte from current sibling records.
+8. Summarize what was added. Do not require the user to learn internal lifecycle commands.
 
 Read [document-model.md](references/document-model.md) when choosing where information belongs or migrating an existing documentation layout.
 
