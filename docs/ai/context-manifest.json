@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "tool_version": "0.5.6",
+  "tool_version": "0.5.7",
   "default_branch": "main",
   "project_context": "docs/ai/project-context.md",
   "docs": {
@@ -14,8 +14,8 @@
       "title": "Coverage Integrity",
       "context_pack": "docs/ai/context-packs/coverage-integrity.md",
       "status": "current",
-      "source_commit": "e009aa650ed1928cfda06285b410c37aabb806be",
-      "last_refreshed": "2026-08-13T02:46:27+08:00",
+      "source_commit": "650c18896bea6c287caae74a5b431cd68fa15cae",
+      "last_refreshed": "2026-08-15T15:56:30+08:00",
       "stable_specs": [
         "docs/specs/coverage-integrity.md"
       ],
@@ -41,8 +41,8 @@
       "title": "Native Context Bridge",
       "context_pack": "docs/ai/context-packs/native-context-bridge.md",
       "status": "current",
-      "source_commit": "e009aa650ed1928cfda06285b410c37aabb806be",
-      "last_refreshed": "2026-08-13T02:46:27+08:00",
+      "source_commit": "650c18896bea6c287caae74a5b431cd68fa15cae",
+      "last_refreshed": "2026-08-15T15:56:30+08:00",
       "stable_specs": [
         "docs/specs/native-context-bridge.md"
       ],
@@ -55,6 +55,11 @@
         "tests/test_ledger.py"
       ],
       "recent_changes": [
+        {
+          "path": "docs/changes/2026/08/20260815153145-gviiisen-c108737ed0-implement-init-dry-run-planning.md",
+          "title": "Implement init dry-run planning",
+          "status": "completed"
+        },
         {
           "path": "docs/changes/2026/08/20260813023957-gviiisen-144010dbea-redact-literal-escaped-json-credentials.md",
           "title": "Redact literal escaped JSON credentials",
@@ -82,8 +87,8 @@
       "title": "Task Session Integrity",
       "context_pack": "docs/ai/context-packs/task-session-integrity.md",
       "status": "current",
-      "source_commit": "e009aa650ed1928cfda06285b410c37aabb806be",
-      "last_refreshed": "2026-08-13T02:46:27+08:00",
+      "source_commit": "650c18896bea6c287caae74a5b431cd68fa15cae",
+      "last_refreshed": "2026-08-15T15:56:30+08:00",
       "stable_specs": [
         "docs/specs/task-session-integrity.md"
       ],

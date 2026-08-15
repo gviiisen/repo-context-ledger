@@ -325,5 +325,5 @@ python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 - [Change history](docs/changes/README.md)
 - [Feature Context Packs](docs/ai/context-packs)
 - Relevant specs: [Coverage Integrity](docs/specs/coverage-integrity.md), [Native Context Bridge](docs/specs/native-context-bridge.md), [Task session integrity](docs/specs/task-session-integrity.md)
-- Latest recorded change: [Redact literal escaped JSON credentials](docs/changes/2026/08/20260813023957-gviiisen-144010dbea-redact-literal-escaped-json-credentials.md)
+- Latest recorded change: [Implement init dry-run planning](docs/changes/2026/08/20260815153145-gviiisen-c108737ed0-implement-init-dry-run-planning.md)
 <!-- repo-context-ledger:end -->
