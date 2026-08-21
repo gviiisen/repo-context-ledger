@@ -7,7 +7,7 @@ For every feature, bug fix, refactor, interface change, or other behavior-changi
 
 1. Before editing code, run `status`, then start or reuse only this task's private draft session. Keep the returned session ID and pass `--session <id>` whenever multiple sessions exist.
 2. Resolve `quality.language`; when it is `auto`, follow nearby docs or the user's language. Keep paths, symbols, commands, and error text untranslated.
-3. Use `context --query "<task>"` and focus the feature Context Pack before broad code exploration. If none exists, create and fill one.
+3. Before broad documentation exploration, run `context --query "<task>"`. Read only the Context Plan's Required reads initially. Never recursively read `docs/ai`, `docs/specs`, or `docs/changes`. Do not open completed Change bodies unless the plan selects one, a required Pack cites one for a named reason, or the user asks for historical reasoning. Expand context only after stating the unresolved question. Focus the selected feature Context Pack before broad code exploration. If no Pack exists, create and fill one.
 4. Run `checkpoint --session <id> --summary "..." --next "..."` before handing active work to another Agent. Pause only this task's session; never pause, resume, or finish another task's session.
 5. Run every claimed check through `python .context-ledger/ledger.py verify -- <command>`. Use `verify --not-run --reason "..."` only when verification is genuinely unavailable.
 6. Run `evidence`, read `.context-ledger/writing-quality.md`, and fill the private draft from actual changed paths. When another session exists, pass repeated `--path <path>` values for only this task; never capture foreign dirty paths. Refresh affected Context Packs with `pack --file ...`.

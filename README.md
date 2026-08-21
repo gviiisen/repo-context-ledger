@@ -18,6 +18,15 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 - what changed, why it changed, and how it was verified;
 - which project and module README summaries need refreshing.
 
+## What's new in v0.5.9
+
+- `context --query` now emits a bounded `context-plan-v1`: exactly one primary Pack, only the linked specs that fit the configured file/character budget, and explicit Required reads.
+- `context --format json` provides a stable cross-Agent contract with repository-relative paths, selection confidence, budget usage, and local timing/file-count metrics.
+- Recent completed changes remain cold history. The plan may include bounded ID/title/feature/date/summary/evidence metadata from the Context Manifest, but it never loads a Change body into Required reads.
+- All generated Agent adapters prohibit recursive reads of `docs/ai`, `docs/specs`, and `docs/changes`; an Agent must read Required reads first, keep completed Change bodies cold, and name an unresolved question before expanding context.
+- `check --strict --changed-since <base-ref>` validates the merge-base delta plus directly related current Packs/specs, so unrelated pre-existing debt does not block the current PR while a source change that makes its Pack stale still fails. Coverage considers only private sessions whose evidence intersects the changed implementation paths.
+- Full `check --strict [--coverage]` behavior is unchanged and remains available for scheduled repository health audits and controlled release integration.
+
 ## What's new in v0.5.8
 
 - Context Pack fingerprints are portable across Windows and Unix checkouts: logically identical UTF-8 text receives the same digest with LF or CRLF line endings.
@@ -37,7 +46,7 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 
 ## Added in v0.5.6
 
-- `context --query` is a Context Pack router: it reads live Pack metadata, prefers feature/title/tracked-path matches, demotes superseded or stale Packs, and returns one primary Pack plus linked specs and the selection reason.
+- `context --query` is a Context Pack router: it reads current Pack metadata, excludes superseded/archived Packs, penalizes stale fingerprints, and returns one primary Pack plus linked specs and the selection reason.
 - Omitting `--repo` walks up from the current directory to the nearest `.context-ledger/config.json` and stops at a nested Git repository boundary. An explicit `--repo` still wins.
 - Failed `verify` records a redacted Failure Capsule instead of only a hash. Success still stores a hash plus the last result line. Raw logs are not persisted.
 - Handoff Code paths may cite `file.go::Symbol`; the path part is matched against Git evidence.
@@ -212,6 +221,22 @@ The default quality policy is:
 
 With `auto`, the agent follows nearby repository documentation, then the user's language when no convention exists. Paths, symbols, commands, protocol fields, and error text stay in their source form. Handoffs, stable specs, and Context Packs deliberately use different Markdown structures because they answer different questions; existing documents are not reformatted during upgrade.
 
+Initial context loading has its own production-safe budget:
+
+```json
+{
+  "context": {
+    "max_required_files": 3,
+    "max_linked_specs": 2,
+    "max_change_summaries": 3,
+    "max_total_characters": 30000,
+    "show_close_candidates": 0
+  }
+}
+```
+
+Completed Change bodies are excluded from the initial read boundary. Increasing this budget should follow a measured repository need rather than compensate for oversized Packs.
+
 Coverage classification is configured separately in `.context-ledger/config.json`:
 
 ```json
@@ -251,6 +276,7 @@ Before opening or updating a pull request, the agent should update the base ref 
 
 ```text
 python .context-ledger/ledger.py team-check --base origin/main
+python .context-ledger/ledger.py check --strict --coverage --changed-since origin/main
 ```
 
 If another branch changed the same files or feature, coordinate and resolve that overlap before merging. After the pull request is merged, the agent runs this once on the configured default branch:

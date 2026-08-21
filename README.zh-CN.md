@@ -18,6 +18,15 @@ Repo Context Ledger 为每个 AI 会话提供一份精简、持久的项目地�
 - 本次修改了什么、为什么修改、如何验证；
 - 哪些项目级和模块级 README 摘要需要同步更新。
 
+## v0.5.9 新增能力
+
+- `context --query` 现在输出有硬预算的 `context-plan-v1`：固定一个主 Pack，只加入文件数/字符数预算内的关联 spec，并明确列出 Required reads。
+- `context --format json` 提供跨 Agent 稳定契约，包括仓库相对路径、选择置信度、预算使用量以及本机耗时/文件数指标。
+- 已完成 Change 保持冷历史。计划可以从 Context Manifest 返回有上限的 ID、标题、功能、日期、摘要与 evidence 路径，但不会把 Change 正文放进 Required reads。
+- 四类生成 Agent 入口都禁止递归读取 `docs/ai`、`docs/specs` 和 `docs/changes`；Agent 必须先读 Required reads、保持已完成 Change 正文为冷数据，并在扩大上下文前说明尚未解决的问题。
+- `check --strict --changed-since <base-ref>` 校验 merge-base delta 及其直接关联的 current Pack/spec；无关旧债务不阻塞当前 PR，但源码变化导致关联 Pack stale 时仍会失败。Coverage 只采信 evidence 与本次实现路径相交的私有 session。
+- 原有全仓 `check --strict [--coverage]` 语义不变，继续用于定时健康审计和受控 Release 集成。
+
 ## v0.5.8 新增能力
 
 - Context Pack 指纹可在 Windows 与 Unix checkout 之间稳定复用：UTF-8 文本的逻辑内容相同，无论使用 LF 还是 CRLF 都得到相同摘要。
@@ -37,7 +46,7 @@ Repo Context Ledger 为每个 AI 会话提供一份精简、持久的项目地�
 
 ## v0.5.6 新增能力
 
-- `context --query` 改为 Context Pack 路由器：读取 live Pack 元数据，优先匹配 feature/title/tracked path，降低 superseded 或指纹过期 Pack 的优先级，并返回一个主 Pack、关联 spec 和选择原因。
+- `context --query` 改为 Context Pack 路由器：只路由 current Pack，排除 superseded/archived Pack，降低指纹过期 Pack 的优先级，并返回一个主 Pack、关联 spec 和选择原因。
 - 省略 `--repo` 时从当前目录向上寻找 `.context-ledger/config.json`，遇到嵌套 Git 仓库边界即停止。显式 `--repo` 仍然优先。
 - `verify` 失败只记录脱敏后的 Failure Capsule；成功仍只保留 hash 和最后一行结果，不持久化原始日志。
 - Handoff 的 Code paths 可以写 `file.go::Symbol`，用路径部分与 Git evidence 对齐。
@@ -212,6 +221,22 @@ python path/to/ledger.py --repo path/to/repository init --dry-run
 
 使用 `auto` 时，Agent 优先遵循项目附近文档的主要语言；如果没有既定习惯，则使用用户的语言。文件路径、函数名、接口字段、命令和错误文本保持源码原文。handoff、稳定 spec 和 Context Pack 会采用不同的 Markdown 结构，因为它们解决的问题不同；升级时不会重新格式化旧文档。
 
+初始上下文读取使用独立的生产安全预算：
+
+```json
+{
+  "context": {
+    "max_required_files": 3,
+    "max_linked_specs": 2,
+    "max_change_summaries": 3,
+    "max_total_characters": 30000,
+    "show_close_candidates": 0
+  }
+}
+```
+
+completed Change 正文不进入初始读取范围。只有经过实际测量确认需要时才应扩大预算，不应靠提高预算掩盖过大的 Pack。
+
 Coverage 路径分类在 `.context-ledger/config.json` 中单独配置：
 
 ```json
@@ -251,6 +276,7 @@ Agent 会恢复交接，检查仓库提交和被跟踪文件是否已经变化�
 
 ```text
 python .context-ledger/ledger.py team-check --base origin/main
+python .context-ledger/ledger.py check --strict --coverage --changed-since origin/main
 ```
 
 如果其他分支修改了同一文件或同一功能，需要先与同事协调并解决重叠。PR 合并后，Agent 会在配置的默认分支上执行一次：

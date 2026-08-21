@@ -30,7 +30,7 @@ Do not run the full lifecycle for every request.
 - **Parallel tasks**: pass `--session <id>` on every lifecycle command. Capture evidence with repeated `--path` values for only this task.
 - **Medium or large change**: also refresh the related Context Pack, update the stable spec, and write Before/After evidence before `finish`.
 
-`context` returns one primary Context Pack, its linked specs, and why it was chosen. Read that Pack's load order before scanning the rest of the repository.
+`context` returns a bounded Context Plan with one current primary Pack, Required reads, cold-history summaries, and why it was chosen. Read only Required reads initially; never recursively read `docs/ai`, `docs/specs`, or `docs/changes`. Do not open a completed Change body unless the plan selects it, a required Pack cites it for a named reason, or the user asks for history. Expand only after naming an unresolved question. Read [production-workflow.md](references/production-workflow.md) for large repositories and pull-request validation.
 
 ## Initialize a repository
 
@@ -54,7 +54,7 @@ Apply this workflow autonomously when code behavior changes. Follow [Choose the 
 1. Run `python .context-ledger/ledger.py status`. Reuse only this task's private draft. Never adopt, pause, publish, or rewrite another task's draft.
 2. Resolve the record language. Keep code identifiers in source form.
 3. If this task will change behavior and has no session, `start --title "<title>" --feature "<feature>"`. Keep the session ID. When more than one task is active, pass `--session <id>`; omission must fail.
-4. Route context, then read the primary Pack and its specs:
+4. Route context, then read only the Context Plan's Required reads:
 
    ```text
    python .context-ledger/ledger.py context --query "<feature, interface, or module>"
@@ -63,10 +63,10 @@ Apply this workflow autonomously when code behavior changes. Follow [Choose the 
 
    If no Context Pack exists, create one with `pack --feature`, fill every semantic section, then focus it.
 5. Implement the change. Record every claimed check with `verify --session <id> -- <command>`. Failed output is stored as a redacted failure capsule, never as a raw log. Persisted verification evidence replaces repository, Codex, temporary, and user-home roots with stable placeholders, including JSON-escaped Windows paths. If verification is unavailable, use `verify --not-run --reason "<substantive reason>"`.
-6. For a small single-session fix, `finish` can collect evidence. If another session exists, or automatic collection finds too many implementation paths, run `evidence --path` for only this task. Read [.context-ledger/writing-quality.md](.context-ledger/writing-quality.md) and remove every `TODO`. Code paths may cite `file.go::Symbol`; the path part is matched against evidence.
+6. For a small single-session fix, `finish` can collect evidence. If another session exists, or automatic collection finds too many implementation paths, run `evidence --path` for only this task. Read the repository-local `.context-ledger/writing-quality.md` and remove every `TODO`. Code paths may cite `file.go::Symbol`; the path part is matched against evidence.
 7. On medium or large changes, refresh every related Context Pack after tracked production paths change, and update the stable spec when current behavior or contracts changed.
 8. Finish with `finish --spec docs/specs/<feature>.md`, or `finish --no-spec --reason "<why>"`. `finish` validates only this session.
-9. Run `check --strict --coverage` at integration or pull-request time, not to unblock a parallel session.
+9. At pull-request time, prefer `check --strict --coverage --changed-since <base-ref>` so unrelated historical debt cannot block the current delta while directly related current Packs/specs remain fail-closed. Coverage may use only private sessions whose evidence intersects the changed implementation paths. Reserve the full `check --strict --coverage` audit for scheduled health work or controlled release integration, not to unblock a parallel session.
 
 ## Bridge native Agent entry points
 
@@ -90,7 +90,7 @@ Before opening or updating a pull request:
 1. Fetch or otherwise update the intended base branch.
 2. Run `python .context-ledger/ledger.py team-check --base <base-ref>`.
 3. Resolve reported overlaps in code paths or feature handoffs with the other contributor. Rebase or merge the current base as appropriate, then refresh any stale Context Pack.
-4. Run `python .context-ledger/ledger.py check --strict`.
+4. Run `python .context-ledger/ledger.py check --strict --coverage --changed-since <base-ref>`. Run the full repository audit separately when the repository's historical debt is expected to be clean.
 
 After changes are merged, run this once on the configured default branch:
 

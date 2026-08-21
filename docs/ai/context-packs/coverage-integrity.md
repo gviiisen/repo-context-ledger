@@ -5,18 +5,18 @@ Feature: coverage-integrity
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: 5892ff462b3970d3e86555ac79d3cf304571c172
+Source commit: ba915523eb59aa27ad01f9299dca19b0c5bdf723
 Base branch: main
-Base commit: 5892ff462b3970d3e86555ac79d3cf304571c172
-Last refreshed: 2026-08-21T15:03:50+08:00
+Base commit: ba915523eb59aa27ad01f9299dca19b0c5bdf723
+Last refreshed: 2026-08-21T16:25:22+08:00
 
 ## Purpose
 
-本功能负责在全仓集成检查中把 Git 变更映射到可审查的 completed change 或当前 worktree 的私有 handoff draft、稳定规格与实际相关的 Context Pack。它应区分生产代码与测试、CI、配置、文档和生成文件，并防止修改无关 Context Pack 绕过覆盖检查。单个 task session 的 `finish` 使用其显式 evidence 集合，不消费共享 worktree 的全部 diff。
+本功能负责把 Git 变更映射到可审查的 completed change 或当前 worktree 的私有 handoff draft、稳定规格与实际相关的 Context Pack。单个 task session 的 `finish` 使用显式 evidence；PR 的 `--changed-since` 只严格检查 merge-base delta；省略该参数时保留全仓审计。它区分生产代码与测试、CI、配置、文档和生成文件，并防止无关 Context Pack 绕过门禁。
 
 ## Load order
 
-- Read first: `skills/repo-context-ledger/scripts/ledger.py` 中的 `validate_config`、`is_implementation_path` 与 `coverage_validation_errors`。
+- Read first: `skills/repo-context-ledger/scripts/ledger.py` 中的 `check_changed_repo`、`coverage_validation_errors` 与 `task_session_finish_errors`。
 - Read if needed: `tests/test_ledger.py` 中的 Coverage 场景，以及 `.context-ledger/config.json` 的迁移兼容行为。
 - Do not load by default: Native Context Bridge adapter、README 派生摘要和团队分支冲突检测实现。
 
@@ -27,19 +27,20 @@ Last refreshed: 2026-08-21T15:03:50+08:00
 | `skills/repo-context-ledger/scripts/ledger.py::file_digest` | 生成跨 LF/CRLF 稳定、同时尊重 Git binary 属性的 tracked-file 指纹。 |
 | `skills/repo-context-ledger/scripts/ledger.py::validate_config` | 校验并补齐 Coverage 分类配置。 |
 | `skills/repo-context-ledger/scripts/ledger.py::is_implementation_path` | 判定路径是否属于需要语义记录的生产实现。 |
-| `skills/repo-context-ledger/scripts/ledger.py::coverage_validation_errors` | 将本次 Git 变更与 handoff、spec 和关联 Context Pack 对齐。 |
+| `skills/repo-context-ledger/scripts/ledger.py::relevant_private_handoff_texts`, `coverage_validation_errors` | 只采信 evidence 与本次生产实现相交的私有 session，再将变更与 handoff、spec 和 current Pack 对齐。 |
+| `skills/repo-context-ledger/scripts/ledger.py::related_context_documents`, `check_changed_repo` | 校验 merge-base delta 及其直接关联 current Pack/spec、链接和 adapter。 |
 | `skills/repo-context-ledger/scripts/ledger.py::task_session_finish_errors` | 只核验当前 session 的 evidence、明确 spec 与相关 Pack 指纹。 |
 | `tests/test_ledger.py` | 覆盖默认分类、配置覆盖、Pack 关联和绕过防护。 |
 
 ## Contracts and boundaries
 
-- Invariants and contracts: 私有 active draft 可为当前工作区提供 evidence，但不进入正式历史或 Manifest；文档、账本运行时状态和 Agent adapter 不属于生产实现；Context Pack 关联来自其 tracked file，而不是“任意 Pack 已修改”。UTF-8 文本的 LF/CRLF 形式共享指纹，Git `-text` 与真实二进制保持字节敏感。并行 session 的 evidence 必须是当前任务显式声明的真实变更路径。
-- Failure / recovery: 当前 session 引用未变更路径、遗漏已有的相关 Pack 或相关 Pack 指纹过期时，`finish` 必须失败并保留草稿。配置非法、生产路径没有关联 Pack、其他任务的未记录路径或其他 Pack 过期由 `check --strict --coverage` 这个全仓集成门禁报告，不得据此干预另一个任务。
+- Invariants and contracts: 私有 active draft 不进入正式历史或 Manifest；只有 evidence 与当前生产路径相交的 session 才能为 Coverage 提供记录或 spec exception；Context Pack 关联只来自 current Pack 的 tracked file；`--changed-since` 不能因关联范围外旧问题失败，也不能放过 delta 新断链或源码变化造成的关联 Pack stale；无参数的全仓检查语义不变。UTF-8 文本 LF/CRLF 共享指纹，Git `-text` 与真实二进制保持字节敏感。
+- Failure / recovery: 当前 session 引用未变更路径、遗漏相关 Pack 或相关 Pack 过期时，`finish` 保留草稿。PR 增量检查只修复当前 delta；旧债务留给所有者或定时全仓审计，不得据此干预另一个任务。base ref 不存在或本次新问题会明确失败。
 - Non-goals: 本功能不进行 LLM 语义判断，不引入 Light Mode，也不重构单文件运行时分发模型。
 
 ## Verification
 
-`python -m unittest discover -s tests -p "test_ledger.py" -v` 验证分类、可移植指纹、Git binary 属性、Pack 关联、显式 session evidence 与 foreign-stale 隔离；所有任务稳定后运行 `python .context-ledger/ledger.py check --strict --coverage` 验证仓库整体记录覆盖。
+`python -m unittest discover -s tests -p "test_ledger.py" -v` 验证分类、可移植指纹、Pack 关联、session 隔离和 changed-scope 边界；PR 运行 `check --strict --coverage --changed-since origin/main`，定时全仓审计运行 `check --strict --coverage`。
 
 <!-- repo-context-ledger:pack-specs:start -->
 ## Stable context
@@ -50,6 +51,6 @@ Last refreshed: 2026-08-21T15:03:50+08:00
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:c35cc09d2be70369bec0255253dc8ad44091af5a04ca0f33bfd329138a3835d2`
-- `tests/test_ledger.py` — `sha256:7a7aeea0a0880a31ee5d96801a6d12b88ee5606f67527154cac9a4f16eda45b6`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:23ffe775a57678c4b72794fac84ae79a76dd2e5d4441f6a75d332e05cb7df5eb`
+- `tests/test_ledger.py` — `sha256:13d01293b2209fac70dcefd9235cd58f574a741c8e32f1fbf76c5d3c17ff2802`
 <!-- repo-context-ledger:pack-files:end -->

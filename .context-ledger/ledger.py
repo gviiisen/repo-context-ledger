@@ -21,7 +21,7 @@ from pathlib import Path
 
 
 VERSION = 7
-TOOL_VERSION = "0.5.8"
+TOOL_VERSION = "0.5.9"
 MANIFEST_VERSION = 1
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
@@ -77,6 +77,13 @@ COVERAGE_GLOB_DEFAULTS = {
     "ignore_globs": [],
 }
 COVERAGE_GLOB_KEYS = tuple(COVERAGE_GLOB_DEFAULTS)
+CONTEXT_DEFAULTS = {
+    "max_required_files": 3,
+    "max_linked_specs": 2,
+    "max_change_summaries": 3,
+    "max_total_characters": 30000,
+    "show_close_candidates": 0,
+}
 
 
 class LedgerError(Exception):
@@ -977,6 +984,27 @@ def validate_config(repo: Path, config: dict) -> dict:
         if not isinstance(enabled, bool):
             raise LedgerError(f"config.adapters.{name} must be true or false.")
         adapters[name] = enabled
+    raw_context = config.get("context", {})
+    if not isinstance(raw_context, dict):
+        raise LedgerError("config.context must be an object.")
+    unknown_context = set(raw_context).difference(CONTEXT_DEFAULTS)
+    if unknown_context:
+        raise LedgerError(f"Unknown context setting: {sorted(unknown_context)[0]}")
+    context = {}
+    context_ranges = {
+        "max_required_files": (1, 12),
+        "max_linked_specs": (0, 8),
+        "max_change_summaries": (0, 20),
+        "max_total_characters": (4000, 200000),
+        "show_close_candidates": (0, 5),
+    }
+    for key, (minimum, maximum) in context_ranges.items():
+        value = raw_context.get(key, CONTEXT_DEFAULTS[key])
+        if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= maximum:
+            raise LedgerError(
+                f"config.context.{key} must be an integer from {minimum} to {maximum}."
+            )
+        context[key] = value
     coverage = normalize_coverage_globs(config.get("coverage"))
     return {
         "schema_version": VERSION,
@@ -984,6 +1012,7 @@ def validate_config(repo: Path, config: dict) -> dict:
         "modules": normalized_modules,
         "readme_managed_blocks": bool(config.get("readme_managed_blocks", True)),
         "adapters": adapters,
+        "context": context,
         "coverage": coverage,
         "team": {
             "enabled": team_enabled,
@@ -1042,6 +1071,17 @@ def discover_modules(repo: Path) -> list[dict[str, str]]:
     return [found[key] for key in sorted(found)]
 
 
+def context_plan_policy() -> str:
+    return (
+        "Before broad documentation exploration, run `context --query \"<task>\"`. "
+        "Read only the Context Plan's Required reads initially. "
+        "Never recursively read `docs/ai`, `docs/specs`, or `docs/changes`. "
+        "Do not open completed Change bodies unless the plan selects one, a required Pack cites "
+        "one for a named reason, or the user asks for historical reasoning. "
+        "Expand context only after stating the unresolved question."
+    )
+
+
 def managed_rules(config: dict) -> str:
     changes = config["docs"]["changes"]
     specs = config["docs"]["specs"]
@@ -1051,7 +1091,7 @@ For every feature, bug fix, refactor, interface change, or other behavior-changi
 
 1. Before editing code, run `status`, then start or reuse only this task's private draft session. Keep the returned session ID and pass `--session <id>` whenever multiple sessions exist.
 2. Resolve `quality.language`; when it is `auto`, follow nearby docs or the user's language. Keep paths, symbols, commands, and error text untranslated.
-3. Use `context --query "<task>"` and focus the feature Context Pack before broad code exploration. If none exists, create and fill one.
+3. {context_plan_policy()} Focus the selected feature Context Pack before broad code exploration. If no Pack exists, create and fill one.
 4. Run `checkpoint --session <id> --summary "..." --next "..."` before handing active work to another Agent. Pause only this task's session; never pause, resume, or finish another task's session.
 5. Run every claimed check through `python .context-ledger/ledger.py verify -- <command>`. Use `verify --not-run --reason \"...\"` only when verification is genuinely unavailable.
 6. Run `evidence`, read `.context-ledger/writing-quality.md`, and fill the private draft from actual changed paths. When another session exists, pass repeated `--path <path>` values for only this task; never capture foreign dirty paths. Refresh affected Context Packs with `pack --file ...`.
@@ -1068,25 +1108,27 @@ Do not ask the user to run bookkeeping commands. Do not create a handoff for rea
 
 
 def claude_adapter_body() -> str:
-    return """@AGENTS.md
+    return f"""@AGENTS.md
+
+{context_plan_policy()}
 
 Treat Git-tracked Context Packs, stable specs, and handoffs as the cross-Agent source of truth. Follow the repository context ledger workflow without asking the user to run lifecycle commands. Never message or steer another user-owned task unless the user explicitly requested cross-task coordination."""
 
 
 def cursor_adapter_content() -> str:
-    return """---
+    return f"""---
 description: Route Cursor through the repository's verified, cross-Agent context ledger.
 alwaysApply: true
 ---
 
-Read and follow the repository root `AGENTS.md`. Use `python .context-ledger/ledger.py context --query "<task>"` to load the smallest relevant Context Pack and stable spec. Treat Cursor Memory as a private cache, never as the repository source of truth. Run ledger lifecycle commands autonomously; never delegate them to the user. Never message or steer another user-owned task unless the user explicitly requested cross-task coordination.
+Read and follow the repository root `AGENTS.md`. {context_plan_policy()} Treat Cursor Memory as a private cache, never as the repository source of truth. Run ledger lifecycle commands autonomously; never delegate them to the user. Never message or steer another user-owned task unless the user explicitly requested cross-task coordination.
 """
 
 
 def copilot_adapter_body() -> str:
-    return """## Repository Context Ledger
+    return f"""## Repository Context Ledger
 
-Read and follow the repository root `AGENTS.md`. Before broad code exploration, run `python .context-ledger/ledger.py context --query "<task>"` and load the matching Context Pack and stable spec. Treat Copilot Memory as a private cache; Git-tracked ledger documents are the shared cross-Agent source of truth. Never message or steer another user-owned task unless the user explicitly requested cross-task coordination."""
+Read and follow the repository root `AGENTS.md`. {context_plan_policy()} Treat Copilot Memory as a private cache; Git-tracked ledger documents are the shared cross-Agent source of truth. Never message or steer another user-owned task unless the user explicitly requested cross-task coordination."""
 
 
 def adapter_states(repo: Path, config: dict) -> dict[str, tuple[Path, str, bool]]:
@@ -1508,6 +1550,16 @@ def pack_fingerprint_current(repo: Path, entries: list[tuple[str, str]]) -> bool
     return True
 
 
+def pack_header_text(path: Path) -> str:
+    lines: list[str] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.startswith("## "):
+                break
+            lines.append(line)
+    return "".join(lines)
+
+
 def load_live_context_packs(repo: Path, config: dict) -> list[dict[str, object]]:
     ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
     packs_root = ai_root / "context-packs"
@@ -1518,6 +1570,11 @@ def load_live_context_packs(repo: Path, config: dict) -> list[dict[str, object]]
         if path.name.casefold() == "readme.md":
             continue
         try:
+            header = pack_header_text(path)
+            status = (field_value(header, "Status") or "unknown").casefold()
+            superseded_by = field_value(header, "Superseded by")
+            if status != "current" or superseded_by:
+                continue
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError):
             continue
@@ -1534,8 +1591,8 @@ def load_live_context_packs(repo: Path, config: dict) -> list[dict[str, object]]
             "rel": rel_posix(path, repo),
             "feature": feature_slug(field_value(text, "Feature") or path.stem),
             "title": first_heading(path).removesuffix(" context pack"),
-            "status": (field_value(text, "Status") or "unknown").casefold(),
-            "superseded_by": field_value(text, "Superseded by"),
+            "status": status,
+            "superseded_by": superseded_by,
             "purpose": pack_purpose_text(text),
             "tracked": [raw for raw, _ in tracked],
             "specs": specs,
@@ -1594,7 +1651,77 @@ def score_context_pack(pack: dict[str, object], query: str, tokens: list[str]) -
     return score, reasons
 
 
-def context_search(repo: Path, query: str, limit: int) -> int:
+def manifest_change_summaries(
+    repo: Path,
+    config: dict,
+    feature: str,
+    limit: int,
+) -> list[dict[str, str]]:
+    if limit <= 0:
+        return []
+    manifest_path = safe_repo_path(
+        repo,
+        config["docs"]["ai"].rstrip("/") + "/context-manifest.json",
+        "context manifest",
+    )
+    if not manifest_path.is_file():
+        return []
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeError):
+        return []
+    features = manifest.get("features")
+    if not isinstance(features, list):
+        return []
+    entry = next(
+        (
+            item for item in features
+            if isinstance(item, dict) and feature_slug(str(item.get("feature", ""))) == feature
+        ),
+        None,
+    )
+    if not entry or not isinstance(entry.get("recent_changes"), list):
+        return []
+    summaries: list[dict[str, str]] = []
+    for item in entry["recent_changes"]:
+        if not isinstance(item, dict):
+            continue
+        scalar_keys = ("id", "path", "title", "feature", "date", "summary", "status")
+        values = {key: item.get(key) for key in scalar_keys}
+        evidence_paths = item.get("evidence_paths")
+        if not all(isinstance(value, str) and value.strip() for value in values.values()):
+            continue
+        if not isinstance(evidence_paths, list) or not all(
+            isinstance(value, str) and value.strip() for value in evidence_paths
+        ):
+            continue
+        try:
+            path = rel_posix(
+                safe_repo_path(repo, str(values["path"]), "manifest recent change"), repo
+            )
+            normalized_evidence = [
+                rel_posix(safe_repo_path(repo, raw, "manifest change evidence"), repo)
+                for raw in evidence_paths
+            ]
+        except LedgerError:
+            continue
+        summaries.append({
+            "id": str(values["id"]).strip(),
+            "path": path,
+            "title": str(values["title"]).strip(),
+            "feature": feature_slug(str(values["feature"])),
+            "date": str(values["date"]).strip(),
+            "summary": str(values["summary"]).strip(),
+            "evidence_paths": normalized_evidence,
+            "status": str(values["status"]).strip(),
+        })
+        if len(summaries) >= limit:
+            break
+    return summaries
+
+
+def context_search(repo: Path, query: str, limit: int, output_format: str = "text") -> int:
+    started = time.perf_counter()
     config = load_config(repo)
     tokens = query_tokens(query)
     packs = load_live_context_packs(repo, config)
@@ -1611,6 +1738,93 @@ def context_search(repo: Path, query: str, limit: int) -> int:
         print("No matching Context Pack. Create one with pack --feature or inspect docs/ai/context-packs.")
         return 1
     best_score, primary, reasons = ranked[0]
+    context_config = config.get("context", CONTEXT_DEFAULTS)
+    max_files = int(context_config["max_required_files"])
+    max_specs = min(int(context_config["max_linked_specs"]), max(0, max_files - 1))
+    max_characters = int(context_config["max_total_characters"])
+    primary_path = Path(primary["path"])
+    primary_characters = len(primary_path.read_text(encoding="utf-8"))
+    if primary_characters > max_characters:
+        raise LedgerError(
+            f"Primary Context Pack exceeds config.context.max_total_characters: {primary['rel']}"
+        )
+    required_reads: list[tuple[str, str, int]] = [
+        ("pack", str(primary["rel"]), primary_characters)
+    ]
+    used_characters = primary_characters
+    truncated = False
+    specs = [str(item) for item in primary["specs"]]
+    for spec in specs:
+        if len(required_reads) >= max_files or len(required_reads) - 1 >= max_specs:
+            truncated = True
+            break
+        spec_path = repo / normalize_git_path(spec)
+        characters = len(spec_path.read_text(encoding="utf-8")) if spec_path.is_file() else 0
+        if used_characters + characters > max_characters:
+            truncated = True
+            break
+        required_reads.append(("spec", spec, characters))
+        used_characters += characters
+    if len(specs) > len(required_reads) - 1:
+        truncated = True
+    change_summaries = manifest_change_summaries(
+        repo,
+        config,
+        str(primary["feature"]),
+        int(context_config["max_change_summaries"]),
+    )
+    near = [
+        item for item in ranked[1:]
+        if item[0] >= int(best_score * CONTEXT_NEAR_SCORE_RATIO)
+    ][: min(max(0, limit - 1), int(context_config["show_close_candidates"]))]
+    plan = {
+        "schema": "context-plan-v1",
+        "query": query,
+        "confidence": "high" if best_score >= 4000 else "medium" if best_score >= 500 else "low",
+        "primary_pack": str(primary["rel"]),
+        "feature": str(primary["feature"]),
+        "title": str(primary["title"]),
+        "status": str(primary["status"]),
+        "selection": {
+            "score": best_score,
+            "reasons": reasons or ["token overlap"],
+            "fingerprints": "current" if primary["fingerprints_ok"] else "stale",
+        },
+        "required_reads": [
+            {"kind": kind, "path": path, "characters": characters}
+            for kind, path, characters in required_reads
+        ],
+        "change_summaries": change_summaries,
+        "optional_candidates": [
+            {
+                "path": str(pack["rel"]),
+                "score": score,
+                "reasons": why or ["token overlap"],
+            }
+            for score, pack, why in near
+        ],
+        "budget": {
+            "max_files": max_files,
+            "max_characters": max_characters,
+            "used_files": len(required_reads),
+            "used_characters": used_characters,
+            "truncated": truncated,
+        },
+        "instructions": [
+            "Read required_reads in order.",
+            "Do not recursively read ledger documentation.",
+            "Expand only when the required reads leave a named uncertainty.",
+        ],
+        "metrics": {
+            "packs_considered": len(packs),
+            "required_files": len(required_reads),
+            "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+        },
+    }
+    if output_format == "json":
+        print(json.dumps(plan, indent=2, ensure_ascii=True))
+        return 0
+    print("Context plan: context-plan-v1")
     print(f"Primary pack: {primary['rel']}")
     print(f"Feature: {primary['feature']}")
     print(f"Title: {primary['title']}")
@@ -1618,17 +1832,27 @@ def context_search(repo: Path, query: str, limit: int) -> int:
     print(f"Why: {', '.join(reasons) or 'token overlap'}")
     print(f"Score: {best_score}")
     print(f"Fingerprints: {'current' if primary['fingerprints_ok'] else 'stale'}")
-    print("Stable specs:")
-    specs = [str(item) for item in primary["specs"]]
-    if specs:
-        for spec in specs:
-            print(f"- {spec}")
+    print("Required reads:")
+    for kind, path, characters in required_reads:
+        print(f"- {kind}: {path} ({characters} characters)")
+    print("Change summaries:")
+    if change_summaries:
+        for summary in change_summaries:
+            print(
+                f"- {summary['date']} {summary['title']} [{summary['feature']}] — "
+                f"{summary['summary']} — {summary['path']} "
+                f"({summary['status']}; evidence={len(summary['evidence_paths'])})"
+            )
     else:
         print("- none")
-    near = [
-        item for item in ranked[1:]
-        if item[0] >= int(best_score * CONTEXT_NEAR_SCORE_RATIO)
-    ][: max(0, limit - 1)]
+    print("Do not load by default:")
+    print("- completed docs/changes bodies")
+    print("- ledger documents outside Required reads")
+    print(
+        f"Budget: files {len(required_reads)}/{max_files}; "
+        f"characters {used_characters}/{max_characters}; "
+        f"truncated={'yes' if truncated else 'no'}"
+    )
     if near:
         print("Close candidates:")
         for score, pack, why in near:
@@ -2005,18 +2229,40 @@ def context_manifest_path(repo: Path, config: dict) -> Path:
     return ai_root / "context-manifest.json"
 
 
+def completed_change_manifest_entry(
+    repo: Path,
+    change: Path,
+    text: str,
+    feature: str,
+) -> dict[str, object]:
+    completed = field_value(text, "Completed")
+    if re.match(r"^\d{4}-\d{2}-\d{2}", completed):
+        completed_date = completed[:10]
+    else:
+        stamp = re.match(r"^(\d{4})(\d{2})(\d{2})", change.stem)
+        completed_date = "-".join(stamp.groups()) if stamp else "unknown"
+    return {
+        "id": field_value(text, "Handoff ID") or change.stem,
+        "path": rel_posix(change, repo),
+        "title": first_heading(change),
+        "feature": feature,
+        "date": completed_date,
+        "summary": field_value(text, "After") or first_heading(change),
+        "evidence_paths": sorted(recorded_handoff_evidence_paths(text)),
+        "status": field_value(text, "Status") or "unknown",
+    }
+
+
 def context_manifest_data(repo: Path, config: dict) -> dict:
     ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
     packs_root = ai_root / "context-packs"
-    recent_by_feature: dict[str, list[dict[str, str]]] = {}
+    recent_by_feature: dict[str, list[dict[str, object]]] = {}
     for change in all_changes(repo, config):
         text = change.read_text(encoding="utf-8")
         feature = feature_slug(field_value(text, "Feature") or first_heading(change))
-        recent_by_feature.setdefault(feature, []).append({
-            "path": rel_posix(change, repo),
-            "title": first_heading(change),
-            "status": field_value(text, "Status") or "unknown",
-        })
+        recent_by_feature.setdefault(feature, []).append(
+            completed_change_manifest_entry(repo, change, text, feature)
+        )
     features = []
     if packs_root.exists():
         for pack in sorted(packs_root.glob("*.md")):
@@ -2732,6 +2978,28 @@ def recorded_handoff_evidence_paths(text: str) -> set[str]:
     }
 
 
+def relevant_private_handoff_texts(
+    repo: Path,
+    config: dict,
+    implementation_paths: list[str],
+) -> list[str]:
+    implementation = {normalize_git_path(raw) for raw in implementation_paths}
+    relevant: list[str] = []
+    for session_id, record in load_context_state(repo).get("task_sessions", {}).items():
+        if record.get("status") not in {"active", "paused"}:
+            continue
+        try:
+            draft = resolve_session_draft(repo, config, session_id, record)
+        except LedgerError:
+            continue
+        if not draft.is_file():
+            continue
+        text = draft.read_text(encoding="utf-8")
+        if recorded_handoff_evidence_paths(text).intersection(implementation):
+            relevant.append(text)
+    return relevant
+
+
 def ensure_finish_evidence(repo: Path, config: dict, session_id: str, handoff: Path) -> None:
     text = handoff.read_text(encoding="utf-8")
     evidence = managed_text(text, EVIDENCE_START, EVIDENCE_END)
@@ -3134,21 +3402,40 @@ def is_generated_index(config: dict, raw: str) -> bool:
     ) or raw == changes_root + "/README.md"
 
 
-def tracked_context_packs(repo: Path, config: dict) -> dict[str, list[str]]:
-    ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
-    packs_root = ai_root / "context-packs"
+def tracked_context_packs(
+    repo: Path,
+    config: dict,
+    packs: list[dict[str, object]] | None = None,
+) -> dict[str, list[str]]:
     tracked: dict[str, list[str]] = {}
-    if not packs_root.exists():
-        return tracked
-    for pack in sorted(packs_root.glob("*.md")):
-        pack_rel = rel_posix(pack, repo)
-        text = pack.read_text(encoding="utf-8")
-        for raw, _ in pack_file_entries(text):
-            tracked.setdefault(normalize_git_path(raw), []).append(pack_rel)
+    for pack in (packs if packs is not None else load_live_context_packs(repo, config)):
+        pack_rel = str(pack["rel"])
+        for raw in pack["tracked"]:
+            tracked.setdefault(normalize_git_path(str(raw)), []).append(pack_rel)
     return tracked
 
 
-def coverage_validation_errors(repo: Path, config: dict, raw_base: str = "") -> list[str]:
+def related_context_documents(
+    changed: set[str],
+    packs: list[dict[str, object]],
+) -> set[str]:
+    related: set[str] = set()
+    for pack in packs:
+        pack_rel = str(pack["rel"])
+        tracked = {normalize_git_path(str(raw)) for raw in pack["tracked"]}
+        specs = {normalize_git_path(str(raw)) for raw in pack["specs"]}
+        if pack_rel in changed or changed.intersection(tracked) or changed.intersection(specs):
+            related.add(pack_rel)
+            related.update(specs)
+    return related
+
+
+def coverage_validation_errors(
+    repo: Path,
+    config: dict,
+    raw_base: str = "",
+    packs_by_path: dict[str, list[str]] | None = None,
+) -> list[str]:
     if not is_git_repo(repo):
         return ["Change coverage requires a Git repository."]
     base = raw_base.strip() or configured_base_ref(repo, config)
@@ -3167,14 +3454,7 @@ def coverage_validation_errors(repo: Path, config: dict, raw_base: str = "") -> 
         if path.startswith(changes_prefix) and path.endswith(".md")
         and not path.endswith("/README.md") and not path.endswith("/index.md")
     )
-    private_handoff_texts: list[str] = []
-    for session_id, record in load_context_state(repo).get("task_sessions", {}).items():
-        try:
-            draft = resolve_session_draft(repo, config, session_id, record)
-        except LedgerError:
-            continue
-        if draft.is_file():
-            private_handoff_texts.append(draft.read_text(encoding="utf-8"))
+    private_handoff_texts = relevant_private_handoff_texts(repo, config, implementation)
     errors: list[str] = []
     if not handoff_paths and not private_handoff_texts:
         errors.append("Behavior-changing paths have no changed record or active private handoff.")
@@ -3213,7 +3493,8 @@ def coverage_validation_errors(repo: Path, config: dict, raw_base: str = "") -> 
     changed_packs = {
         path for path in changed if path.startswith(packs_prefix) and path.endswith(".md")
     }
-    packs_by_path = tracked_context_packs(repo, config)
+    if packs_by_path is None:
+        packs_by_path = tracked_context_packs(repo, config)
     for raw in implementation:
         related = packs_by_path.get(normalize_git_path(raw), [])
         if not related:
@@ -3291,11 +3572,142 @@ def team_check(repo: Path, raw_base: str) -> int:
     return 0
 
 
+def changed_scope_paths(repo: Path, raw_base: str) -> tuple[str, set[str]]:
+    if not is_git_repo(repo):
+        raise LedgerError("Changed-scope check requires a Git repository.")
+    base = raw_base.strip()
+    if not base:
+        raise LedgerError("Changed-scope check requires a base ref.")
+    if git_revision(repo, base) == "none":
+        raise LedgerError(f"Changed-scope base ref does not exist locally: {base}")
+    merge_base = git_output(repo, "merge-base", "HEAD", base) or git_revision(repo, base)
+    changed = git_changed_paths(repo, f"{merge_base}..HEAD")
+    changed.update(git_dirty_paths(repo))
+    return merge_base, changed
+
+
+def check_changed_repo(
+    repo: Path,
+    config: dict,
+    strict: bool,
+    coverage: bool,
+    coverage_base: str,
+    changed_since: str,
+) -> int:
+    merge_base, changed = changed_scope_paths(repo, changed_since)
+    errors: list[str] = []
+    specs_prefix = config["docs"]["specs"].rstrip("/") + "/"
+    changes_prefix = config["docs"]["changes"].rstrip("/") + "/"
+    packs_prefix = config["docs"]["ai"].rstrip("/") + "/context-packs/"
+    current_packs = load_live_context_packs(repo, config)
+    packs_by_path = tracked_context_packs(repo, config, current_packs)
+    semantic_paths = changed.union(related_context_documents(changed, current_packs))
+
+    adapter_sources = {
+        ".context-ledger/ledger.py",
+        "skills/repo-context-ledger/scripts/ledger.py",
+        "skills/repo-context-ledger/SKILL.md",
+        "skills/repo-context-ledger/references/document-model.md",
+    }
+    states = adapter_states(repo, config)
+    validate_all_adapters = bool(changed.intersection(adapter_sources))
+    for name in ADAPTER_NAMES:
+        path, _, current_adapter = states[name]
+        adapter_rel = rel_posix(path, repo)
+        if (
+            config.get("adapters", {}).get(name, True)
+            and (validate_all_adapters or adapter_rel in changed)
+            and not current_adapter
+        ):
+            errors.append(f"Context adapter is missing or drifted: {adapter_rel}")
+
+    manifest_rel = config["docs"]["ai"].rstrip("/") + "/context-manifest.json"
+    manifest_sources_changed = any(
+        raw == manifest_rel
+        or raw.startswith(packs_prefix)
+        or raw.startswith(specs_prefix)
+        or (
+            raw.startswith(changes_prefix)
+            and raw.endswith(".md")
+            and not raw.endswith("/README.md")
+        )
+        for raw in changed
+    )
+    if manifest_sources_changed and should_update_derived(repo, config):
+        errors.extend(context_manifest_errors(repo, config))
+
+    changed_markdown: list[Path] = []
+    for raw in sorted(semantic_paths):
+        path = repo / normalize_git_path(raw)
+        if not path.is_file() or path.suffix.casefold() != ".md":
+            continue
+        changed_markdown.append(path)
+        if not strict:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if raw.startswith(changes_prefix) and not is_change_index(
+            path, safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes")
+        ):
+            if is_evidence_quality(text) and field_value(text, "Status").casefold() == "completed":
+                for error in handoff_validation_errors(
+                    text, repo, config, expected_status="completed"
+                ):
+                    errors.append(f"{raw}: {error}")
+            if is_evidence_quality(text) and field_value(text, "Status").casefold() in {"active", "paused"}:
+                errors.append(f"Unfinished handoff is stored in formal change history: {raw}")
+        elif raw.startswith(specs_prefix) and not raw.endswith("/README.md"):
+            for error in spec_quality_errors(path):
+                errors.append(f"{raw}: {error}")
+        elif raw.startswith(packs_prefix):
+            for error in context_pack_errors(repo, path):
+                errors.append(f"{raw}: {error}")
+
+    for path in changed_markdown:
+        text = path.read_text(encoding="utf-8")
+        raw = rel_posix(path, repo)
+        if text.count(BLOCK_START) != text.count(BLOCK_END):
+            errors.append(f"Unbalanced managed markers: {raw}")
+        if text.count(CHANGES_START) != text.count(CHANGES_END):
+            errors.append(f"Unbalanced related-change markers: {raw}")
+        if text.count(EVIDENCE_START) != text.count(EVIDENCE_END):
+            errors.append(f"Unbalanced evidence markers: {raw}")
+        if text.count(CHECKS_START) != text.count(CHECKS_END):
+            errors.append(f"Unbalanced verification markers: {raw}")
+        for raw_link in local_links(path):
+            link = raw_link.split("#", 1)[0].strip()
+            if not link or re.match(r"^[a-z][a-z0-9+.-]*:", link, re.I):
+                continue
+            target = (path.parent / link).resolve()
+            if not target.exists():
+                errors.append(f"Broken link in {raw}: {raw_link}")
+
+    if coverage:
+        errors.extend(
+            coverage_validation_errors(
+                repo,
+                config,
+                coverage_base or changed_since,
+                packs_by_path=packs_by_path,
+            )
+        )
+
+    print(f"Changed-scope base: {changed_since} ({merge_base})")
+    print(f"Changed paths inspected: {len(changed)}")
+    print(f"Related semantic paths inspected: {len(semantic_paths - changed)}")
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+    print("Changed-scope Repo Context Ledger check passed.")
+    return 0
+
+
 def check_repo(
     repo: Path,
     strict: bool,
     coverage: bool = False,
     coverage_base: str = "",
+    changed_since: str = "",
 ) -> int:
     errors: list[str] = []
     try:
@@ -3303,6 +3715,14 @@ def check_repo(
     except LedgerError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if changed_since:
+        try:
+            return check_changed_repo(
+                repo, config, strict, coverage, coverage_base, changed_since
+            )
+        except LedgerError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
     specs_root = safe_repo_path(repo, config["docs"]["specs"], "config.docs.specs")
     changes_root = safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes")
     ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
@@ -3459,6 +3879,7 @@ def build_parser() -> argparse.ArgumentParser:
     context = sub.add_parser("context", help="Find likely stable background documents")
     context.add_argument("--query", required=True)
     context.add_argument("--limit", type=int, default=5)
+    context.add_argument("--format", choices=("text", "json"), default="text")
     pack = sub.add_parser("pack", help="Create or refresh a feature Context Pack")
     pack.add_argument("--feature", required=True)
     pack.add_argument("--title", default="")
@@ -3513,6 +3934,11 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--strict", action="store_true")
     check.add_argument("--coverage", action="store_true", help="Require Git changes to have handoff, spec, and Context Pack coverage")
     check.add_argument("--base", default="", help="Coverage base ref (default: configured default branch)")
+    check.add_argument(
+        "--changed-since",
+        default="",
+        help="Validate only ledger documents changed since the merge base with this ref",
+    )
     team = sub.add_parser("team-check", help="Detect branch, feature, and generated-file conflicts")
     team.add_argument("--base", default="", help="Base ref (default: configured origin default branch)")
     sub.add_parser("status", help="Show ledger state")
@@ -3557,7 +3983,7 @@ def main(argv: list[str] | None = None) -> int:
                     return sync_adapters(repo, load_config(repo))
                 return sync_repo(repo, args.derived)
         if args.command == "context":
-            return context_search(repo, args.query, max(1, args.limit))
+            return context_search(repo, args.query, max(1, args.limit), args.format)
         if args.command == "init":
             return init_repo(repo, args.dry_run)
         if args.command == "verify":
@@ -3568,7 +3994,7 @@ def main(argv: list[str] | None = None) -> int:
                 repo, args.verification_command, args.timeout, args.not_run, args.reason, args.session
             )
         if args.command == "check":
-            return check_repo(repo, args.strict, args.coverage, args.base)
+            return check_repo(repo, args.strict, args.coverage, args.base, args.changed_since)
         if args.command == "manifest":
             return manage_context_manifest(repo, args.action)
         if args.command == "adapters":

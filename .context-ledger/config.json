@@ -13,6 +13,13 @@
     "cursor": true,
     "copilot": true
   },
+  "context": {
+    "max_required_files": 3,
+    "max_linked_specs": 2,
+    "max_change_summaries": 3,
+    "max_total_characters": 30000,
+    "show_close_candidates": 0
+  },
   "coverage": {
     "implementation_globs": [
       "**"
