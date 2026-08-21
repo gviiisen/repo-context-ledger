@@ -3,6 +3,7 @@
 <!-- repo-context-ledger:start -->
 ## Changes in 2026-08
 
+- [Accelerate context routing with private cache and PR bundles](20260821191911-gviiisen-901f527dbd-accelerate-context-routing-with-private-cache-an.md) — completed
 - [Add cross-Agent session resume ownership](20260821171622-gviiisen-67c0a5a3f9-add-cross-agent-session-resume-ownership.md) — completed
 - [Bound context loading and delta validation](20260821154209-gviiisen-25df54aeac-bound-context-loading-and-delta-validation.md) — completed
 - [Make fingerprints portable and redact local paths](20260821144634-gviiisen-60f90c607e-make-fingerprints-portable-and-redact-local-path.md) — completed

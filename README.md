@@ -393,6 +393,6 @@ python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 - [Stable feature context](docs/specs/README.md)
 - [Change history](docs/changes/README.md)
 - [Feature Context Packs](docs/ai/context-packs)
-- Relevant specs: [Coverage Integrity](docs/specs/coverage-integrity.md), [Native Context Bridge](docs/specs/native-context-bridge.md), [Task session integrity](docs/specs/task-session-integrity.md)
-- Latest recorded change: [Add cross-Agent session resume ownership](docs/changes/2026/08/20260821171622-gviiisen-67c0a5a3f9-add-cross-agent-session-resume-ownership.md)
+- Relevant specs: [Context Routing Performance](docs/specs/context-routing-performance.md), [Coverage Integrity](docs/specs/coverage-integrity.md), [Native Context Bridge](docs/specs/native-context-bridge.md), [Task session integrity](docs/specs/task-session-integrity.md)
+- Latest recorded change: [Accelerate context routing with private cache and PR bundles](docs/changes/2026/08/20260821191911-gviiisen-901f527dbd-accelerate-context-routing-with-private-cache-an.md)
 <!-- repo-context-ledger:end -->

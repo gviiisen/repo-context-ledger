@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "tool_version": "0.5.10",
+  "tool_version": "0.6.0",
   "default_branch": "main",
   "project_context": "docs/ai/project-context.md",
   "docs": {
@@ -10,12 +10,63 @@
   },
   "features": [
     {
+      "feature": "context-routing-performance",
+      "title": "Context Routing Performance",
+      "context_pack": "docs/ai/context-packs/context-routing-performance.md",
+      "status": "current",
+      "source_commit": "7655bcccc6bb3b07aab23fdd86f16c048178535b",
+      "last_refreshed": "2026-08-21T19:57:21+08:00",
+      "stable_specs": [
+        "docs/specs/context-routing-performance.md"
+      ],
+      "tracked_files": [
+        "skills/repo-context-ledger/scripts/ledger.py",
+        "tests/test_ledger.py",
+        "benchmarks/context_router_benchmark.py",
+        "benchmarks/README.md"
+      ],
+      "recent_changes": [
+        {
+          "id": "20260821191911-gviiisen-901f527dbd",
+          "path": "docs/changes/2026/08/20260821191911-gviiisen-901f527dbd-accelerate-context-routing-with-private-cache-an.md",
+          "title": "Accelerate context routing with private cache and PR bundles",
+          "feature": "context-routing-performance",
+          "date": "2026-08-21",
+          "summary": "`context-bundle-v1` 使用 Git metadata 下的可丢弃 cache 复用 Pack 元数据与 digest，批量解析 Git text mode，并通过反向索引加最多 5 个全量元数据安全候选，只对候选执行昂贵指纹核验。`--baseline <ref>` 加入 merge-base delta；Capsule 按主 Pack 路径亲和度保留 evidence 并只报告省略数量。相同匿名 59-Pack 环境中，候选运行时冷路由为 1,364.505 ms、热路由为 912.673 ms，首轮仍只读取 1 个文件；公开 benchmark 只生成合成仓库。",
+          "evidence_paths": [
+            ".context-ledger/ledger.py",
+            ".cursor/rules/repo-context-ledger.mdc",
+            ".github/copilot-instructions.md",
+            "AGENTS.md",
+            "CLAUDE.md",
+            "README.md",
+            "README.zh-CN.md",
+            "benchmarks/README.md",
+            "benchmarks/context_router_benchmark.py",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/specs/context-routing-performance.md",
+            "docs/specs/native-context-bridge.md",
+            "docs/specs/task-session-integrity.md",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/references/document-model.md",
+            "skills/repo-context-ledger/references/production-workflow.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "tests/test_ledger.py"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
       "feature": "coverage-integrity",
       "title": "Coverage Integrity",
       "context_pack": "docs/ai/context-packs/coverage-integrity.md",
       "status": "current",
-      "source_commit": "cbdc584220e1f6868be6b20a5125e1b67151cdd3",
-      "last_refreshed": "2026-08-21T18:05:21+08:00",
+      "source_commit": "7655bcccc6bb3b07aab23fdd86f16c048178535b",
+      "last_refreshed": "2026-08-21T19:46:24+08:00",
       "stable_specs": [
         "docs/specs/coverage-integrity.md"
       ],
@@ -138,8 +189,8 @@
       "title": "Native Context Bridge",
       "context_pack": "docs/ai/context-packs/native-context-bridge.md",
       "status": "current",
-      "source_commit": "cbdc584220e1f6868be6b20a5125e1b67151cdd3",
-      "last_refreshed": "2026-08-21T18:00:53+08:00",
+      "source_commit": "7655bcccc6bb3b07aab23fdd86f16c048178535b",
+      "last_refreshed": "2026-08-21T19:46:07+08:00",
       "stable_specs": [
         "docs/specs/native-context-bridge.md"
       ],
@@ -254,8 +305,8 @@
       "title": "Task Session Integrity",
       "context_pack": "docs/ai/context-packs/task-session-integrity.md",
       "status": "current",
-      "source_commit": "cbdc584220e1f6868be6b20a5125e1b67151cdd3",
-      "last_refreshed": "2026-08-21T18:00:42+08:00",
+      "source_commit": "7655bcccc6bb3b07aab23fdd86f16c048178535b",
+      "last_refreshed": "2026-08-21T19:46:08+08:00",
       "stable_specs": [
         "docs/specs/task-session-integrity.md"
       ],
