@@ -4,7 +4,10 @@
 ## Index
 
 - [Context Routing Performance](context-routing-performance.md) — current
+- [Contract Stability](contract-stability.md) — current
 - [Coverage Integrity](coverage-integrity.md) — current
 - [Native Context Bridge](native-context-bridge.md) — current
+- [Pack Health and Doctor](pack-health-doctor.md) — current
+- [Runtime Architecture](runtime-architecture.md) — current
 - [Task session integrity](task-session-integrity.md) — current
 <!-- repo-context-ledger:end -->

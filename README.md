@@ -428,6 +428,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
 - [Stable feature context](docs/specs/README.md)
 - [Change history](docs/changes/README.md)
 - [Feature Context Packs](docs/ai/context-packs)
-- Relevant specs: [Context Routing Performance](docs/specs/context-routing-performance.md), [Coverage Integrity](docs/specs/coverage-integrity.md), [Native Context Bridge](docs/specs/native-context-bridge.md), [Task session integrity](docs/specs/task-session-integrity.md)
-- Latest recorded change: [Accelerate context routing with private cache and PR bundles](docs/changes/2026/08/20260821191911-gviiisen-901f527dbd-accelerate-context-routing-with-private-cache-an.md)
+- Relevant specs: [Context Routing Performance](docs/specs/context-routing-performance.md), [Contract Stability](docs/specs/contract-stability.md), [Coverage Integrity](docs/specs/coverage-integrity.md), [Native Context Bridge](docs/specs/native-context-bridge.md), [Pack Health and Doctor](docs/specs/pack-health-doctor.md)
+- Latest recorded change: [Classify Git attributes as repository configuration](docs/changes/2026/08/20260822003911-gviiisen-e688fa6347-classify-git-attributes-as-repository-configurat.md)
 <!-- repo-context-ledger:end -->

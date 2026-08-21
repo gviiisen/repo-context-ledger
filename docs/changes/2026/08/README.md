@@ -3,6 +3,14 @@
 <!-- repo-context-ledger:start -->
 ## Changes in 2026-08
 
+- [Classify Git attributes as repository configuration](20260822003911-gviiisen-e688fa6347-classify-git-attributes-as-repository-configurat.md) — completed
+- [Pin standalone runtime checkout line endings](20260822003651-gviiisen-9d9c476d8a-pin-standalone-runtime-checkout-line-endings.md) — completed
+- [Harden raw JSON command detection](20260822002738-gviiisen-9d24fbee4b-harden-raw-json-command-detection.md) — completed
+- [Complete outer JSON error boundary](20260822001817-gviiisen-3767cb15f0-complete-outer-json-error-boundary.md) — completed
+- [Close contract and privacy review gaps](20260821235319-gviiisen-450163105c-close-contract-and-privacy-review-gaps.md) — completed
+- [Build deterministic standalone runtime architecture](20260821233623-gviiisen-a1d83814d8-build-deterministic-standalone-runtime-architect.md) — completed
+- [Stabilize CLI contracts and compatibility matrix](20260821232648-gviiisen-09ef2502eb-stabilize-cli-contracts-and-compatibility-matrix.md) — completed
+- [Build Pack health diagnostics and lifecycle governance](20260821230730-gviiisen-4c00275b82-build-pack-health-diagnostics-and-lifecycle-gove.md) — completed
 - [Accelerate context routing with private cache and PR bundles](20260821191911-gviiisen-901f527dbd-accelerate-context-routing-with-private-cache-an.md) — completed
 - [Add cross-Agent session resume ownership](20260821171622-gviiisen-67c0a5a3f9-add-cross-agent-session-resume-ownership.md) — completed
 - [Bound context loading and delta validation](20260821154209-gviiisen-25df54aeac-bound-context-loading-and-delta-validation.md) — completed

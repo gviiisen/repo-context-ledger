@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "tool_version": "0.6.0",
+  "tool_version": "0.7.0",
   "default_branch": "main",
   "project_context": "docs/ai/project-context.md",
   "docs": {
@@ -14,8 +14,8 @@
       "title": "Context Routing Performance",
       "context_pack": "docs/ai/context-packs/context-routing-performance.md",
       "status": "current",
-      "source_commit": "7655bcccc6bb3b07aab23fdd86f16c048178535b",
-      "last_refreshed": "2026-08-21T19:57:21+08:00",
+      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
+      "last_refreshed": "2026-08-22T00:41:05+08:00",
       "stable_specs": [
         "docs/specs/context-routing-performance.md"
       ],
@@ -61,20 +61,185 @@
       ]
     },
     {
+      "feature": "contract-stability",
+      "title": "Contract Stability",
+      "context_pack": "docs/ai/context-packs/contract-stability.md",
+      "status": "current",
+      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
+      "last_refreshed": "2026-08-22T00:41:03+08:00",
+      "stable_specs": [
+        "docs/specs/contract-stability.md"
+      ],
+      "tracked_files": [
+        "src/repo_context_ledger/constants.pyfrag",
+        "src/repo_context_ledger/errors.pyfrag",
+        "src/repo_context_ledger/models.pyfrag",
+        "src/repo_context_ledger/runtime.py.tmpl",
+        "skills/repo-context-ledger/scripts/ledger.py",
+        "tests/test_baseline_contract.py",
+        "tests/golden/v0.6.0-contract.json",
+        "tests/golden/v0.6.0-status-text.txt",
+        "tests/fixtures/v0.6.0-legacy-context-state.json",
+        "tests/test_contract_stability.py",
+        "tests/golden/v0.6.2-cli-contract.json",
+        "scripts/evaluate_routing.py",
+        "tests/test_routing_evaluation.py",
+        "tests/fixtures/routing-eval-v1.json",
+        ".github/workflows/test.yml",
+        "COMPATIBILITY.md",
+        "MIGRATIONS.md"
+      ],
+      "recent_changes": [
+        {
+          "id": "20260822002738-gviiisen-9d24fbee4b",
+          "path": "docs/changes/2026/08/20260822002738-gviiisen-9d24fbee4b-harden-raw-json-command-detection.md",
+          "title": "Harden raw JSON command detection",
+          "feature": "contract-stability",
+          "date": "2026-08-22",
+          "summary": "raw parsing skips the value of global `--repo` options, selects the first actual subcommand, accepts both argparse option spellings, and reads `--query=value`. Golden tests compare every public error code directly to runtime constants and representative emitted payloads.",
+          "evidence_paths": [
+            ".context-ledger/ledger.py",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/specs/contract-stability.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/test_contract_stability.py"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "20260822001817-gviiisen-3767cb15f0",
+          "path": "docs/changes/2026/08/20260822001817-gviiisen-3767cb15f0-complete-outer-json-error-boundary.md",
+          "title": "Complete outer JSON error boundary",
+          "feature": "contract-stability",
+          "date": "2026-08-22",
+          "summary": "a shared outer JSON boundary emits `context-bundle-v1`, `doctor-v1`, `status-v1`, or `check-v1` for expected parse/repository/configuration failures with stable error codes. All commands return `UNSUPPORTED_SCHEMA` for future configuration/state. Production and evaluation share routability and ranking helpers; the corpus asserts ambiguity, fallback, stale and superseded behavior while measuring generated Pack text size and latency. macOS runs nightly, and a checked-in legacy fixture is dry-run preserved then persistently migrated by real `init`.",
+          "evidence_paths": [
+            ".context-ledger/ledger.py",
+            ".github/workflows/test.yml",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/specs/contract-stability.md",
+            "scripts/evaluate_routing.py",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/fixtures/v0.6.0-legacy-context-state.json",
+            "tests/test_baseline_contract.py",
+            "tests/test_contract_stability.py",
+            "tests/test_doctor.py",
+            "tests/test_routing_evaluation.py"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "20260821235319-gviiisen-450163105c",
+          "path": "docs/changes/2026/08/20260821235319-gviiisen-450163105c-close-contract-and-privacy-review-gaps.md",
+          "title": "Close contract and privacy review gaps",
+          "feature": "contract-stability",
+          "date": "2026-08-22",
+          "summary": "Doctor inspects only sessions owned by the current principal and rejects out-of-range detail bounds. Context, status, Doctor, and check JSON contracts publish stable required fields and machine error codes for expected outcomes, including no-match and unsupported future schemas. Golden baselines cover dry-run write safety, legacy state normalization, and normalized text; the routing evaluator reports top-one accuracy, ambiguity/fallback, stale/superseded selection, required-read characters, and latency. The standalone runtime is built deterministically from ordered constants, errors, and models fragments while retaining one zero-dependency generated artifact.",
+          "evidence_paths": [
+            ".context-ledger/ledger.py",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/specs/contract-stability.md",
+            "docs/specs/pack-health-doctor.md",
+            "docs/specs/runtime-architecture.md",
+            "scripts/build_runtime.py",
+            "scripts/evaluate_routing.py",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/constants.pyfrag",
+            "src/repo_context_ledger/contracts.pyfrag",
+            "src/repo_context_ledger/errors.pyfrag",
+            "src/repo_context_ledger/models.pyfrag",
+            "src/repo_context_ledger/runtime.py.tmpl"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "20260821232648-gviiisen-09ef2502eb",
+          "path": "docs/changes/2026/08/20260821232648-gviiisen-09ef2502eb-stabilize-cli-contracts-and-compatibility-matrix.md",
+          "title": "Stabilize CLI contracts and compatibility matrix",
+          "feature": "contract-stability",
+          "date": "2026-08-21",
+          "summary": "`status-v1` and `check-v1` provide privacy-bounded automation output while preserving text and exits; golden fixtures protect all public schema names/fields and exits; synthetic cases evaluate routing; compatibility/migration rules and Windows/Ubuntu Python 3.10/3.12 CI are explicit.",
+          "evidence_paths": [
+            ".github/workflows/test.yml",
+            "COMPATIBILITY.md",
+            "MIGRATIONS.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/specs/contract-stability.md",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "tests/fixtures/routing-eval-v1.json",
+            "tests/golden/v0.6.2-cli-contract.json",
+            "tests/test_contract_stability.py"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
       "feature": "coverage-integrity",
       "title": "Coverage Integrity",
       "context_pack": "docs/ai/context-packs/coverage-integrity.md",
       "status": "current",
-      "source_commit": "7655bcccc6bb3b07aab23fdd86f16c048178535b",
-      "last_refreshed": "2026-08-21T19:46:24+08:00",
+      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
+      "last_refreshed": "2026-08-22T00:41:06+08:00",
       "stable_specs": [
         "docs/specs/coverage-integrity.md"
       ],
       "tracked_files": [
+        "src/repo_context_ledger/constants.pyfrag",
         "skills/repo-context-ledger/scripts/ledger.py",
+        ".context-ledger/config.json",
         "tests/test_ledger.py"
       ],
       "recent_changes": [
+        {
+          "id": "20260822003911-gviiisen-e688fa6347",
+          "path": "docs/changes/2026/08/20260822003911-gviiisen-e688fa6347-classify-git-attributes-as-repository-configurat.md",
+          "title": "Classify Git attributes as repository configuration",
+          "feature": "coverage-integrity",
+          "date": "2026-08-22",
+          "summary": "Default and repository-local Coverage configuration classify `.gitattributes` as `config`. Strict changed-scope Coverage still checks implementation paths, while checkout policy changes no longer require an implementation handoff merely to satisfy the catch-all glob.",
+          "evidence_paths": [
+            ".context-ledger/config.json",
+            ".context-ledger/ledger.py",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/constants.pyfrag",
+            "tests/test_ledger.py"
+          ],
+          "status": "completed"
+        },
         {
           "id": "20260821144634-gviiisen-60f90c607e",
           "path": "docs/changes/2026/08/20260821144634-gviiisen-60f90c607e-make-fingerprints-portable-and-redact-local-path.md",
@@ -189,8 +354,8 @@
       "title": "Native Context Bridge",
       "context_pack": "docs/ai/context-packs/native-context-bridge.md",
       "status": "current",
-      "source_commit": "7655bcccc6bb3b07aab23fdd86f16c048178535b",
-      "last_refreshed": "2026-08-21T19:46:07+08:00",
+      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
+      "last_refreshed": "2026-08-22T00:41:06+08:00",
       "stable_specs": [
         "docs/specs/native-context-bridge.md"
       ],
@@ -301,12 +466,124 @@
       ]
     },
     {
+      "feature": "pack-health-doctor",
+      "title": "Pack Health and Doctor",
+      "context_pack": "docs/ai/context-packs/pack-health-doctor.md",
+      "status": "current",
+      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
+      "last_refreshed": "2026-08-22T00:41:03+08:00",
+      "stable_specs": [
+        "docs/specs/pack-health-doctor.md"
+      ],
+      "tracked_files": [
+        "src/repo_context_ledger/runtime.py.tmpl",
+        "skills/repo-context-ledger/scripts/ledger.py",
+        "tests/test_doctor.py"
+      ],
+      "recent_changes": [
+        {
+          "id": "20260821230730-gviiisen-4c00275b82",
+          "path": "docs/changes/2026/08/20260821230730-gviiisen-4c00275b82-build-pack-health-diagnostics-and-lifecycle-gove.md",
+          "title": "Build Pack health diagnostics and lifecycle governance",
+          "feature": "pack-health-doctor",
+          "date": "2026-08-21",
+          "summary": "`doctor` emits `doctor-v1` or a text projection with grouped Pack findings, stable severities/codes, capped details, repair suggestions, configuration/runtime/adapter/Manifest/state/link/derived checks, and explicit non-mutating lifecycle rules.",
+          "evidence_paths": [
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/specs/pack-health-doctor.md",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/references/document-model.md",
+            "skills/repo-context-ledger/references/production-workflow.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "tests/golden/v0.6.0-contract.json",
+            "tests/test_contract_and_doctor.py",
+            "tests/test_ledger.py"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "feature": "runtime-architecture",
+      "title": "Runtime Architecture",
+      "context_pack": "docs/ai/context-packs/runtime-architecture.md",
+      "status": "current",
+      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
+      "last_refreshed": "2026-08-22T00:41:05+08:00",
+      "stable_specs": [
+        "docs/specs/runtime-architecture.md"
+      ],
+      "tracked_files": [
+        ".gitattributes",
+        "src/repo_context_ledger/__init__.py",
+        "src/repo_context_ledger/runtime.py.tmpl",
+        "src/repo_context_ledger/constants.pyfrag",
+        "src/repo_context_ledger/errors.pyfrag",
+        "src/repo_context_ledger/models.pyfrag",
+        "src/repo_context_ledger/contracts.pyfrag",
+        "scripts/build_runtime.py",
+        "skills/repo-context-ledger/scripts/ledger.py",
+        "tests/test_runtime_build.py",
+        "ARCHITECTURE.md",
+        ".github/workflows/test.yml"
+      ],
+      "recent_changes": [
+        {
+          "id": "20260822003651-gviiisen-9d9c476d8a",
+          "path": "docs/changes/2026/08/20260822003651-gviiisen-9d9c476d8a-pin-standalone-runtime-checkout-line-endings.md",
+          "title": "Pin standalone runtime checkout line endings",
+          "feature": "runtime-architecture",
+          "date": "2026-08-22",
+          "summary": "repository attributes pin the runtime-generation chain to LF. A focused Git-attribute regression test covers the exact inputs and outputs, while the existing byte-identity and drift tests remain green.",
+          "evidence_paths": [
+            "ARCHITECTURE.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/specs/runtime-architecture.md",
+            "tests/test_runtime_build.py"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "20260821233623-gviiisen-a1d83814d8",
+          "path": "docs/changes/2026/08/20260821233623-gviiisen-a1d83814d8-build-deterministic-standalone-runtime-architect.md",
+          "title": "Build deterministic standalone runtime architecture",
+          "feature": "runtime-architecture",
+          "date": "2026-08-21",
+          "summary": "one template plus a contracts fragment generates both standalone files deterministically; version/schema/exit/error and typed result contracts are extracted first, CI rejects drift, and `init` still distributes one zero-dependency runtime.",
+          "evidence_paths": [
+            ".github/workflows/test.yml",
+            "ARCHITECTURE.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/specs/runtime-architecture.md",
+            "scripts/build_runtime.py",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/__init__.py",
+            "src/repo_context_ledger/contracts.pyfrag",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/test_runtime_build.py"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
       "feature": "task-session-integrity",
       "title": "Task Session Integrity",
       "context_pack": "docs/ai/context-packs/task-session-integrity.md",
       "status": "current",
-      "source_commit": "7655bcccc6bb3b07aab23fdd86f16c048178535b",
-      "last_refreshed": "2026-08-21T19:46:08+08:00",
+      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
+      "last_refreshed": "2026-08-22T00:41:07+08:00",
       "stable_specs": [
         "docs/specs/task-session-integrity.md"
       ],
