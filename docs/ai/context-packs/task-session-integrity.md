@@ -5,10 +5,10 @@ Feature: task-session-integrity
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: 650c18896bea6c287caae74a5b431cd68fa15cae
+Source commit: 5892ff462b3970d3e86555ac79d3cf304571c172
 Base branch: main
-Base commit: bd61e06cff7a1374cf842d8850604b1ab9567107
-Last refreshed: 2026-08-15T15:56:30+08:00
+Base commit: 5892ff462b3970d3e86555ac79d3cf304571c172
+Last refreshed: 2026-08-21T15:03:51+08:00
 
 ## Purpose
 
@@ -31,17 +31,19 @@ Routes fresh Agent windows to the private draft state model, explicit session ev
 | `skills/repo-context-ledger/scripts/ledger.py::task_session_finish_errors` | Checks only the selected task's evidence, specs, and relevant Pack fingerprints. |
 | `skills/repo-context-ledger/scripts/ledger.py::finish_change` | Atomically publishes one completed record and cleans only its private draft. |
 | `skills/repo-context-ledger/scripts/ledger.py::record_verification` | Defines the two short lock phases around an unlocked command. |
+| `skills/repo-context-ledger/scripts/ledger.py::redact_local_paths` | Replaces known repository, Codex, temporary, and user-home roots before verification evidence is persisted. |
+| `skills/repo-context-ledger/scripts/ledger.py::redact_record_local_paths` | Re-sanitizes legacy private checks and interrupted-publication records at `finish`. |
 | `skills/repo-context-ledger/scripts/ledger.py::managed_rules` | Generates the prohibition on unsolicited cross-task steering. |
 
 ## Contracts and boundaries
 
-- Invariants and contracts: Each unfinished draft belongs to one session and remains outside formal history; parallel evidence is explicit; ambiguous commands fail; foreign dirt cannot block finish; the current session's stale Pack fails closed; finish publishes at most once; verification commands never hold the repository write lock while running.
-- Failure / recovery: Invalid drafts remain private. Interrupted publication is retried by Session ID without duplicating history, and registered v0.5.2 unfinished records migrate without rewriting completed history.
+- Invariants and contracts: Each unfinished draft belongs to one session and remains outside formal history; parallel evidence is explicit; ambiguous commands fail; foreign dirt cannot block finish; the current session's stale Pack fails closed; finish publishes at most once; verification commands never hold the repository write lock while running; persisted checks redact credential values and machine-specific roots, including JSON-escaped Windows paths.
+- Failure / recovery: Invalid drafts remain private. `finish` sanitizes checks created before an upgrade; interrupted publication is retried and re-sanitized by Session ID without duplicating history, and registered v0.5.2 unfinished records migrate without rewriting completed history.
 - Non-goals: Sessions do not copy, lock, claim, merge, or coordinate code and do not provide authority to message another task. Source conflicts remain outside the ledger.
 
 ## Verification
 
-Run `python -m unittest discover -s tests -p test_ledger.py` for private draft migration, isolated publication, recovery, adapter policy, and lock-scope coverage. Run `python skills/repo-context-ledger/scripts/ledger.py --repo . check --strict` for structural validation.
+Run `python -m unittest discover -s tests -p test_ledger.py` for private draft migration, isolated publication, recovery, adapter policy, lock-scope coverage, and passed/failed verification path redaction. Run `python skills/repo-context-ledger/scripts/ledger.py --repo . check --strict` for structural validation.
 
 <!-- repo-context-ledger:pack-specs:start -->
 ## Stable context
@@ -52,8 +54,8 @@ Run `python -m unittest discover -s tests -p test_ledger.py` for private draft m
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:702a0569ffe0731b9fbffb07a84b26d96e827f11ab27274d9a759f57d5e5f7d1`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:87b83e43decd4db8a3ed5f002a3a31a15bd37f1a7584827983708956ee35b448`
-- `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:f0acc36162fd1e36a8dee438fd7160ad03845df4da6739c1811994b366271ec1`
-- `tests/test_ledger.py` — `sha256:0bbbbf7d6b5494aa5d7288e503343d9c1740eb9bdce38dd5db484063a6604650`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:c35cc09d2be70369bec0255253dc8ad44091af5a04ca0f33bfd329138a3835d2`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:e75be77d0ce3ec5b9e6e2db7f68afef2c3219ecbb4fdd759011f10c40847a66c`
+- `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:cfb76dcea9238ffc40384e8118608d3bd89891ef42de622a8aad69478acdf945`
+- `tests/test_ledger.py` — `sha256:7a7aeea0a0880a31ee5d96801a6d12b88ee5606f67527154cac9a4f16eda45b6`
 <!-- repo-context-ledger:pack-files:end -->

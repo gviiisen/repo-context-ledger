@@ -62,7 +62,7 @@ Apply this workflow autonomously when code behavior changes. Follow [Choose the 
    ```
 
    If no Context Pack exists, create one with `pack --feature`, fill every semantic section, then focus it.
-5. Implement the change. Record every claimed check with `verify --session <id> -- <command>`. Failed output is stored as a redacted failure capsule, never as a raw log. If verification is unavailable, use `verify --not-run --reason "<substantive reason>"`.
+5. Implement the change. Record every claimed check with `verify --session <id> -- <command>`. Failed output is stored as a redacted failure capsule, never as a raw log. Persisted verification evidence replaces repository, Codex, temporary, and user-home roots with stable placeholders, including JSON-escaped Windows paths. If verification is unavailable, use `verify --not-run --reason "<substantive reason>"`.
 6. For a small single-session fix, `finish` can collect evidence. If another session exists, or automatic collection finds too many implementation paths, run `evidence --path` for only this task. Read [.context-ledger/writing-quality.md](.context-ledger/writing-quality.md) and remove every `TODO`. Code paths may cite `file.go::Symbol`; the path part is matched against evidence.
 7. On medium or large changes, refresh every related Context Pack after tracked production paths change, and update the stable spec when current behavior or contracts changed.
 8. Finish with `finish --spec docs/specs/<feature>.md`, or `finish --no-spec --reason "<why>"`. `finish` validates only this session.
@@ -152,4 +152,4 @@ For read-only analysis, questions, formatting-only edits, or tasks that do not c
 - Keep the runtime-generated handoff ID, actor, and branch metadata. Unique filenames are intentional and prevent two contributors from creating the same history path.
 - Keep Context Packs under the configured line limit and track only the minimum paths required to resume work.
 - Never rewrite README prose outside managed markers.
-- Never persist secrets in records or invent tests, behavior, or code paths that were not inspected.
+- Never persist secrets or machine-specific absolute paths in records, and never invent tests, behavior, or code paths that were not inspected.

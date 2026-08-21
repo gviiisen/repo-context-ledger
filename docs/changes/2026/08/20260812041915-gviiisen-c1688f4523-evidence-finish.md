@@ -56,7 +56,7 @@ Record checks with `ledger.py verify`; do not type claimed results manually.
   - Duration: 107.28s
   - Recorded: 2026-08-12T04:34:36+08:00
   - Output evidence: sha256:6e95e256bdb2737787c831d5327bd01fc84ec220113326ecefbe3f1097e90747 (275 characters captured; content not persisted)
-- Command: `python C:\Users\Administrator\.codex\skills\.system\skill-creator\scripts\quick_validate.py E:\repo-context-ledger\skills\repo-context-ledger`
+- Command: `python <CODEX_HOME>\skills\.system\skill-creator\scripts\quick_validate.py <REPO_ROOT>\skills\repo-context-ledger`
   - Status: passed
   - Exit code: 0
   - Duration: 0.06s
