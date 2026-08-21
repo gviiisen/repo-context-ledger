@@ -370,5 +370,5 @@ python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 - [Change history](docs/changes/README.md)
 - [Feature Context Packs](docs/ai/context-packs)
 - Relevant specs: [Coverage Integrity](docs/specs/coverage-integrity.md), [Native Context Bridge](docs/specs/native-context-bridge.md), [Task session integrity](docs/specs/task-session-integrity.md)
-- Latest recorded change: [Make fingerprints portable and redact local paths](docs/changes/2026/08/20260821144634-gviiisen-60f90c607e-make-fingerprints-portable-and-redact-local-path.md)
+- Latest recorded change: [Add cross-Agent session resume ownership](docs/changes/2026/08/20260821171622-gviiisen-67c0a5a3f9-add-cross-agent-session-resume-ownership.md)
 <!-- repo-context-ledger:end -->

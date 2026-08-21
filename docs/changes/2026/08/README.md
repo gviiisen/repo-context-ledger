@@ -3,6 +3,8 @@
 <!-- repo-context-ledger:start -->
 ## Changes in 2026-08
 
+- [Add cross-Agent session resume ownership](20260821171622-gviiisen-67c0a5a3f9-add-cross-agent-session-resume-ownership.md) — completed
+- [Bound context loading and delta validation](20260821154209-gviiisen-25df54aeac-bound-context-loading-and-delta-validation.md) — completed
 - [Make fingerprints portable and redact local paths](20260821144634-gviiisen-60f90c607e-make-fingerprints-portable-and-redact-local-path.md) — completed
 - [Implement init dry-run planning](20260815153145-gviiisen-c108737ed0-implement-init-dry-run-planning.md) — completed
 - [Redact literal escaped JSON credentials](20260813023957-gviiisen-144010dbea-redact-literal-escaped-json-credentials.md) — completed
