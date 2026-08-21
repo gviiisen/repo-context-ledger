@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "tool_version": "0.5.7",
+  "tool_version": "0.5.8",
   "default_branch": "main",
   "project_context": "docs/ai/project-context.md",
   "docs": {
@@ -14,8 +14,8 @@
       "title": "Coverage Integrity",
       "context_pack": "docs/ai/context-packs/coverage-integrity.md",
       "status": "current",
-      "source_commit": "650c18896bea6c287caae74a5b431cd68fa15cae",
-      "last_refreshed": "2026-08-15T15:56:30+08:00",
+      "source_commit": "5892ff462b3970d3e86555ac79d3cf304571c172",
+      "last_refreshed": "2026-08-21T15:03:50+08:00",
       "stable_specs": [
         "docs/specs/coverage-integrity.md"
       ],
@@ -24,6 +24,11 @@
         "tests/test_ledger.py"
       ],
       "recent_changes": [
+        {
+          "path": "docs/changes/2026/08/20260821144634-gviiisen-60f90c607e-make-fingerprints-portable-and-redact-local-path.md",
+          "title": "Make fingerprints portable and redact local paths",
+          "status": "completed"
+        },
         {
           "path": "docs/changes/2026/08/20260812003845-gviiisen-5857b9529e-readme.md",
           "title": "修正受管 README 路径分类",
@@ -41,8 +46,8 @@
       "title": "Native Context Bridge",
       "context_pack": "docs/ai/context-packs/native-context-bridge.md",
       "status": "current",
-      "source_commit": "650c18896bea6c287caae74a5b431cd68fa15cae",
-      "last_refreshed": "2026-08-15T15:56:30+08:00",
+      "source_commit": "5892ff462b3970d3e86555ac79d3cf304571c172",
+      "last_refreshed": "2026-08-21T15:03:51+08:00",
       "stable_specs": [
         "docs/specs/native-context-bridge.md"
       ],
@@ -87,8 +92,8 @@
       "title": "Task Session Integrity",
       "context_pack": "docs/ai/context-packs/task-session-integrity.md",
       "status": "current",
-      "source_commit": "650c18896bea6c287caae74a5b431cd68fa15cae",
-      "last_refreshed": "2026-08-15T15:56:30+08:00",
+      "source_commit": "5892ff462b3970d3e86555ac79d3cf304571c172",
+      "last_refreshed": "2026-08-21T15:03:51+08:00",
       "stable_specs": [
         "docs/specs/task-session-integrity.md"
       ],

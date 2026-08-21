@@ -3,6 +3,7 @@
 <!-- repo-context-ledger:start -->
 ## Changes in 2026-08
 
+- [Make fingerprints portable and redact local paths](20260821144634-gviiisen-60f90c607e-make-fingerprints-portable-and-redact-local-path.md) — completed
 - [Implement init dry-run planning](20260815153145-gviiisen-c108737ed0-implement-init-dry-run-planning.md) — completed
 - [Redact literal escaped JSON credentials](20260813023957-gviiisen-144010dbea-redact-literal-escaped-json-credentials.md) — completed
 - [Harden Failure Capsule redaction before v0.5.6 release](20260813023156-gviiisen-640b12d3d4-harden-failure-capsule-redaction-before-v0-5-6-r.md) — completed

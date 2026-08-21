@@ -333,5 +333,5 @@ python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 - [Change history](docs/changes/README.md)
 - [Feature Context Packs](docs/ai/context-packs)
 - Relevant specs: [Coverage Integrity](docs/specs/coverage-integrity.md), [Native Context Bridge](docs/specs/native-context-bridge.md), [Task session integrity](docs/specs/task-session-integrity.md)
-- Latest recorded change: [Implement init dry-run planning](docs/changes/2026/08/20260815153145-gviiisen-c108737ed0-implement-init-dry-run-planning.md)
+- Latest recorded change: [Make fingerprints portable and redact local paths](docs/changes/2026/08/20260821144634-gviiisen-60f90c607e-make-fingerprints-portable-and-redact-local-path.md)
 <!-- repo-context-ledger:end -->
