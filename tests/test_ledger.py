@@ -883,6 +883,87 @@ class LedgerFlowTests(unittest.TestCase):
             self.run_ledger(repo, "focus", "--feature", "authentication")
             self.run_ledger(repo, "check", "--strict")
 
+    def test_context_pack_text_fingerprints_ignore_checkout_line_endings(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            source = repo / "src/auth.py"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"def authenticate():\n    return True\n")
+            self.run_ledger(repo, "init")
+            spec = repo / "docs/specs/authentication.md"
+            spec.write_text("# Authentication\n\nStatus: current\n", encoding="utf-8")
+            created = self.run_ledger(
+                repo,
+                "pack",
+                "--feature",
+                "authentication",
+                "--title",
+                "Authentication",
+                "--file",
+                "src/auth.py",
+                "--spec",
+                "docs/specs/authentication.md",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            self.run_ledger(repo, "check", "--strict")
+
+            source.write_bytes(b"def authenticate():\r\n    return True\r\n")
+            self.run_ledger(repo, "check", "--strict")
+
+            source.write_bytes(b"def authenticate():\r\n    return False\r\n")
+            stale = self.run_ledger(repo, "check", "--strict", expected=2)
+            self.assertIn("Context pack is stale", stale.stderr)
+
+    def test_context_pack_binary_fingerprints_remain_byte_sensitive(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            source = repo / "assets/payload.bin"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"\x00payload\r\n")
+            self.run_ledger(repo, "init")
+            created = self.run_ledger(
+                repo,
+                "pack",
+                "--feature",
+                "binary-payload",
+                "--title",
+                "Binary payload",
+                "--file",
+                "assets/payload.bin",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            self.run_ledger(repo, "check", "--strict")
+
+            source.write_bytes(b"\x00payload\n")
+            stale = self.run_ledger(repo, "check", "--strict", expected=2)
+            self.assertIn("Context pack is stale", stale.stderr)
+
+    def test_context_pack_fingerprints_respect_git_binary_attributes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            attributes = repo / ".gitattributes"
+            attributes.write_text("assets/*.bin -text\n", encoding="utf-8")
+            source = repo / "assets/payload.bin"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"payload\r\n")
+            created = self.run_ledger(
+                repo,
+                "pack",
+                "--feature",
+                "binary-payload",
+                "--title",
+                "Binary payload",
+                "--file",
+                "assets/payload.bin",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            self.run_ledger(repo, "check", "--strict")
+
+            source.write_bytes(b"payload\n")
+            stale = self.run_ledger(repo, "check", "--strict", expected=2)
+            self.assertIn("Context pack is stale", stale.stderr)
+
     def test_pause_stack_and_selected_resume(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
@@ -1715,11 +1796,16 @@ class LedgerFlowTests(unittest.TestCase):
                 sys.executable,
                 "-c",
                 (
+                    "import pathlib, sys, tempfile; "
+                    "home = pathlib.Path.home(); "
+                    "print(f'ERROR repo={sys.argv[1]} home={home} "
+                    "codex={home / \".codex\"} temp={tempfile.gettempdir()}'); "
                     "print('postgres://user:hunter2@db.internal/app'); "
                     "print('password: colon-secret-value'); "
                     "print('\\\"token\\\": \\\"json-secret-value\\\"'); "
                     "raise SystemExit('FAIL api_key whitespace-secret-value')"
                 ),
+                str(repo.resolve()),
                 expected=1,
             )
             text = handoff.read_text(encoding="utf-8")
@@ -1729,7 +1815,13 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertNotIn("colon-secret-value", text)
             self.assertNotIn("json-secret-value", text)
             self.assertNotIn("whitespace-secret-value", text)
+            self.assertNotIn(str(repo.resolve()), text)
+            self.assertNotIn(str(Path.home()), text)
             self.assertIn("<redacted", text)
+            self.assertIn("<REPO_ROOT>", text)
+            self.assertIn("<USER_HOME>", text)
+            self.assertIn("<CODEX_HOME>", text)
+            self.assertIn("<TEMP_DIR>", text)
 
             escaped = LEDGER_MODULE.verification_output_summary(
                 "",
@@ -1738,6 +1830,84 @@ class LedgerFlowTests(unittest.TestCase):
             )
             self.assertNotIn("escaped-json-secret-value", escaped)
             self.assertIn("<redacted>", escaped)
+
+    def test_completed_verification_redacts_local_roots_and_escaped_paths(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            started = self.run_ledger(
+                repo,
+                "start",
+                "--title",
+                "Redact verification paths",
+                "--feature",
+                "service",
+                "--language",
+                "en",
+            )
+            handoff = private_draft(repo, started)
+            completed = publish_target(repo, started)
+            (repo / "src/service.py").write_text("VALUE = 2\n", encoding="utf-8")
+            spec = repo / "docs/specs/service.md"
+            shutil.copy2(repo / ".context-ledger/templates/spec-template.md", spec)
+            self.fill_spec(spec)
+            self.fill_handoff(handoff, "src/service.py::VALUE", "docs/specs/service.md")
+
+            home = Path.home()
+            codex = home / ".codex"
+            temp_root = Path(tempfile.gettempdir())
+            repo_root = repo.resolve()
+            script = (
+                "import json, pathlib, sys, tempfile; "
+                "home = pathlib.Path.home(); "
+                "print(json.dumps({'repo': sys.argv[1], 'home': str(home), "
+                "'codex': str(home / '.codex'), 'temp': tempfile.gettempdir()}))"
+            )
+            self.run_ledger(
+                repo,
+                "verify",
+                "--",
+                sys.executable,
+                "-c",
+                script,
+                str(repo_root),
+            )
+            legacy_home = str(home).replace("\\", "\\\\")
+            handoff.write_text(
+                handoff.read_text(encoding="utf-8").replace(
+                    LEDGER_MODULE.CHECKS_END,
+                    f"- Legacy output: {legacy_home}\\\\Documents\\\\result.txt\n"
+                    f"{LEDGER_MODULE.CHECKS_END}",
+                ),
+                encoding="utf-8",
+            )
+            created = self.run_ledger(
+                repo,
+                "pack",
+                "--feature",
+                "service",
+                "--title",
+                "Service",
+                "--file",
+                "src/service.py",
+                "--spec",
+                "docs/specs/service.md",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            self.run_ledger(repo, "evidence")
+            self.run_ledger(repo, "finish", "--spec", "docs/specs/service.md")
+
+            text = completed.read_text(encoding="utf-8")
+            self.assertNotIn(str(repo), text)
+            self.assertNotIn(str(repo_root), text)
+            self.assertNotIn(str(home), text)
+            self.assertNotIn(str(home).replace("\\", "\\\\"), text)
+            self.assertNotIn(str(codex), text)
+            self.assertNotIn(str(temp_root), text)
+            self.assertIn("<REPO_ROOT>", text)
+            self.assertIn("<USER_HOME>", text)
+            self.assertIn("<CODEX_HOME>", text)
+            self.assertIn("<TEMP_DIR>", text)
 
     def test_cited_code_path_strips_symbol_and_matches_evidence(self):
         self.assertEqual("src/service.py", LEDGER_MODULE.cited_code_path("src/service.py::Run"))
