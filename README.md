@@ -18,6 +18,15 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 - what changed, why it changed, and how it was verified;
 - which project and module README summaries need refreshing.
 
+## What's new in v0.5.10
+
+- A fresh Codex, Cursor, Claude, Copilot, or Grok window can use task keywords to route to one owned active/paused Ledger session. `context-plan-v2` creates a bounded Resume Capsule on demand from private state; it does not persist chat transcripts or a growing capsule Markdown file.
+- `resume --query "<keywords>" --tool <agent>` continues the same Ledger session instead of creating a replacement. It increments a continuation epoch, and subsequent lifecycle writes require `--epoch <n>` so a stale window cannot silently overwrite the newer checkpoint.
+- Private sessions now have a pseudonymous principal owner independent of the Agent tool. Another principal receives only a foreign-overlap signal by default and cannot read the Capsule or resume, pause, checkpoint, verify, finish, or invalidate the task.
+- Explicit expiring grants support `read-only`, `fork`, and paused-session `transfer` workflows. A fork creates a new private child session and leaves the source untouched; a transfer changes ownership only when the recipient accepts it.
+- Required reads remain an initial route, never a cap on code investigation. Generated Agent policies require expansion through callers, implementations, configuration, persistence, permissions, concurrency, retries, tests, and external boundaries whenever they can affect the requested behavior.
+- Git-tracked Packs, specs, and completed changes remain shared normally. Private unfinished state stays in worktree Git metadata and still does not travel to another clone or machine.
+
 ## What's new in v0.5.9
 
 - `context --query` now emits a bounded `context-plan-v1`: exactly one primary Pack, only the linked specs that fit the configured file/character budget, and explicit Required reads.
@@ -264,13 +273,15 @@ Tell the agent what you want in ordinary language:
 
 For an actual task switch, the agent records a checkpoint, pauses that handoff, loads the login Context Pack, and starts the new work. Later, say:
 
-> Continue the previous withdrawal monitoring task.
+> Continue announcement rate limiting.
 
-The agent restores the handoff, checks whether the repository or tracked files changed, and reloads only the relevant context. Internal `checkpoint`, `pause`, `focus`, `pack`, and `resume` commands are agent-owned bookkeeping; users do not need to run them.
+The fresh window routes those keywords to one private task owned by the same principal, generates a bounded Resume Capsule, and continues the same Ledger session with a new epoch. It starts from the Pack, checkpoint, evidence paths, and verification, then reads any additional callers, implementations, configuration, storage, permissions, concurrency, retries, tests, or external boundaries needed for correctness. The Capsule saves aimless rediscovery; it does not authorize shallow code reading. Internal lifecycle commands remain agent-owned bookkeeping.
+
+Another principal cannot see or take over the private Capsule by default. Teammates continue from committed Packs, specs, completed Changes, and normal Git code; an unfinished task is shared only through an explicit expiring read-only, fork, or transfer grant. Private session state does not follow a fresh clone or another computer.
 
 ### 4. Collaborate with teammates
 
-Each person or AI should work on its own Git branch or worktree. Active and paused task state is isolated automatically, while handoffs, stable specs, and Context Packs remain reviewable in Git.
+Each person should work on a suitable Git branch or worktree. Codex, Cursor, Claude, Copilot, and Grok may share that person's principal, while another person has a different principal. Active and paused task state stays private; completed handoffs, stable specs, Context Packs, and code remain reviewable and mergeable through Git.
 
 Before opening or updating a pull request, the agent should update the base ref and run:
 

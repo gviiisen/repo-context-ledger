@@ -18,6 +18,15 @@ Repo Context Ledger 为每个 AI 会话提供一份精简、持久的项目地�
 - 本次修改了什么、为什么修改、如何验证；
 - 哪些项目级和模块级 README 摘要需要同步更新。
 
+## v0.5.10 新增能力
+
+- 新开的 Codex、Cursor、Claude、Copilot 或 Grok 窗口可以只用任务关键词，路由到当前 principal 自己的一个 active/paused Ledger session。`context-plan-v2` 会按需从私有状态生成有界 Resume Capsule，不保存完整聊天记录，也不会不断新增 Capsule Markdown 文件。
+- `resume --query "<关键词>" --tool <agent>` 继续原有 Ledger session，不创建替代 session。每次接管都会递增 continuation epoch；后续生命周期写入必须携带 `--epoch <n>`，旧窗口不能静默覆盖新 checkpoint。
+- 私有 session 增加了与 Agent 工具无关的匿名 principal 所有权。其他 principal 默认只能得到“存在范围重叠”的最少信号，不能读取 Capsule，也不能 resume、pause、checkpoint、verify、finish 或使该任务失效。
+- 显式且会过期的授权支持 `read-only`、`fork` 和“先暂停再 `transfer`”。fork 会为接收者创建新的私有子 session，原任务保持不变；transfer 只在接收者接受后才转移所有权。
+- Required reads 只是首轮导航，不是代码调查上限。只要调用者、实现、配置、持久化、权限、并发、重试、测试或外部边界可能影响目标行为，生成的 Agent 规则就要求继续展开阅读和核验。
+- Git 中已完成的 Pack、spec、change 仍按原方式共享；未完成私有状态继续留在 worktree Git metadata，不会自动跟随另一台电脑或新 clone。
+
 ## v0.5.9 新增能力
 
 - `context --query` 现在输出有硬预算的 `context-plan-v1`：固定一个主 Pack，只加入文件数/字符数预算内的关联 spec，并明确列出 Required reads。
@@ -264,13 +273,15 @@ Coverage 路径分类在 `.context-ledger/config.json` 中单独配置：
 
 真正切换到另一项任务时，Agent 会先保存 checkpoint，再暂停当前交接，加载登录功能的 Context Pack，然后开始新任务。之后只需说：
 
-> 继续刚才的提现监控任务。
+> 继续公告抓取限频。
 
-Agent 会恢复交接，检查仓库提交和被跟踪文件是否已经变化，并且只重新加载相关上下文。`checkpoint`、`pause`、`focus`、`pack`、`resume` 都是 Agent 内部维护命令，用户不需要执行。
+新窗口会用关键词路由到同一 principal 自己的一个私有任务，按需生成有界 Resume Capsule，并用新的 epoch 继续原 Ledger session。它先从 Pack、checkpoint、evidence 路径和验证结果获得方向，再按正确性需要继续阅读调用者、实现、配置、存储、权限、并发、重试、测试和外部边界。Capsule 减少的是无方向重复搜索，不是让 Agent 少读必要代码。所有生命周期命令仍由 Agent 自主执行。
+
+其他 principal 默认看不到也不能接管私有 Capsule。同事通过 Git 中已提交的代码、Pack、spec 与 completed Change 了解并继续工作；只有显式且会过期的 read-only、fork 或 transfer 授权才会共享未完成任务。新 clone 或另一台电脑不会自动带走私有 session 状态。
 
 ### 4. 与同事协作
 
-每位开发者或 AI 使用自己的 Git 分支或 worktree。当前任务和暂停栈会自动隔离；handoff、稳定功能说明与 Context Pack 则照常进入 Git，供团队审查和合并。
+每位开发者使用合适的 Git 分支或 worktree。Codex、Cursor、Claude、Copilot 与 Grok 可以共用这个人的 principal，不同开发者则使用不同 principal。active/paused 任务状态保持私有；completed handoff、稳定 spec、Context Pack 与代码继续通过 Git 审查和合并。
 
 创建或更新 PR 前，Agent 应先更新目标基础分支，然后运行：
 
