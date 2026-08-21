@@ -1,0 +1,14 @@
+Repository: <REPO_ROOT>
+Actor: Contract Tester
+Principal: <PRINCIPAL>
+Branch: main
+Workspace state: <PRIVATE_STATE>
+Default branch: main
+Active task sessions: 0
+Paused task sessions: 0
+Shared task sessions: 0
+Foreign task sessions: 0
+Context packs: 0
+Stable specs: 0
+Recorded changes: 0
+Detected modules: 0

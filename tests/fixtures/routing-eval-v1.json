@@ -1,0 +1,46 @@
+{
+  "schema": "routing-eval-v1",
+  "cases": [
+    {
+      "name": "exact-feature", "query": "continue webhook delivery", "expected_feature": "webhook-delivery",
+      "candidates": [
+        {"feature": "payment-routing", "title": "Payment Routing", "purpose": "Routes payment requests.", "tracked": ["src/payments/router.py"], "status": "current", "characters": 900},
+        {"feature": "webhook-delivery", "title": "Webhook Delivery", "purpose": "Delivers signed webhook events.", "tracked": ["src/webhooks/delivery.py"], "status": "current", "characters": 1200}
+      ]
+    },
+    {
+      "name": "tracked-path", "query": "fix delivery.py retry", "expected_feature": "webhook-delivery",
+      "candidates": [
+        {"feature": "payment-routing", "title": "Payment Routing", "purpose": "Routes payment requests.", "tracked": ["src/payments/router.py"], "status": "current", "characters": 900},
+        {"feature": "webhook-delivery", "title": "Webhook Delivery", "purpose": "Delivers signed webhook events.", "tracked": ["src/webhooks/delivery.py"], "status": "current", "characters": 1200}
+      ]
+    },
+    {
+      "name": "ambiguous", "query": "shared route", "expected_feature": null, "expected_ambiguous": true,
+      "candidates": [
+        {"feature": "alpha", "title": "Shared Route", "purpose": "Shared route.", "tracked": ["src/alpha.py"], "status": "current", "characters": 500},
+        {"feature": "beta", "title": "Shared Route", "purpose": "Shared route.", "tracked": ["src/beta.py"], "status": "current", "characters": 500}
+      ]
+    },
+    {
+      "name": "fallback", "query": "unrelated telescope", "expected_feature": null, "expected_fallback": true,
+      "candidates": [
+        {"feature": "payments", "title": "Payments", "purpose": "Charges cards.", "tracked": ["src/payments.py"], "status": "current", "characters": 700}
+      ]
+    },
+    {
+      "name": "stale-selected", "query": "audit ledger", "expected_feature": "audit-ledger", "expected_stale": true,
+      "candidates": [
+        {"feature": "audit-ledger", "title": "Audit Ledger", "purpose": "Stores audit events.", "tracked": ["src/audit.py"], "status": "current", "fingerprints_ok": false, "characters": 1100},
+        {"feature": "metrics", "title": "Metrics", "purpose": "Exports counters.", "tracked": ["src/metrics.py"], "status": "current", "characters": 800}
+      ]
+    },
+    {
+      "name": "superseded-excluded", "query": "legacy checkout", "expected_feature": "checkout",
+      "candidates": [
+        {"feature": "legacy-checkout", "title": "Legacy Checkout", "purpose": "Old checkout.", "tracked": ["src/legacy.py"], "status": "superseded", "superseded_by": "checkout", "characters": 3000},
+        {"feature": "checkout", "title": "Checkout", "purpose": "Current checkout and legacy migration boundary.", "tracked": ["src/checkout.py"], "status": "current", "characters": 1300}
+      ]
+    }
+  ]
+}

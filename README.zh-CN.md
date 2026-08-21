@@ -36,6 +36,8 @@ Repo Context Ledger 为每个 AI 会话提供一份精简、持久的项目地�
 
 初始化后的项目还会包含普通指令文件，因此即使某个工具不能原生发现 Skill，也能遵循相同工作流。不同产品的原生发现方式和安装目录可能有所区别。
 
+支持的 Python/平台与 CLI schema 保证见 [COMPATIBILITY.md](COMPATIBILITY.md)，升级规则见 [MIGRATIONS.md](MIGRATIONS.md)。
+
 ## 安装
 
 克隆本仓库或下载 Release，然后把 `skills/repo-context-ledger` 目录安装到所使用的 AI 工具中。
@@ -267,6 +269,39 @@ python -m unittest discover -s tests -v
 ```text
 python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 ```
+
+运行时贡献者只编辑 `src/repo_context_ledger/runtime.py.tmpl` 与构建片段，然后运行：
+
+```text
+python scripts/build_runtime.py
+python scripts/build_runtime.py --check
+```
+
+源码与生成物边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## v0.7.0 新增能力
+
+- 新增一条确定性构建链，由 `src/repo_context_ledger/runtime.py.tmpl` 与有序构建片段统一生成两份 standalone runtime。
+- 版本/schema/退出码常量、`LedgerError` 与类型化命令结果契约现在分别进入有序的 `constants.pyfrag`、`errors.pyfrag` 和 `models.pyfrag`；后续仍可渐进拆分，而不改变安装后的零依赖单文件。
+- `scripts/build_runtime.py --check` 只检测漂移、不写文件；正常构建使用原子替换与 LF 规范化。测试会比较两次全新构建的字节，并编译生成的 standalone Python。
+- Windows/Ubuntu CI 在完整测试前先检查生成物漂移；运行时架构测试进入新的聚焦文件，不再继续扩大旧单体测试文件。
+- 初始化后的项目仍只获得一份 `.context-ledger/ledger.py`，用户无需安装 Python package；v0.6.2 已固定的 CLI/JSON 契约保持不变。
+
+## v0.6.2 新增能力
+
+- `status --format json` 与 `check --format json` 新增稳定的 `status-v1`、`check-v1` 自动化契约；原有文本输出与退出行为继续保留。
+- `context-bundle-v1` 与 `doctor-v1` 保持不变。golden fixture 固定 schema 名、必需字段、v8 仓库配置、v0.6.1 之前已有命令集合，以及 `0`、`1`、`2` 三类退出码。
+- 新增带版本且完全合成的路由评测集，核验精确 feature、title 与 tracked path 选择，不导入生产仓库资料。
+- Windows 与 Ubuntu CI 同时运行最低支持的 Python 3.10 和 Python 3.12。
+- 兼容与迁移文档明确 minor 版本加法规则、schema 破坏性变更的 major 版本规则、私有状态边界、standalone runtime 升级与回滚预期。
+
+## v0.6.1 新增能力
+
+- `doctor` 提供有上限、严格只读的仓库健康报告，支持适合人工阅读的文本与带版本的 `doctor-v1` JSON。
+- 健康检查统一覆盖运行时/配置、原生 Agent 适配器、Context Manifest、私有任务状态、Context Pack 新鲜度与生命周期、本地文档链接，以及功能分支上的派生文件安全。
+- stale 与缺失路径按 Pack 聚合，并通过 `--max-items` 限制详情；成熟仓库不会再为同一次修复决策输出数百条重复信息。
+- 重复的 current feature ID 与断裂的显式谱系属于错误；多个 Pack 共享跟踪文件只产生警告，运行时绝不会根据文件重叠自动 supersede。
+- finding 区分 `pass`、`warning`、`repairable` 与 `error`，给出确定性的建议动作，但不会修改文件、session、指纹、Pack 状态或谱系。
 
 ## v0.6.0 新增能力
 

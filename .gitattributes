@@ -1,0 +1,5 @@
+/scripts/build_runtime.py text eol=lf
+/src/repo_context_ledger/runtime.py.tmpl text eol=lf
+/src/repo_context_ledger/*.pyfrag text eol=lf
+/skills/repo-context-ledger/scripts/ledger.py text eol=lf
+/.context-ledger/ledger.py text eol=lf

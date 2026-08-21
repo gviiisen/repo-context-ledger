@@ -1,0 +1,30 @@
+class CommandResult:
+    """Stable machine-readable projection of one existing CLI command result."""
+
+    def __init__(
+        self,
+        schema: str,
+        command: str,
+        exit_code: int,
+        messages: list[str],
+        errors: list[str],
+        error_code: str = "",
+    ) -> None:
+        self.schema = schema
+        self.command = command
+        self.exit_code = exit_code
+        self.messages = messages
+        self.errors = errors
+        self.error_code = error_code
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.schema,
+            "tool_version": TOOL_VERSION,
+            "command": self.command,
+            "ok": self.exit_code == EXIT_SUCCESS,
+            "exit_code": self.exit_code,
+            "error_code": self.error_code,
+            "messages": self.messages,
+            "errors": self.errors,
+        }

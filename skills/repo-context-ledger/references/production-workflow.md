@@ -12,6 +12,8 @@ python .context-ledger/ledger.py context --query "<task>"
 
 The runtime returns one `context-bundle-v1` with one current primary Pack, bounded Required reads, cold-history summaries, the configured character budget, an optional PR baseline, and—when one owned private task matches—a bounded Resume Capsule. Superseded or archived Packs are never eligible as Required reads. A disposable cache below Git metadata reuses Pack parsing and tracked-file digests; it never replaces current Pack/code verification and never enters Git.
 
+Run `doctor --format json` as a scheduled or release health observation, not on every edit. It groups Pack debt and caps detail items so a large repository does not emit one line per stale file. Treat warnings and repairable findings as planned maintenance; errors identify broken deterministic contracts. Doctor is strictly read-only and never refreshes fingerprints, changes Pack status, rewrites lineage, repairs links, or cleans private sessions.
+
 - Read Required reads in order.
 - Do not recursively read `docs/ai`, `docs/specs`, or `docs/changes`.
 - Treat completed Change bodies as cold history. ID/title/feature/date/summary/evidence metadata is not permission to load a body.

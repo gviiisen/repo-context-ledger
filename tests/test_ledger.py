@@ -447,7 +447,7 @@ class LedgerFlowTests(unittest.TestCase):
 
             manifest = json.loads((repo / "docs/ai/context-manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(1, manifest["manifest_version"])
-            self.assertEqual("0.6.0", manifest["tool_version"])
+            self.assertEqual(LEDGER_MODULE.TOOL_VERSION, manifest["tool_version"])
             route = manifest["features"][0]
             self.assertEqual("authentication", route["feature"])
             self.assertEqual("docs/ai/context-packs/authentication.md", route["context_pack"])
@@ -523,6 +523,7 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertEqual("test", LEDGER_MODULE.coverage_path_kind(config, "src/service.test.ts"))
             self.assertEqual("ci", LEDGER_MODULE.coverage_path_kind(config, ".github/workflows/test.yml"))
             self.assertEqual("config", LEDGER_MODULE.coverage_path_kind(config, "pyproject.toml"))
+            self.assertEqual("config", LEDGER_MODULE.coverage_path_kind(config, ".gitattributes"))
             self.assertEqual("generated", LEDGER_MODULE.coverage_path_kind(config, "dist/app.js"))
             self.assertEqual("managed", LEDGER_MODULE.coverage_path_kind(config, ".context-ledger/config.json"))
             self.assertEqual("managed", LEDGER_MODULE.coverage_path_kind(config, "README.zh-CN.md"))
