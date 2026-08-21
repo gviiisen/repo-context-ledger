@@ -4,7 +4,7 @@ Status: current
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Last reviewed: 2026-08-21
+Last reviewed: 2026-08-22
 
 ## Purpose and behavior
 
@@ -16,6 +16,7 @@ Runtime Architecture provides one editable source and a deterministic path to th
 | --- | --- |
 | `scripts/build_runtime.py::render_runtime` | Normalizes and combines the runtime template with ordered low-coupling fragments. |
 | `scripts/build_runtime.py::write_atomic` | Replaces generated outputs atomically without embedding timestamps or machine paths. |
+| `.gitattributes` | Keeps runtime-generation inputs and outputs LF-normalized in every checkout. |
 | `src/repo_context_ledger/runtime.py.tmpl` | Owns the executable runtime body and build marker. |
 | `src/repo_context_ledger/constants.pyfrag` | Owns stable versions, schemas, exit classes, and constants. |
 | `src/repo_context_ledger/errors.pyfrag` | Owns `LedgerError` and stable machine error codes. |
@@ -32,7 +33,7 @@ Runtime Architecture provides one editable source and a deterministic path to th
 
 ## Boundaries and failure modes
 
-- Invariants: generated artifacts are never the editable authority; builds contain no timestamp or absolute source path; two fresh builds are byte-identical; `init` continues copying one executable file; v0.6.2 command/JSON/exit contracts remain compatible.
+- Invariants: generated artifacts are never the editable authority; builds contain no timestamp or absolute source path; Git checkout keeps the generation chain at LF even with `core.autocrlf=true`; two fresh builds are byte-identical; `init` continues copying one executable file; v0.6.2 command/JSON/exit contracts remain compatible.
 - Permissions / concurrency: atomic replacement prevents a reader from observing a partial generated file. The builder does not lock source files or coordinate concurrent developers; Git/CI detects competing source changes and output drift.
 - Failure / recovery: missing/invalid UTF-8 source, a missing/duplicate marker, or stale output returns exit code 2. Recovery is to repair canonical source and rebuild, never to hand-edit one output.
 - Non-goals: v0.7.0 does not split every runtime subsystem, publish a Python package, add third-party dependencies, change the installed file shape, or redesign lifecycle/routing behavior.
@@ -44,5 +45,6 @@ Run `python -m unittest discover -s tests -p test_runtime_build.py`, `python scr
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Pin standalone runtime checkout line endings](../changes/2026/08/20260822003651-gviiisen-9d9c476d8a-pin-standalone-runtime-checkout-line-endings.md)
 - [Build deterministic standalone runtime architecture](../changes/2026/08/20260821233623-gviiisen-a1d83814d8-build-deterministic-standalone-runtime-architect.md)
 <!-- repo-context-ledger:changes:end -->

@@ -83,7 +83,7 @@ COVERAGE_GLOB_DEFAULTS = {
     "config_globs": [
         "pyproject.toml", "setup.cfg", "tox.ini", "package.json",
         "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "Cargo.lock",
-        "go.mod", "go.sum", "*.config.*", ".env*",
+        "go.mod", "go.sum", "*.config.*", ".env*", ".gitattributes",
     ],
     "generated_globs": [
         "dist/**", "build/**", "target/**", "coverage/**", "htmlcov/**",

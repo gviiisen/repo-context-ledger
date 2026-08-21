@@ -65,6 +65,31 @@ class RuntimeBuildTests(unittest.TestCase):
         for name in ("constants.pyfrag", "errors.pyfrag", "models.pyfrag"):
             self.assertTrue((ROOT / "src" / "repo_context_ledger" / name).is_file(), name)
 
+    def test_git_checkout_pins_runtime_generation_inputs_and_outputs_to_lf(self):
+        paths = (
+            "scripts/build_runtime.py",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "src/repo_context_ledger/constants.pyfrag",
+            "src/repo_context_ledger/errors.pyfrag",
+            "src/repo_context_ledger/models.pyfrag",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            ".context-ledger/ledger.py",
+        )
+        result = subprocess.run(
+            ["git", "-C", str(ROOT), "check-attr", "eol", "--", *paths],
+            text=True,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        observed = {}
+        for line in result.stdout.splitlines():
+            path, separator, value = line.partition(": eol: ")
+            self.assertEqual(": eol: ", separator)
+            observed[path] = value
+        self.assertEqual({path: "lf" for path in paths}, observed)
+
 
 if __name__ == "__main__":
     unittest.main()

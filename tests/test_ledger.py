@@ -523,6 +523,7 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertEqual("test", LEDGER_MODULE.coverage_path_kind(config, "src/service.test.ts"))
             self.assertEqual("ci", LEDGER_MODULE.coverage_path_kind(config, ".github/workflows/test.yml"))
             self.assertEqual("config", LEDGER_MODULE.coverage_path_kind(config, "pyproject.toml"))
+            self.assertEqual("config", LEDGER_MODULE.coverage_path_kind(config, ".gitattributes"))
             self.assertEqual("generated", LEDGER_MODULE.coverage_path_kind(config, "dist/app.js"))
             self.assertEqual("managed", LEDGER_MODULE.coverage_path_kind(config, ".context-ledger/config.json"))
             self.assertEqual("managed", LEDGER_MODULE.coverage_path_kind(config, "README.zh-CN.md"))

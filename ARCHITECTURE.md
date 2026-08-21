@@ -12,6 +12,7 @@ Repo Context Ledger separates editable source from the single-file runtime insta
 | `src/repo_context_ledger/models.pyfrag` | Typed machine-result contracts such as `CommandResult`. |
 | `src/repo_context_ledger/contracts.pyfrag` | Non-built compatibility tombstone that points older contributors to the three ordered fragments. |
 | `scripts/build_runtime.py` | Deterministic standard-library builder and drift checker. |
+| `.gitattributes` | Pins canonical inputs and generated outputs to LF across Windows and Unix checkouts. |
 | `skills/repo-context-ledger/scripts/ledger.py` | Generated standalone artifact shipped with the Skill. |
 | `.context-ledger/ledger.py` | Generated dogfood mirror used by this repository. |
 
@@ -19,7 +20,7 @@ The generated files are byte-identical. `init` copies the currently executing st
 
 ## Build contract
 
-The builder reads UTF-8 source, normalizes line endings to LF, injects each ordered fragment through exactly one explicit marker, emits no timestamp or machine path, and writes outputs atomically. `--check` compares bytes and never writes. CI runs the check on Windows and Ubuntu with Python 3.10 and 3.12 before tests; release, scheduled, and manual workflows also run on macOS.
+The builder reads UTF-8 source, normalizes line endings to LF, injects each ordered fragment through exactly one explicit marker, emits no timestamp or machine path, and writes outputs atomically. Git attributes pin the build inputs and generated outputs to LF so byte comparison remains portable when Windows enables `core.autocrlf`. `--check` compares bytes and never writes. CI runs the check on Windows and Ubuntu with Python 3.10 and 3.12 before tests; release, scheduled, and manual workflows also run on macOS.
 
 Edit source and rebuild with:
 

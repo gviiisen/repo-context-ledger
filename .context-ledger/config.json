@@ -54,7 +54,8 @@
       "go.mod",
       "go.sum",
       "*.config.*",
-      ".env*"
+      ".env*",
+      ".gitattributes"
     ],
     "generated_globs": [
       "dist/**",
