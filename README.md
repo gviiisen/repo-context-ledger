@@ -74,6 +74,21 @@ Import this GitHub repository from Cursor's Skills/Rules settings, or copy the s
 
 Install the Skill through a compatible Agent Skills client, or let an initialized repository's `.github/copilot-instructions.md` route Copilot to the ledger. The runtime preserves existing Copilot prose outside its managed block.
 
+## Common usage examples
+
+After installation and one-time repository initialization, talk to your coding Agent normally. You do not need to run Ledger lifecycle commands yourself.
+
+| Situation | What you can say | What the Agent does |
+| --- | --- | --- |
+| Understand an existing feature | `Explain how withdrawal review works and where its boundaries are.` | Routes to the most relevant Pack and spec, then inspects the necessary code without creating a task session. |
+| Implement or fix behavior | `Fix duplicate withdrawal notifications.` | Creates a private task session, loads bounded context, expands through affected code and tests, verifies the result, and publishes one completed Change record. |
+| Continue in a fresh window | `Continue announcement API rate limiting.` | Finds your matching active or paused session, generates a Resume Capsule, and continues the same Ledger session rather than starting over. |
+| Switch AI tools | Open Cursor after Codex and say `Continue announcement API rate limiting.` | Uses the same vendor-neutral repository context and your principal-owned private session, while revalidating code and stale warnings. |
+| Temporarily switch tasks | `Pause this work, fix the login timeout, then let me return later.` | Checkpoints the current task and starts an independent private session, so their handoff drafts do not overwrite each other. |
+| Hand work to a teammate | `Transfer this paused task to principal p-…` or request a read-only/fork grant. | Creates an explicit expiring grant. Without one, another principal can use committed Packs, specs, and Changes but cannot read or mutate your private draft. |
+
+The routed files are a starting map, not a limit. The Agent must still read additional callers, implementations, configuration, persistence, permissions, concurrency, retries, tests, and external boundaries whenever they can affect the requested behavior.
+
 ## Tutorial
 
 ### 1. Initialize a repository once
