@@ -21,8 +21,10 @@ from pathlib import Path
 
 
 VERSION = 8
-TOOL_VERSION = "0.5.10"
+TOOL_VERSION = "0.6.0"
 MANIFEST_VERSION = 1
+ROUTER_CACHE_SCHEMA = 1
+CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
 BLOCK_END = "<!-- repo-context-ledger:end -->"
@@ -89,7 +91,10 @@ RESUME_SUMMARY_CHARS = 600
 RESUME_NEXT_CHARS = 320
 RESUME_VERIFICATION_CHARS = 600
 RESUME_MAX_PATHS = 16
+RESUME_SOURCE_MAX_PATHS = 128
 RESUME_CAPSULE_CHARS = 4000
+BASELINE_MAX_PATHS = 12
+ROUTER_RANK_SAFETY_CANDIDATES = 5
 RESUME_INTENT_TOKENS = {
     "continue", "resume", "recover", "继续", "恢复", "接着", "续接",
 }
@@ -622,9 +627,8 @@ def git_text_mode(repo: Path | None, path: Path) -> bool | None:
     return None
 
 
-def file_digest(path: Path, repo: Path | None = None) -> str:
+def digest_file_content(path: Path, text_mode: bool | None) -> str:
     content = path.read_bytes()
-    text_mode = git_text_mode(repo, path)
     normalize_line_endings = text_mode is True
     if text_mode is None and b"\0" not in content:
         try:
@@ -636,6 +640,50 @@ def file_digest(path: Path, repo: Path | None = None) -> str:
     if normalize_line_endings:
         content = content.replace(b"\r\n", b"\n")
     return hashlib.sha256(content).hexdigest()
+
+
+def file_digest(path: Path, repo: Path | None = None) -> str:
+    return digest_file_content(path, git_text_mode(repo, path))
+
+
+def file_stat_signature(path: Path) -> list[int]:
+    stat = path.stat()
+    return [stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
+
+
+def git_text_modes(repo: Path, raw_paths: list[str]) -> dict[str, bool | None]:
+    normalized = list(dict.fromkeys(normalize_git_path(raw) for raw in raw_paths if raw))
+    modes = {raw: None for raw in normalized}
+    if not normalized or not is_git_repo(repo):
+        return modes
+    for offset in range(0, len(normalized), 64):
+        chunk = normalized[offset:offset + 64]
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(repo), "check-attr", "-z", "text", "eol", "--", *chunk],
+                text=True,
+                capture_output=True,
+                encoding="utf-8",
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if result.returncode != 0:
+            continue
+        attributes: dict[str, dict[str, str]] = {}
+        parts = result.stdout.split("\0")
+        for index in range(0, len(parts) - 2, 3):
+            raw, name, value = parts[index:index + 3]
+            normalized_raw = normalize_git_path(raw)
+            if normalized_raw in modes:
+                attributes.setdefault(normalized_raw, {})[name] = value
+        for raw, values in attributes.items():
+            text_value = values.get("text", "unspecified")
+            if text_value == "unset":
+                modes[raw] = False
+            elif text_value == "set" or values.get("eol") in {"lf", "crlf"}:
+                modes[raw] = True
+    return modes
 
 
 def legacy_context_state_path(repo: Path) -> Path:
@@ -1177,7 +1225,7 @@ def discover_modules(repo: Path) -> list[dict[str, str]]:
 def context_plan_policy() -> str:
     return (
         "Before broad documentation exploration, run `context --query \"<task>\"`. "
-        "Read only the Context Plan's Required reads initially. "
+        "Read only the Context Bundle's Required reads initially. "
         "Never recursively read `docs/ai`, `docs/specs`, or `docs/changes`. "
         "Do not open completed Change bodies unless the plan selects one, a required Pack cites "
         "one for a named reason, or the user asks for historical reasoning. "
@@ -1766,45 +1814,271 @@ def pack_header_text(path: Path) -> str:
     return "".join(lines)
 
 
-def load_live_context_packs(repo: Path, config: dict) -> list[dict[str, object]]:
+def router_cache_path(repo: Path) -> Path | None:
+    if not is_git_repo(repo):
+        return None
+    raw = git_output(
+        repo,
+        "rev-parse",
+        "--git-path",
+        "repo-context-ledger/cache/context-router-v1.json",
+    )
+    if not raw:
+        return None
+    path = Path(raw)
+    return path.resolve() if path.is_absolute() else (repo / path).resolve()
+
+
+def empty_router_cache() -> dict[str, object]:
+    return {
+        "schema_version": ROUTER_CACHE_SCHEMA,
+        "tool_version": TOOL_VERSION,
+        "packs": {},
+        "digests": {},
+    }
+
+
+def valid_cached_pack_metadata(raw: object) -> bool:
+    if not isinstance(raw, dict):
+        return False
+    scalar = ("rel", "feature", "title", "status", "superseded_by", "purpose", "refreshed")
+    if not all(isinstance(raw.get(key), str) for key in scalar):
+        return False
+    if not isinstance(raw.get("characters"), int):
+        return False
+    if not isinstance(raw.get("specs"), list) or not all(
+        isinstance(item, str) for item in raw["specs"]
+    ):
+        return False
+    entries = raw.get("tracked_entries")
+    return isinstance(entries, list) and all(
+        isinstance(item, list)
+        and len(item) == 2
+        and isinstance(item[0], str)
+        and isinstance(item[1], str)
+        and re.fullmatch(r"[0-9a-f]{64}", item[1])
+        for item in entries
+    )
+
+
+def parse_context_pack_metadata(repo: Path, path: Path) -> dict[str, object]:
+    text = path.read_text(encoding="utf-8")
+    tracked = pack_file_entries(text)
+    specs: list[str] = []
+    for raw in pack_spec_paths(text):
+        target = (path.parent / raw).resolve()
+        try:
+            specs.append(rel_posix(target, repo))
+        except ValueError:
+            specs.append(raw.replace("\\", "/"))
+    heading = re.search(r"(?m)^# (.+)$", text)
+    title = heading.group(1).strip() if heading else path.stem.replace("-", " ").title()
+    return {
+        "rel": rel_posix(path, repo),
+        "feature": feature_slug(field_value(text, "Feature") or path.stem),
+        "title": title.removesuffix(" context pack"),
+        "status": (field_value(text, "Status") or "unknown").casefold(),
+        "superseded_by": field_value(text, "Superseded by"),
+        "purpose": pack_purpose_text(text),
+        "tracked_entries": [[raw, digest] for raw, digest in tracked],
+        "specs": specs,
+        "refreshed": field_value(text, "Last refreshed"),
+        "characters": len(text),
+    }
+
+
+class ContextRouterCache:
+    """Disposable Pack metadata and digest cache stored below Git metadata."""
+
+    def __init__(self, repo: Path, enabled: bool = True) -> None:
+        self.repo = repo
+        self.path = router_cache_path(repo) if enabled else None
+        self.data = empty_router_cache()
+        self.dirty = False
+        self.metrics: dict[str, object] = {
+            "state": "disabled" if self.path is None else "cold",
+            "pack_hits": 0,
+            "pack_misses": 0,
+            "digest_hits": 0,
+            "digest_misses": 0,
+            "written": False,
+        }
+        if self.path is None or not self.path.is_file():
+            return
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError, UnicodeError):
+            self.metrics["state"] = "rebuilt"
+            self.dirty = True
+            return
+        if not isinstance(raw, dict) or raw.get("schema_version") != ROUTER_CACHE_SCHEMA:
+            self.metrics["state"] = "rebuilt"
+            self.dirty = True
+            return
+        if raw.get("tool_version") != TOOL_VERSION:
+            self.metrics["state"] = "rebuilt"
+            self.dirty = True
+            return
+        if not isinstance(raw.get("packs"), dict) or not isinstance(raw.get("digests"), dict):
+            self.metrics["state"] = "rebuilt"
+            self.dirty = True
+            return
+        self.data = raw
+        self.metrics["state"] = "warm"
+
+    def pack_metadata(self, path: Path) -> dict[str, object] | None:
+        rel = rel_posix(path, self.repo)
+        try:
+            signature = file_stat_signature(path)
+        except OSError:
+            return None
+        packs = self.data["packs"]
+        entry = packs.get(rel) if isinstance(packs, dict) else None
+        if (
+            isinstance(entry, dict)
+            and entry.get("signature") == signature
+            and valid_cached_pack_metadata(entry.get("metadata"))
+        ):
+            self.metrics["pack_hits"] = int(self.metrics["pack_hits"]) + 1
+            return dict(entry["metadata"])
+        try:
+            metadata = parse_context_pack_metadata(self.repo, path)
+        except (OSError, UnicodeError, LedgerError):
+            return None
+        self.metrics["pack_misses"] = int(self.metrics["pack_misses"]) + 1
+        if isinstance(packs, dict):
+            packs[rel] = {"signature": signature, "metadata": metadata}
+            self.dirty = True
+        return metadata
+
+    def retain_pack_entries(self, rel_paths: set[str]) -> None:
+        packs = self.data.get("packs")
+        if not isinstance(packs, dict):
+            return
+        for rel in list(packs):
+            if rel not in rel_paths:
+                del packs[rel]
+                self.dirty = True
+
+    def retain_digest_entries(self, rel_paths: set[str]) -> None:
+        digests = self.data.get("digests")
+        if not isinstance(digests, dict):
+            return
+        for rel in list(digests):
+            if rel not in rel_paths:
+                del digests[rel]
+                self.dirty = True
+
+    def cached_digest(self, raw: str, text_mode: bool | None) -> str | None:
+        normalized = normalize_git_path(raw)
+        try:
+            target = safe_repo_path(self.repo, normalized, "Context Pack tracked file")
+        except LedgerError:
+            return None
+        if not target.is_file():
+            return None
+        try:
+            signature = file_stat_signature(target)
+        except OSError:
+            return None
+        mode = "text" if text_mode is True else "binary" if text_mode is False else "auto"
+        digests = self.data.get("digests")
+        entry = digests.get(normalized) if isinstance(digests, dict) else None
+        if (
+            isinstance(entry, dict)
+            and entry.get("signature") == signature
+            and entry.get("text_mode") == mode
+            and isinstance(entry.get("digest"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", entry["digest"])
+        ):
+            self.metrics["digest_hits"] = int(self.metrics["digest_hits"]) + 1
+            return str(entry["digest"])
+        try:
+            digest = digest_file_content(target, text_mode)
+        except OSError:
+            return None
+        self.metrics["digest_misses"] = int(self.metrics["digest_misses"]) + 1
+        if isinstance(digests, dict):
+            digests[normalized] = {
+                "signature": signature,
+                "text_mode": mode,
+                "digest": digest,
+            }
+            self.dirty = True
+        return digest
+
+    def validate_fingerprints(self, packs: list[dict[str, object]]) -> None:
+        raw_paths = list(dict.fromkeys(
+            normalize_git_path(str(raw))
+            for pack in packs
+            for raw, _ in pack.get("tracked_entries", [])
+            if raw
+        ))
+        modes = git_text_modes(self.repo, raw_paths)
+        for pack in packs:
+            current = True
+            for raw, expected in pack.get("tracked_entries", []):
+                normalized = normalize_git_path(str(raw))
+                digest = self.cached_digest(normalized, modes.get(normalized))
+                if digest is None or digest != str(expected):
+                    current = False
+            pack["fingerprints_ok"] = current
+
+    def save(self) -> None:
+        if self.path is None or not self.dirty:
+            return
+        try:
+            atomic_write(self.path, json.dumps(self.data, indent=2, ensure_ascii=False) + "\n")
+        except OSError:
+            self.metrics["state"] = "unavailable"
+            return
+        self.metrics["written"] = True
+        self.dirty = False
+
+    def public_metrics(self) -> dict[str, object]:
+        return dict(self.metrics)
+
+
+def load_live_context_packs(
+    repo: Path,
+    config: dict,
+    router_cache: ContextRouterCache | None = None,
+    validate_fingerprints: bool = True,
+) -> list[dict[str, object]]:
     ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
     packs_root = ai_root / "context-packs"
     packs: list[dict[str, object]] = []
     if not packs_root.is_dir():
         return packs
+    owned_cache = router_cache is None
+    cache = router_cache or ContextRouterCache(repo)
+    seen_packs: set[str] = set()
+    seen_tracked: set[str] = set()
     for path in sorted(packs_root.glob("*.md")):
         if path.name.casefold() == "readme.md":
             continue
-        try:
-            header = pack_header_text(path)
-            status = (field_value(header, "Status") or "unknown").casefold()
-            superseded_by = field_value(header, "Superseded by")
-            if status != "current" or superseded_by:
-                continue
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
+        metadata = cache.pack_metadata(path)
+        if metadata is None:
             continue
-        tracked = pack_file_entries(text)
-        specs: list[str] = []
-        for raw in pack_spec_paths(text):
-            target = (path.parent / raw).resolve()
-            try:
-                specs.append(rel_posix(target, repo))
-            except ValueError:
-                specs.append(raw.replace("\\", "/"))
+        rel = str(metadata["rel"])
+        seen_packs.add(rel)
+        entries = [(str(raw), str(digest)) for raw, digest in metadata["tracked_entries"]]
+        seen_tracked.update(normalize_git_path(raw) for raw, _ in entries)
+        if metadata["status"] != "current" or metadata["superseded_by"]:
+            continue
         packs.append({
+            **metadata,
             "path": path,
-            "rel": rel_posix(path, repo),
-            "feature": feature_slug(field_value(text, "Feature") or path.stem),
-            "title": first_heading(path).removesuffix(" context pack"),
-            "status": status,
-            "superseded_by": superseded_by,
-            "purpose": pack_purpose_text(text),
-            "tracked": [raw for raw, _ in tracked],
-            "specs": specs,
-            "fingerprints_ok": pack_fingerprint_current(repo, tracked),
-            "refreshed": field_value(text, "Last refreshed"),
+            "tracked_entries": entries,
+            "tracked": [raw for raw, _ in entries],
+            "fingerprints_ok": None,
         })
+    cache.retain_pack_entries(seen_packs)
+    cache.retain_digest_entries(seen_tracked)
+    if validate_fingerprints:
+        cache.validate_fingerprints(packs)
+    if owned_cache:
+        cache.save()
     return packs
 
 
@@ -1851,10 +2125,207 @@ def score_context_pack(pack: dict[str, object], query: str, tokens: list[str]) -
     elif status and status != "current":
         score //= 2
         reasons.append(f"status={status}")
-    if not pack["fingerprints_ok"]:
+    if pack["fingerprints_ok"] is False:
         score = int(score * 0.6)
         reasons.append("stale-fingerprint")
     return score, reasons
+
+
+def build_context_reverse_index(packs: list[dict[str, object]]) -> dict[str, set[str]]:
+    index: dict[str, set[str]] = {}
+    for pack in packs:
+        rel = str(pack["rel"])
+        values = [
+            str(pack["feature"]),
+            str(pack["feature"]).replace("-", " "),
+            str(pack["title"]),
+            str(pack["purpose"]),
+            *[str(item) for item in pack["tracked"]],
+        ]
+        terms: set[str] = set()
+        for value in values:
+            folded = value.casefold()
+            terms.update(query_tokens(folded))
+            if "/" in folded or "." in folded:
+                terms.add(folded)
+                terms.add(Path(folded).name)
+                terms.add(Path(folded).stem)
+        for term in terms:
+            if term:
+                index.setdefault(term, set()).add(rel)
+    return index
+
+
+def candidate_context_packs(
+    packs: list[dict[str, object]],
+    query: str,
+    tokens: list[str],
+    resume_feature: str = "",
+    baseline_paths: set[str] | None = None,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    index = build_context_reverse_index(packs)
+    selected: set[str] = set()
+    matched_sets: list[set[str]] = []
+    for token in tokens:
+        matches = set(index.get(token, set()))
+        if len(token) >= 3:
+            for term, rels in index.items():
+                if token in term or term in token:
+                    matches.update(rels)
+        if matches:
+            matched_sets.append(matches)
+    selective_terms = 0
+    if matched_sets:
+        smallest = min(len(matches) for matches in matched_sets)
+        threshold = max(3, smallest * 3)
+        selective = [matches for matches in matched_sets if len(matches) <= threshold]
+        if not selective:
+            selective = [min(matched_sets, key=len)]
+        selective_terms = len(selective)
+        for matches in selective:
+            selected.update(matches)
+    folded = query.casefold()
+    for pack in packs:
+        feature = str(pack["feature"])
+        title = str(pack["title"]).casefold()
+        if resume_feature and feature == resume_feature:
+            selected.add(str(pack["rel"]))
+        if feature and (
+            feature in folded.replace(" ", "-")
+            or feature.replace("-", " ") in folded
+        ):
+            selected.add(str(pack["rel"]))
+        if title and title in folded:
+            selected.add(str(pack["rel"]))
+        for raw in pack["tracked"]:
+            tracked = str(raw).casefold()
+            if (
+                tracked in folded
+                or Path(tracked).name in folded
+                or Path(tracked).stem in folded.split()
+            ):
+                selected.add(str(pack["rel"]))
+                break
+        if baseline_paths and baseline_paths.intersection(
+            normalize_git_path(str(item)) for item in pack["tracked"]
+        ):
+            selected.add(str(pack["rel"]))
+    fallback = not selected
+    candidates = packs if fallback else [pack for pack in packs if str(pack["rel"]) in selected]
+    return candidates, {
+        "terms": len(index),
+        "matched_terms": len(matched_sets),
+        "selective_terms": selective_terms,
+        "candidates": len(candidates),
+        "fallback": fallback,
+    }
+
+
+def path_affinity(raw: str, tracked_paths: list[str]) -> int:
+    path = normalize_git_path(raw)
+    path_parts = Path(path).parts
+    path_parent = path_parts[:-1]
+    best = 0
+    for tracked_raw in tracked_paths:
+        tracked = normalize_git_path(tracked_raw)
+        if path == tracked:
+            return 100
+        tracked_parts = Path(tracked).parts
+        tracked_parent = tracked_parts[:-1]
+        if path_parent and path_parent == tracked_parent:
+            best = max(best, 80)
+            continue
+        common = 0
+        for left, right in zip(path_parent, tracked_parent):
+            if left.casefold() != right.casefold():
+                break
+            common += 1
+        if common >= 2:
+            best = max(best, 40 + min(common, 5))
+        elif common and (
+            common == len(path_parent) or common == len(tracked_parent)
+        ):
+            best = max(best, 30)
+    return best
+
+
+def relevant_paths_for_pack(
+    pack: dict[str, object] | None,
+    raw_paths: list[str] | set[str],
+    limit: int,
+) -> tuple[list[str], int]:
+    normalized = sorted(dict.fromkeys(normalize_git_path(raw) for raw in raw_paths if raw))
+    if pack is None:
+        return normalized[:limit], max(0, len(normalized) - limit)
+    tracked = [str(item) for item in pack["tracked"]]
+    ranked = sorted(
+        (
+            (path_affinity(raw, tracked), raw)
+            for raw in normalized
+        ),
+        key=lambda item: (-item[0], item[1]),
+    )
+    related = [raw for score, raw in ranked if score > 0]
+    selected = related[:limit]
+    return selected, max(0, len(normalized) - len(selected))
+
+
+def context_baseline(repo: Path, raw_ref: str) -> tuple[dict[str, object], set[str]]:
+    ref = raw_ref.strip()
+    if not ref:
+        return {
+            "status": "not-requested",
+            "requested_ref": "",
+            "merge_base": "",
+            "head": git_revision(repo),
+            "changed_path_count": 0,
+            "relevant_paths": [],
+            "truncated": False,
+            "warnings": [],
+        }, set()
+    if not is_git_repo(repo) or git_revision(repo, ref) == "none":
+        return {
+            "status": "unresolved",
+            "requested_ref": ref,
+            "merge_base": "",
+            "head": git_revision(repo),
+            "changed_path_count": 0,
+            "relevant_paths": [],
+            "truncated": False,
+            "warnings": ["baseline ref could not be resolved; route selection excludes PR-delta boosting"],
+        }, set()
+    merge_base = git_output(repo, "merge-base", "HEAD", ref)
+    if not merge_base:
+        return {
+            "status": "unresolved",
+            "requested_ref": ref,
+            "merge_base": "",
+            "head": git_revision(repo),
+            "changed_path_count": 0,
+            "relevant_paths": [],
+            "truncated": False,
+            "warnings": ["baseline merge base could not be resolved; route selection excludes PR-delta boosting"],
+        }, set()
+    changed = set(git_changed_paths(repo, f"{merge_base}..HEAD"))
+    changed.update(git_dirty_paths(repo))
+    changed = {normalize_git_path(path) for path in changed if path}
+    return {
+        "status": "resolved",
+        "requested_ref": ref,
+        "merge_base": merge_base,
+        "head": git_revision(repo),
+        "changed_path_count": len(changed),
+        "relevant_paths": [],
+        "truncated": False,
+        "warnings": [],
+    }, changed
+
+
+def baseline_pack_score(pack: dict[str, object], baseline_paths: set[str]) -> tuple[int, list[str]]:
+    tracked = {normalize_git_path(str(item)) for item in pack["tracked"]}
+    if tracked.intersection(baseline_paths):
+        return 7000, ["pr-baseline-overlap"]
+    return 0, []
 
 
 def manifest_change_summaries(
@@ -1951,7 +2422,7 @@ def resume_session_view(
     evidence_paths = sorted(
         path for path in recorded_handoff_evidence_paths(text)
         if is_implementation_path(config, path)
-    )[:RESUME_MAX_PATHS]
+    )
     if not evidence_paths:
         dirty = field_value(text, "Dirty paths")
         evidence_paths = [
@@ -1960,7 +2431,10 @@ def resume_session_view(
             if item.strip()
             and item.strip().casefold() != "none"
             and is_implementation_path(config, normalize_git_path(item.strip()))
-        ][:RESUME_MAX_PATHS]
+        ]
+    evidence_paths = list(dict.fromkeys(evidence_paths))
+    source_evidence_count = len(evidence_paths)
+    evidence_paths = evidence_paths[:RESUME_SOURCE_MAX_PATHS]
     checks = managed_text(text, CHECKS_START, CHECKS_END)
     check_lines = [line.strip() for line in checks.splitlines() if line.strip()]
     verification = compact_resume_text(" ".join(check_lines[-6:]), RESUME_VERIFICATION_CHARS)
@@ -1979,6 +2453,7 @@ def resume_session_view(
         "base_commit": field_value(text, "Base commit"),
         "branch": field_value(text, "Branch"),
         "evidence_paths": evidence_paths,
+        "source_evidence_count": source_evidence_count,
         "verification": verification,
         "resume_epoch": int(record.get("resume_epoch", 1)),
         "continuation_tool": str(record.get("continuation_tool", "unknown")),
@@ -2040,6 +2515,22 @@ def build_resume_capsule(
 ) -> dict[str, object]:
     warnings: list[str] = []
     unknowns: list[str] = []
+    evidence_paths, omitted_evidence_paths = relevant_paths_for_pack(
+        primary_pack,
+        [str(item) for item in view["evidence_paths"]],
+        RESUME_MAX_PATHS,
+    )
+    omitted_evidence_paths += max(
+        0,
+        int(view.get("source_evidence_count", len(view["evidence_paths"])))
+        - len(view["evidence_paths"]),
+    )
+    if primary_pack is not None and omitted_evidence_paths:
+        warnings.append(
+            f"{omitted_evidence_paths} legacy evidence path(s) were omitted outside the selected Pack scope"
+        )
+    if primary_pack is not None and view["evidence_paths"] and not evidence_paths:
+        warnings.append("no recorded evidence path matches the selected Pack scope; inspect the current Git diff")
     base_commit = str(view["base_commit"])
     current_commit = git_revision(repo)
     recorded_branch = str(view["branch"])
@@ -2055,7 +2546,7 @@ def build_resume_capsule(
     changed: set[str] = set(git_dirty_paths(repo))
     if base_commit and base_commit != "none" and git_revision(repo, base_commit) != "none":
         changed.update(git_changed_paths(repo, f"{base_commit}..HEAD"))
-    missing = [path for path in view["evidence_paths"] if path not in changed]
+    missing = [path for path in evidence_paths if path not in changed]
     if missing:
         warnings.append("some recorded evidence paths are no longer changed from the session base")
     if not view["summary"]:
@@ -2078,7 +2569,8 @@ def build_resume_capsule(
         "checkpointed": str(view["checkpointed"]),
         "summary": str(view["summary"]),
         "next_step": str(view["next_step"]),
-        "evidence_paths": list(view["evidence_paths"]),
+        "evidence_paths": evidence_paths,
+        "omitted_evidence_paths": omitted_evidence_paths,
         "last_verification": str(view["verification"]),
         "base_commit": base_commit or "none",
         "current_commit": current_commit,
@@ -2112,6 +2604,7 @@ def build_resume_capsule(
     serialized_size = refresh_capsule_size()
     while serialized_size > RESUME_CAPSULE_CHARS and capsule["evidence_paths"]:
         capsule["evidence_paths"] = capsule["evidence_paths"][:-1]
+        capsule["omitted_evidence_paths"] = int(capsule["omitted_evidence_paths"]) + 1
         serialized_size = refresh_capsule_size()
     if serialized_size > RESUME_CAPSULE_CHARS:
         capsule["last_verification"] = ""
@@ -2134,6 +2627,7 @@ def route_resume_sessions(
     config: dict,
     query: str,
     packs: list[dict[str, object]],
+    ensure_fingerprints=None,
 ) -> tuple[dict[str, object], dict[str, object] | None]:
     state = load_context_state(repo)
     tokens = resume_query_tokens(query)
@@ -2186,6 +2680,12 @@ def route_resume_sessions(
         (pack for pack in packs if str(pack["feature"]) == str(selected["feature"])),
         None,
     )
+    if (
+        primary_pack is not None
+        and primary_pack.get("fingerprints_ok") is None
+        and ensure_fingerprints is not None
+    ):
+        ensure_fingerprints([primary_pack])
     capsule = build_resume_capsule(repo, selected, primary_pack)
     return {
         "mode": str(capsule["mode"]),
@@ -2202,15 +2702,62 @@ def context_search(
     limit: int,
     output_format: str = "text",
     tool: str = "",
+    baseline_ref: str = "",
 ) -> int:
     started = time.perf_counter()
     config = load_config(repo)
     tokens = query_tokens(query)
-    packs = load_live_context_packs(repo, config)
-    resume_route, resume_view = route_resume_sessions(repo, config, query, packs)
-    ranked: list[tuple[int, dict[str, object], list[str]]] = []
+    router_cache = ContextRouterCache(repo)
+    packs = load_live_context_packs(
+        repo,
+        config,
+        router_cache=router_cache,
+        validate_fingerprints=False,
+    )
+    baseline, baseline_paths = context_baseline(repo, baseline_ref)
+    resume_route, resume_view = route_resume_sessions(
+        repo,
+        config,
+        query,
+        packs,
+        ensure_fingerprints=router_cache.validate_fingerprints,
+    )
+    candidates, index_metrics = candidate_context_packs(
+        packs,
+        query,
+        tokens,
+        str(resume_view["feature"]) if resume_view is not None else "",
+        baseline_paths,
+    )
+    metadata_ranked: list[tuple[int, str]] = []
     for pack in packs:
+        metadata_score, _ = score_context_pack(pack, query, tokens)
+        baseline_score, _ = baseline_pack_score(pack, baseline_paths)
+        metadata_score += baseline_score
+        if resume_view is not None and str(pack["feature"]) == str(resume_view["feature"]):
+            metadata_score = max(metadata_score, 100000)
+        if metadata_score > 0:
+            metadata_ranked.append((metadata_score, str(pack["rel"])))
+    metadata_ranked.sort(key=lambda item: (-item[0], item[1]))
+    candidate_rels = {str(pack["rel"]) for pack in candidates}
+    candidate_rels.update(
+        rel for _, rel in metadata_ranked[:ROUTER_RANK_SAFETY_CANDIDATES]
+    )
+    candidates = [pack for pack in packs if str(pack["rel"]) in candidate_rels]
+    index_metrics["candidates"] = len(candidates)
+    index_metrics["safety_candidates"] = min(
+        len(metadata_ranked), ROUTER_RANK_SAFETY_CANDIDATES
+    )
+    router_cache.validate_fingerprints([
+        pack for pack in candidates if pack.get("fingerprints_ok") is None
+    ])
+    router_cache.save()
+    ranked: list[tuple[int, dict[str, object], list[str]]] = []
+    for pack in candidates:
         score, reasons = score_context_pack(pack, query, tokens)
+        baseline_score, baseline_reasons = baseline_pack_score(pack, baseline_paths)
+        score += baseline_score
+        reasons = list(dict.fromkeys([*baseline_reasons, *reasons]))
         if resume_view is not None and str(pack["feature"]) == str(resume_view["feature"]):
             score = max(score, 100000)
             reasons = list(dict.fromkeys(["owned-session-feature", *reasons]))
@@ -2238,8 +2785,7 @@ def context_search(
     truncated = False
     specs: list[str] = []
     if primary is not None:
-        primary_path = Path(primary["path"])
-        primary_characters = len(primary_path.read_text(encoding="utf-8"))
+        primary_characters = int(primary["characters"])
         if primary_characters > max_characters:
             raise LedgerError(
                 f"Primary Context Pack exceeds config.context.max_total_characters: {primary['rel']}"
@@ -2278,8 +2824,30 @@ def context_search(
         else "medium" if resume_route["mode"] == "guided" or best_score >= 500
         else "low"
     )
+    baseline_related: list[str] = []
+    if primary is not None and baseline_paths:
+        tracked = [str(item) for item in primary["tracked"]]
+        baseline_related = [
+            raw for _, raw in sorted(
+                (
+                    (path_affinity(raw, tracked), raw)
+                    for raw in baseline_paths
+                    if path_affinity(raw, tracked) > 0
+                ),
+                key=lambda item: (-item[0], item[1]),
+            )
+        ]
+    baseline["relevant_path_count"] = len(baseline_related)
+    baseline["relevant_paths"] = baseline_related[:BASELINE_MAX_PATHS]
+    baseline["truncated"] = len(baseline_related) > BASELINE_MAX_PATHS
+    route_warnings = [str(item) for item in baseline.get("warnings", [])]
+    if primary is not None and not primary["fingerprints_ok"]:
+        route_warnings.append("the selected Context Pack has stale tracked-file fingerprints")
+    cache_metrics = router_cache.public_metrics()
+    if cache_metrics["state"] == "unavailable":
+        route_warnings.append("the private router cache could not be written; live routing remained authoritative")
     plan = {
-        "schema": "context-plan-v2",
+        "schema": CONTEXT_BUNDLE_SCHEMA,
         "query": query,
         "request_principal": current_principal(repo),
         "request_tool": normalize_tool_id(tool),
@@ -2298,6 +2866,7 @@ def context_search(
             ),
         },
         "resume": resume_route,
+        "baseline": baseline,
         "required_reads": [
             {"kind": kind, "path": path, "characters": characters}
             for kind, path, characters in required_reads
@@ -2311,6 +2880,7 @@ def context_search(
             }
             for score, pack, why in near
         ],
+        "warnings": route_warnings,
         "budget": {
             "max_files": max_files,
             "max_characters": max_characters,
@@ -2326,16 +2896,20 @@ def context_search(
             "Do not call the route ready while a behavior-relevant uncertainty remains.",
         ],
         "metrics": {
-            "packs_considered": len(packs),
+            "packs_available": len(packs),
+            "packs_metadata_scanned": len(packs),
+            "packs_considered": len(candidates),
             "sessions_considered": len(load_context_state(repo).get("task_sessions", {})),
             "required_files": len(required_reads),
+            "reverse_index": index_metrics,
+            "cache": cache_metrics,
             "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
         },
     }
     if output_format == "json":
         print(json.dumps(plan, indent=2, ensure_ascii=True))
         return 0
-    print("Context plan: context-plan-v2")
+    print(f"Context Bundle: {CONTEXT_BUNDLE_SCHEMA}")
     if primary is not None:
         print(f"Primary pack: {primary['rel']}")
     else:
@@ -2353,6 +2927,7 @@ def context_search(
         print(f"Resume summary: {capsule['summary'] or 'none'}")
         print(f"Next step: {capsule['next_step'] or 'none'}")
         print(f"Evidence paths: {', '.join(capsule['evidence_paths']) or 'none'}")
+        print(f"Evidence paths omitted: {capsule['omitted_evidence_paths']}")
         for warning in capsule["warnings"]:
             print(f"Resume warning: {warning}")
     elif resume_route["mode"] == "blocked":
@@ -2364,6 +2939,14 @@ def context_search(
             )
     elif resume_route["foreign_overlap"]:
         print("Resume warning: a matching private task belongs to another principal.")
+    print(f"Baseline: {baseline['status']}")
+    if baseline["status"] == "resolved":
+        print(
+            f"Baseline paths: {baseline['relevant_path_count']} relevant / "
+            f"{baseline['changed_path_count']} changed"
+        )
+    for warning in route_warnings:
+        print(f"Bundle warning: {warning}")
     print("Required reads:")
     for kind, path, characters in required_reads:
         print(f"- {kind}: {path} ({characters} characters)")
@@ -2387,6 +2970,11 @@ def context_search(
         f"Budget: files {len(required_reads)}/{max_files}; "
         f"characters {used_characters}/{max_characters}; "
         f"truncated={'yes' if truncated else 'no'}"
+    )
+    print(
+        f"Router: packs {len(candidates)}/{len(packs)}; "
+        f"cache={cache_metrics['state']} "
+        f"pack-hits={cache_metrics['pack_hits']} digest-hits={cache_metrics['digest_hits']}"
     )
     if near:
         print("Close candidates:")
@@ -4699,7 +5287,12 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("--query", required=True)
     context.add_argument("--limit", type=int, default=5)
     context.add_argument("--format", choices=("text", "json"), default="text")
-    context.add_argument("--tool", default="", help="Calling Agent tool ID for the Context Plan")
+    context.add_argument("--tool", default="", help="Calling Agent tool ID for the Context Bundle")
+    context.add_argument(
+        "--baseline",
+        default="",
+        help="Optional Git ref whose merge-base delta should guide Pack selection",
+    )
     pack = sub.add_parser("pack", help="Create or refresh a feature Context Pack")
     pack.add_argument("--feature", required=True)
     pack.add_argument("--title", default="")
@@ -4827,7 +5420,14 @@ def main(argv: list[str] | None = None) -> int:
                     return sync_adapters(repo, load_config(repo))
                 return sync_repo(repo, args.derived)
         if args.command == "context":
-            return context_search(repo, args.query, max(1, args.limit), args.format, args.tool)
+            return context_search(
+                repo,
+                args.query,
+                max(1, args.limit),
+                args.format,
+                args.tool,
+                args.baseline,
+            )
         if args.command == "init":
             return init_repo(repo, args.dry_run)
         if args.command == "verify":

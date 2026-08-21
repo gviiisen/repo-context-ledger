@@ -447,7 +447,7 @@ class LedgerFlowTests(unittest.TestCase):
 
             manifest = json.loads((repo / "docs/ai/context-manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(1, manifest["manifest_version"])
-            self.assertEqual("0.5.10", manifest["tool_version"])
+            self.assertEqual("0.6.0", manifest["tool_version"])
             route = manifest["features"][0]
             self.assertEqual("authentication", route["feature"])
             self.assertEqual("docs/ai/context-packs/authentication.md", route["context_pack"])
@@ -1182,7 +1182,7 @@ class LedgerFlowTests(unittest.TestCase):
                 "--tool", "cursor", "--format", "json",
             ).stdout)
 
-            self.assertEqual("context-plan-v2", plan["schema"])
+            self.assertEqual("context-bundle-v1", plan["schema"])
             self.assertEqual("ready", plan["resume"]["mode"])
             capsule = plan["resume"]["capsule"]
             self.assertEqual(session_id, capsule["session_id"])
@@ -2158,7 +2158,7 @@ class LedgerFlowTests(unittest.TestCase):
 
             result = self.run_ledger(repo, "context", "--query", "bounded router")
 
-            self.assertIn("Context plan: context-plan-v2", result.stdout)
+            self.assertIn("Context Bundle: context-bundle-v1", result.stdout)
             required = result.stdout.split("Required reads:\n", 1)[1].split("Change summaries:\n", 1)[0]
             self.assertIn("- pack: docs/ai/context-packs/bounded-router.md", required)
             self.assertIn("- spec: docs/specs/router-1.md", required)
@@ -2186,7 +2186,7 @@ class LedgerFlowTests(unittest.TestCase):
             )
             plan = json.loads(result.stdout)
 
-            self.assertEqual("context-plan-v2", plan["schema"])
+            self.assertEqual("context-bundle-v1", plan["schema"])
             self.assertEqual("bounded router", plan["query"])
             self.assertEqual("docs/ai/context-packs/bounded-router.md", plan["primary_pack"])
             self.assertEqual(
@@ -2207,6 +2207,148 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertEqual(2, plan["metrics"]["required_files"])
             self.assertGreaterEqual(plan["metrics"]["elapsed_ms"], 0)
             self.assertNotIn(str(repo), result.stdout)
+
+    def test_context_router_private_cache_reuses_and_invalidates_entries(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            created = self.run_ledger(
+                repo,
+                "pack", "--feature", "service-route", "--title", "Service Route",
+                "--file", "src/service.py",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+
+            cold = json.loads(self.run_ledger(
+                repo, "context", "--query", "service route", "--format", "json"
+            ).stdout)
+            cache = LEDGER_MODULE.router_cache_path(repo)
+            self.assertIsNotNone(cache)
+            self.assertTrue(cache.is_file())
+            self.assertEqual("cold", cold["metrics"]["cache"]["state"])
+            self.assertTrue(cold["metrics"]["cache"]["written"])
+            self.assertNotIn(
+                "repo-context-ledger/cache",
+                self.run_git(repo, "status", "--porcelain").stdout.replace("\\", "/"),
+            )
+
+            warm = json.loads(self.run_ledger(
+                repo, "context", "--query", "service route", "--format", "json"
+            ).stdout)
+            self.assertEqual(cold["primary_pack"], warm["primary_pack"])
+            self.assertEqual(cold["required_reads"], warm["required_reads"])
+            self.assertEqual("warm", warm["metrics"]["cache"]["state"])
+            self.assertGreaterEqual(warm["metrics"]["cache"]["pack_hits"], 1)
+            self.assertGreaterEqual(warm["metrics"]["cache"]["digest_hits"], 1)
+
+            cache.write_text("{broken cache", encoding="utf-8")
+            rebuilt = json.loads(self.run_ledger(
+                repo, "context", "--query", "service route", "--format", "json"
+            ).stdout)
+            self.assertEqual(cold["primary_pack"], rebuilt["primary_pack"])
+            self.assertEqual("rebuilt", rebuilt["metrics"]["cache"]["state"])
+
+            (repo / "src/service.py").write_text("VALUE = 200\n", encoding="utf-8")
+            invalidated = json.loads(self.run_ledger(
+                repo, "context", "--query", "service route", "--format", "json"
+            ).stdout)
+            self.assertEqual("stale", invalidated["selection"]["fingerprints"])
+            self.assertGreaterEqual(invalidated["metrics"]["cache"]["digest_misses"], 1)
+
+    def test_context_baseline_boosts_the_pack_changed_since_merge_base(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            alpha = repo / "src/alpha.py"
+            beta = repo / "src/beta.py"
+            alpha.write_text("VALUE = 'alpha'\n", encoding="utf-8")
+            beta.write_text("VALUE = 'beta'\n", encoding="utf-8")
+            for feature, title, source in (
+                ("alpha-route", "Alpha Route", "src/alpha.py"),
+                ("beta-route", "Beta Route", "src/beta.py"),
+            ):
+                created = self.run_ledger(
+                    repo, "pack", "--feature", feature, "--title", title, "--file", source
+                )
+                self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            self.run_git(repo, "add", "-A")
+            self.run_git(repo, "commit", "-m", "Add two synthetic routes")
+            self.run_git(repo, "switch", "-c", "feature/beta-maintenance")
+            beta.write_text("VALUE = 'beta-2'\n", encoding="utf-8")
+            self.run_git(repo, "add", "src/beta.py")
+            self.run_git(repo, "commit", "-m", "Change beta route")
+
+            plan = json.loads(self.run_ledger(
+                repo,
+                "context", "--query", "maintenance request", "--baseline", "main",
+                "--format", "json",
+            ).stdout)
+            self.assertEqual("docs/ai/context-packs/beta-route.md", plan["primary_pack"])
+            self.assertIn("pr-baseline-overlap", plan["selection"]["reasons"])
+            self.assertEqual("resolved", plan["baseline"]["status"])
+            self.assertEqual(["src/beta.py"], plan["baseline"]["relevant_paths"])
+            self.assertEqual(1, plan["baseline"]["changed_path_count"])
+
+            unresolved = json.loads(self.run_ledger(
+                repo,
+                "context", "--query", "beta route", "--baseline", "missing/ref",
+                "--format", "json",
+            ).stdout)
+            self.assertEqual("unresolved", unresolved["baseline"]["status"])
+            self.assertTrue(unresolved["baseline"]["warnings"])
+            self.assertNotIn(str(repo), json.dumps(unresolved))
+
+    def test_resume_capsule_omits_legacy_evidence_outside_selected_pack_scope(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            self.run_git(repo, "config", "repo-context-ledger.principal", "alice-profile")
+            relevant = repo / "src/announcements/worker.py"
+            unrelated = repo / "src/assets/registry.py"
+            relevant.parent.mkdir(parents=True)
+            unrelated.parent.mkdir(parents=True)
+            relevant.write_text("LIMIT = 1\n", encoding="utf-8")
+            unrelated.write_text("ASSETS = 1\n", encoding="utf-8")
+            self.run_git(repo, "add", "src/announcements/worker.py", "src/assets/registry.py")
+            self.run_git(repo, "commit", "-m", "Add synthetic feature files")
+            started = self.run_ledger(
+                repo,
+                "start", "--title", "Announcement throttling",
+                "--feature", "announcement-throttling", "--tool", "codex",
+            )
+            session = session_from_result(started)
+            relevant.write_text("LIMIT = 2\n", encoding="utf-8")
+            unrelated.write_text("ASSETS = 2\n", encoding="utf-8")
+            created = self.run_ledger(
+                repo,
+                "pack", "--feature", "announcement-throttling",
+                "--title", "Announcement Throttling",
+                "--file", "src/announcements/worker.py",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            self.run_ledger(
+                repo,
+                "evidence", "--session", session,
+                "--path", "src/announcements/worker.py",
+                "--path", "src/assets/registry.py",
+            )
+            self.run_ledger(
+                repo,
+                "checkpoint", "--session", session,
+                "--summary", "Synthetic announcement throttling change is ready for focused review.",
+                "--next", "Verify the announcement worker boundary.",
+            )
+
+            plan = json.loads(self.run_ledger(
+                repo,
+                "context", "--query", "continue announcement throttling",
+                "--tool", "cursor", "--format", "json",
+            ).stdout)
+            capsule = plan["resume"]["capsule"]
+            self.assertEqual(["src/announcements/worker.py"], capsule["evidence_paths"])
+            self.assertEqual(1, capsule["omitted_evidence_paths"])
+            self.assertNotIn("src/assets/registry.py", json.dumps(capsule))
+            self.assertTrue(any("omitted" in item for item in capsule["warnings"]))
 
     def test_context_plan_uses_change_metadata_without_loading_change_bodies(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -2338,7 +2480,51 @@ class LedgerFlowTests(unittest.TestCase):
                 plan["budget"]["used_characters"], plan["budget"]["max_characters"]
             )
             self.assertEqual([], plan["optional_candidates"])
+            self.assertEqual(101, plan["metrics"]["packs_available"])
             self.assertEqual(101, plan["metrics"]["packs_considered"])
+
+    def test_reverse_index_bounds_fingerprint_checks_for_unique_pack_paths(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            sources = repo / "src/synthetic"
+            sources.mkdir(parents=True)
+            first = sources / "route_000.py"
+            first.write_text("MARKER = '000'\n", encoding="utf-8")
+            created = self.run_ledger(
+                repo,
+                "pack", "--feature", "synthetic-route-000",
+                "--title", "Synthetic Marker 000",
+                "--file", "src/synthetic/route_000.py",
+            )
+            first_pack = repo / created.stdout.splitlines()[0]
+            template = first_pack.read_text(encoding="utf-8")
+            first_digest = LEDGER_MODULE.file_digest(first, repo)
+            for index in range(1, 59):
+                marker = f"{index:03d}"
+                source = sources / f"route_{marker}.py"
+                source.write_text(f"MARKER = '{marker}'\n", encoding="utf-8")
+                digest = LEDGER_MODULE.file_digest(source, repo)
+                text = template.replace("synthetic-route-000", f"synthetic-route-{marker}")
+                text = text.replace("Synthetic Marker 000", f"Synthetic Marker {marker}")
+                text = text.replace("src/synthetic/route_000.py", f"src/synthetic/route_{marker}.py")
+                text = text.replace(first_digest, digest)
+                (first_pack.parent / f"synthetic-route-{marker}.md").write_text(
+                    text,
+                    encoding="utf-8",
+                )
+
+            plan = json.loads(self.run_ledger(
+                repo,
+                "context", "--query", "Synthetic Marker 037", "--format", "json",
+            ).stdout)
+            self.assertEqual(
+                "docs/ai/context-packs/synthetic-route-037.md",
+                plan["primary_pack"],
+            )
+            self.assertEqual(59, plan["metrics"]["packs_available"])
+            self.assertLessEqual(plan["metrics"]["packs_considered"], 5)
+            self.assertFalse(plan["metrics"]["reverse_index"]["fallback"])
 
     def test_context_router_prefers_live_pack_feature_and_tracked_path(self):
         with tempfile.TemporaryDirectory() as raw:
