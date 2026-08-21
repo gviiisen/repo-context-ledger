@@ -22,7 +22,7 @@ from pathlib import Path
 
 
 VERSION = 8
-TOOL_VERSION = "0.6.2"
+TOOL_VERSION = "0.7.0"
 MANIFEST_VERSION = 1
 ROUTER_CACHE_SCHEMA = 1
 CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
@@ -109,6 +109,35 @@ RESUME_INTENT_TOKENS = {
 
 class LedgerError(Exception):
     """Expected user-facing configuration or workflow error."""
+
+
+class CommandResult:
+    """Stable machine-readable projection of one existing CLI command result."""
+
+    def __init__(
+        self,
+        schema: str,
+        command: str,
+        exit_code: int,
+        messages: list[str],
+        errors: list[str],
+    ) -> None:
+        self.schema = schema
+        self.command = command
+        self.exit_code = exit_code
+        self.messages = messages
+        self.errors = errors
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.schema,
+            "tool_version": TOOL_VERSION,
+            "command": self.command,
+            "ok": self.exit_code == EXIT_SUCCESS,
+            "exit_code": self.exit_code,
+            "messages": self.messages,
+            "errors": self.errors,
+        }
 
 
 class InitFileChange:
@@ -5587,15 +5616,8 @@ def captured_command_json(repo: Path, schema: str, command: str, operation) -> i
         for line in stderr.getvalue().splitlines()
         if line.strip()
     ]
-    print(json.dumps({
-        "schema": schema,
-        "tool_version": TOOL_VERSION,
-        "command": command,
-        "ok": code == EXIT_SUCCESS,
-        "exit_code": code,
-        "messages": messages,
-        "errors": errors,
-    }, indent=2, ensure_ascii=False))
+    result = CommandResult(schema, command, code, messages, errors)
+    print(json.dumps(result.as_dict(), indent=2, ensure_ascii=False))
     return code
 
 

@@ -270,6 +270,23 @@ Validate the Skill with the OpenAI Skill Creator validator:
 python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 ```
 
+Runtime contributors edit `src/repo_context_ledger/runtime.py.tmpl` and build-time fragments, then run:
+
+```text
+python scripts/build_runtime.py
+python scripts/build_runtime.py --check
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
+
+## What's new in v0.7.0
+
+- One deterministic build now generates both standalone runtime copies from `src/repo_context_ledger/runtime.py.tmpl` and ordered build-time fragments.
+- Version/schema/exit constants, `LedgerError`, and the first typed command-result contract live in `contracts.pyfrag`; the lightweight model remains compatible with direct `importlib` execution, and further extraction can proceed gradually without changing the installed zero-dependency artifact.
+- `scripts/build_runtime.py --check` detects drift without writing, while ordinary builds use atomic replacement and normalized LF output. Two fresh builds are tested byte-for-byte and compiled as standalone Python.
+- Windows/Ubuntu CI checks generated-runtime drift before running the full suite. Runtime tests moved into a focused architecture test file rather than further enlarging the legacy monolithic test module.
+- Initialized repositories still receive one copied `.context-ledger/ledger.py`; users do not install a package and existing CLI/JSON contracts from v0.6.2 remain unchanged.
+
 ## What's new in v0.6.2
 
 - `status --format json` and `check --format json` add stable `status-v1` and `check-v1` automation contracts; existing text output and exit behavior remain available.

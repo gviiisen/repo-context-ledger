@@ -5,10 +5,10 @@ Feature: coverage-integrity
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: db89319282707f639addbd92e6e6fd1f8e88444d
+Source commit: 6bdf90c56b59fde8890632b113bd61ccb9239c73
 Base branch: main
 Base commit: b5086a53c21962593ada4a0b96903faf10a7e54c
-Last refreshed: 2026-08-21T23:30:55+08:00
+Last refreshed: 2026-08-21T23:41:24+08:00
 
 ## Purpose
 
@@ -51,6 +51,6 @@ Last refreshed: 2026-08-21T23:30:55+08:00
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:5c468f83b60312eaa70064e50e140fe75aa258f1560da8b8362a9148532c0d0a`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:15141c54d126e9d9d74b41163430e4c3d8bada1169b32e96a56e6fe8451ea9a9`
 - `tests/test_ledger.py` — `sha256:417f31c7d8b52d3ae18c759a6d256251b2325891364cc8430aad82933bd78ebf`
 <!-- repo-context-ledger:pack-files:end -->

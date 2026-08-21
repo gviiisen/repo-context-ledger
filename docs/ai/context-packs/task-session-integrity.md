@@ -5,10 +5,10 @@ Feature: task-session-integrity
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: db89319282707f639addbd92e6e6fd1f8e88444d
+Source commit: 6bdf90c56b59fde8890632b113bd61ccb9239c73
 Base branch: main
 Base commit: b5086a53c21962593ada4a0b96903faf10a7e54c
-Last refreshed: 2026-08-21T23:30:56+08:00
+Last refreshed: 2026-08-21T23:41:25+08:00
 
 ## Purpose
 
@@ -58,8 +58,8 @@ Run `python -m unittest discover -s tests -p test_ledger.py` for v8 migration, s
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:5c468f83b60312eaa70064e50e140fe75aa258f1560da8b8362a9148532c0d0a`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:5077eaba75ce82578076ef6b69052a47a4b05f213f9615b06308109cb7c71b19`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:15141c54d126e9d9d74b41163430e4c3d8bada1169b32e96a56e6fe8451ea9a9`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:5134159090f71af8c66ea5235e5ff683141ed1a5fa8ba5407e0b08ba2679341f`
 - `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:cfb76dcea9238ffc40384e8118608d3bd89891ef42de622a8aad69478acdf945`
 - `tests/test_ledger.py` — `sha256:417f31c7d8b52d3ae18c759a6d256251b2325891364cc8430aad82933bd78ebf`
 <!-- repo-context-ledger:pack-files:end -->

@@ -1,0 +1,117 @@
+VERSION = 8
+TOOL_VERSION = "0.7.0"
+MANIFEST_VERSION = 1
+ROUTER_CACHE_SCHEMA = 1
+CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
+DOCTOR_SCHEMA = "doctor-v1"
+STATUS_SCHEMA = "status-v1"
+CHECK_SCHEMA = "check-v1"
+EXIT_SUCCESS = 0
+EXIT_NO_MATCH = 1
+EXIT_INVALID = 2
+QUALITY_PROFILE = "evidence-v1"
+BLOCK_START = "<!-- repo-context-ledger:start -->"
+BLOCK_END = "<!-- repo-context-ledger:end -->"
+RULE_START = "<!-- repo-context-ledger:rules:start -->"
+RULE_END = "<!-- repo-context-ledger:rules:end -->"
+CHANGES_START = "<!-- repo-context-ledger:changes:start -->"
+CHANGES_END = "<!-- repo-context-ledger:changes:end -->"
+PACK_FILES_START = "<!-- repo-context-ledger:pack-files:start -->"
+PACK_FILES_END = "<!-- repo-context-ledger:pack-files:end -->"
+PACK_SPECS_START = "<!-- repo-context-ledger:pack-specs:start -->"
+PACK_SPECS_END = "<!-- repo-context-ledger:pack-specs:end -->"
+EVIDENCE_START = "<!-- repo-context-ledger:evidence:start -->"
+EVIDENCE_END = "<!-- repo-context-ledger:evidence:end -->"
+CHECKS_START = "<!-- repo-context-ledger:checks:start -->"
+CHECKS_END = "<!-- repo-context-ledger:checks:end -->"
+IGNORED_DIRS = {
+    ".git", ".hg", ".svn", ".idea", ".vscode", ".context-ledger",
+    "node_modules", "vendor", "dist", "build", "target", "bin", "obj",
+    ".venv", "venv", "__pycache__", ".next", ".cache",
+}
+MODULE_MANIFESTS = {
+    "package.json", "pyproject.toml", "Cargo.toml", "go.mod", "pom.xml",
+    "build.gradle", "build.gradle.kts", "composer.json", "Gemfile",
+}
+YEAR_PATTERN = re.compile(r"^\d{4}$")
+MONTH_PATTERN = re.compile(r"^(0[1-9]|1[0-2])$")
+LEGACY_MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+REQUIRED_HANDOFF_HEADINGS = (
+    "## Intent", "## Changed behavior", "## Code paths",
+    "## Boundaries and risks", "## Verification", "## Documentation updates",
+)
+ADAPTER_NAMES = ("agents", "claude", "cursor", "copilot")
+COVERAGE_GLOB_DEFAULTS = {
+    "implementation_globs": ["**"],
+    "test_globs": [
+        "tests/**", "test/**", "**/tests/**", "**/test/**",
+        "**/test_*.py", "**/*_test.*", "**/*.test.*", "**/*.spec.*",
+    ],
+    "ci_globs": [
+        ".github/**", ".gitlab/**", ".gitlab-ci.yml", ".circleci/**",
+        "azure-pipelines*.yml", "Jenkinsfile",
+    ],
+    "config_globs": [
+        "pyproject.toml", "setup.cfg", "tox.ini", "package.json",
+        "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "Cargo.lock",
+        "go.mod", "go.sum", "*.config.*", ".env*",
+    ],
+    "generated_globs": [
+        "dist/**", "build/**", "target/**", "coverage/**", "htmlcov/**",
+        "node_modules/**", "vendor/**", "**/__pycache__/**",
+    ],
+    "ignore_globs": [],
+}
+COVERAGE_GLOB_KEYS = tuple(COVERAGE_GLOB_DEFAULTS)
+CONTEXT_DEFAULTS = {
+    "max_required_files": 3,
+    "max_linked_specs": 2,
+    "max_change_summaries": 3,
+    "max_total_characters": 30000,
+    "show_close_candidates": 0,
+}
+RESUME_NEAR_SCORE_RATIO = 0.85
+RESUME_SUMMARY_CHARS = 600
+RESUME_NEXT_CHARS = 320
+RESUME_VERIFICATION_CHARS = 600
+RESUME_MAX_PATHS = 16
+RESUME_SOURCE_MAX_PATHS = 128
+RESUME_CAPSULE_CHARS = 4000
+BASELINE_MAX_PATHS = 12
+ROUTER_RANK_SAFETY_CANDIDATES = 5
+RESUME_INTENT_TOKENS = {
+    "continue", "resume", "recover", "继续", "恢复", "接着", "续接",
+}
+
+
+class LedgerError(Exception):
+    """Expected user-facing configuration or workflow error."""
+
+
+class CommandResult:
+    """Stable machine-readable projection of one existing CLI command result."""
+
+    def __init__(
+        self,
+        schema: str,
+        command: str,
+        exit_code: int,
+        messages: list[str],
+        errors: list[str],
+    ) -> None:
+        self.schema = schema
+        self.command = command
+        self.exit_code = exit_code
+        self.messages = messages
+        self.errors = errors
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.schema,
+            "tool_version": TOOL_VERSION,
+            "command": self.command,
+            "ok": self.exit_code == EXIT_SUCCESS,
+            "exit_code": self.exit_code,
+            "messages": self.messages,
+            "errors": self.errors,
+        }

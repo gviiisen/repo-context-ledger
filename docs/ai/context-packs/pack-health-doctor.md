@@ -5,10 +5,10 @@ Feature: pack-health-doctor
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: db89319282707f639addbd92e6e6fd1f8e88444d
+Source commit: 6bdf90c56b59fde8890632b113bd61ccb9239c73
 Base branch: main
 Base commit: b5086a53c21962593ada4a0b96903faf10a7e54c
-Last refreshed: 2026-08-21T23:30:56+08:00
+Last refreshed: 2026-08-21T23:41:25+08:00
 
 ## Purpose
 
@@ -47,6 +47,6 @@ Routes repository health work to the deterministic Doctor report instead of forc
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:5c468f83b60312eaa70064e50e140fe75aa258f1560da8b8362a9148532c0d0a`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:15141c54d126e9d9d74b41163430e4c3d8bada1169b32e96a56e6fe8451ea9a9`
 - `tests/test_contract_and_doctor.py` — `sha256:bcc5acf08aac6c58bc752d34ab93da917715f6d5d1d636bca1f8e044b00ee96a`
 <!-- repo-context-ledger:pack-files:end -->

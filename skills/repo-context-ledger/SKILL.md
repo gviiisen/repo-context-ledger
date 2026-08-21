@@ -166,3 +166,7 @@ For read-only analysis, questions, formatting-only edits, or tasks that do not c
 - Keep Context Packs under the configured line limit and track only the minimum paths required to resume work.
 - Never rewrite README prose outside managed markers.
 - Never persist secrets or machine-specific absolute paths in records, and never invent tests, behavior, or code paths that were not inspected.
+
+## Develop the runtime
+
+Treat `src/repo_context_ledger/runtime.py.tmpl` and its build-time fragments as the editable runtime source. Never hand-edit `.context-ledger/ledger.py` or `skills/repo-context-ledger/scripts/ledger.py`; run `python scripts/build_runtime.py`, then `python scripts/build_runtime.py --check`. Both generated files must remain byte-identical because initialized repositories copy the standalone artifact and cannot depend on the source package.

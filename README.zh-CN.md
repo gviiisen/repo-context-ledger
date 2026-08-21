@@ -270,6 +270,23 @@ python -m unittest discover -s tests -v
 python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 ```
 
+运行时贡献者只编辑 `src/repo_context_ledger/runtime.py.tmpl` 与构建片段，然后运行：
+
+```text
+python scripts/build_runtime.py
+python scripts/build_runtime.py --check
+```
+
+源码与生成物边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## v0.7.0 新增能力
+
+- 新增一条确定性构建链，由 `src/repo_context_ledger/runtime.py.tmpl` 与有序构建片段统一生成两份 standalone runtime。
+- 版本/schema/退出码常量、`LedgerError` 与首个类型化命令结果契约进入 `contracts.pyfrag`；轻量模型继续兼容直接 `importlib` 执行，后续可以渐进拆分，而不改变安装后的零依赖单文件。
+- `scripts/build_runtime.py --check` 只检测漂移、不写文件；正常构建使用原子替换与 LF 规范化。测试会比较两次全新构建的字节，并编译生成的 standalone Python。
+- Windows/Ubuntu CI 在完整测试前先检查生成物漂移；运行时架构测试进入新的聚焦文件，不再继续扩大旧单体测试文件。
+- 初始化后的项目仍只获得一份 `.context-ledger/ledger.py`，用户无需安装 Python package；v0.6.2 已固定的 CLI/JSON 契约保持不变。
+
 ## v0.6.2 新增能力
 
 - `status --format json` 与 `check --format json` 新增稳定的 `status-v1`、`check-v1` 自动化契约；原有文本输出与退出行为继续保留。
