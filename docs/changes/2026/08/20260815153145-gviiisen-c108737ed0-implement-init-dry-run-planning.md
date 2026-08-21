@@ -64,20 +64,20 @@ Record checks with `ledger.py verify`; do not type claimed results manually.
   - Exit code: 1
   - Duration: 102.55s
   - Recorded: 2026-08-15T15:44:39+08:00
-  - Output evidence: sha256:ee57ea4b99d0843950046b25eda85704bbc49653bc30b7d6950f555d9496ad51 (2730 characters captured; content not persisted; failure=Traceback (most recent call last): | self.assertEqual("0.5.6", manifest["tool_version"]) | AssertionError: '0.5.6' != '0.5.7' | FAIL: <redacted-token> (test_ledger.LedgerFlowTests.<redacted-token>) | Traceback (most recent call last): | self.assertIn("Removed obsolete generated change indexes: 1", result.stdout) | AssertionError: 'Removed obsolete generated change indexes: 1' not found in 'Repo Context Ledger init plan for C:\\Users\\Administrator\\AppData\\Local\\Temp\\tmpuehw94hh\nCREATE .context-ledger/config.json [configuration]\nCREATE .context-ledger/context-state.json [private workspace state]\nCREATE .context-ledger/ledger.py [runtime]\nCREATE .context-ledger/templates/context-pack-template.md [template]\nCREATE .context-ledger/templates/handoff-template.md [template]\nCREATE .cont…)
+  - Output evidence: sha256:ee57ea4b99d0843950046b25eda85704bbc49653bc30b7d6950f555d9496ad51 (2730 characters captured; content not persisted; failure=Traceback (most recent call last): | self.assertEqual("0.5.6", manifest["tool_version"]) | AssertionError: '0.5.6' != '0.5.7' | FAIL: <redacted-token> (test_ledger.LedgerFlowTests.<redacted-token>) | Traceback (most recent call last): | self.assertIn("Removed obsolete generated change indexes: 1", result.stdout) | AssertionError: 'Removed obsolete generated change indexes: 1' not found in 'Repo Context Ledger init plan for <TEMP_DIR>\\<test-run>\nCREATE .context-ledger/config.json [configuration]\nCREATE .context-ledger/context-state.json [private workspace state]\nCREATE .context-ledger/ledger.py [runtime]\nCREATE .context-ledger/templates/context-pack-template.md [template]\nCREATE .context-ledger/templates/handoff-template.md [template]\nCREATE .cont…)
 - Command: `python -m unittest discover -s tests -p test_ledger.py`
   - Status: passed
   - Exit code: 0
   - Duration: 129.16s
   - Recorded: 2026-08-15T15:49:13+08:00
   - Output evidence: sha256:5bdf70864fdb7b80176de8ddb6db03209fd5a57fada61df62a66fb3f056fe66c (282 characters captured; content not persisted; last=OK)
-- Command: `python <redacted-home>\.codex\skills\.system\skill-creator\scripts\quick_validate.py skills/repo-context-ledger`
+- Command: `python <CODEX_HOME>\skills\.system\skill-creator\scripts\quick_validate.py skills/repo-context-ledger`
   - Status: failed
   - Exit code: 1
   - Duration: 0.14s
   - Recorded: 2026-08-15T15:49:20+08:00
   - Output evidence: sha256:80296fc1bbf2c36740ec3883f05a20c4cbe942c24dd4c9148c5ed1a50e2971d7 (693 characters captured; content not persisted; failure=Traceback (most recent call last): | UnicodeDecodeError: 'gbk' codec can't decode byte 0x92 in position 2037: illegal multibyte sequence)
-- Command: `python -X utf8 <redacted-home>\.codex\skills\.system\skill-creator\scripts\quick_validate.py skills/repo-context-ledger`
+- Command: `python -X utf8 <CODEX_HOME>\skills\.system\skill-creator\scripts\quick_validate.py skills/repo-context-ledger`
   - Status: passed
   - Exit code: 0
   - Duration: 0.06s

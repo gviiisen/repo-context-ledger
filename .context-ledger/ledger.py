@@ -21,7 +21,7 @@ from pathlib import Path
 
 
 VERSION = 7
-TOOL_VERSION = "0.5.7"
+TOOL_VERSION = "0.5.8"
 MANIFEST_VERSION = 1
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
@@ -548,12 +548,45 @@ def git_dirty_paths(repo: Path) -> list[str]:
     return sorted(dict.fromkeys(paths))
 
 
-def file_digest(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def git_text_mode(repo: Path | None, path: Path) -> bool | None:
+    if repo is None or not is_git_repo(repo):
+        return None
+    output = git_output(
+        repo,
+        "check-attr",
+        "-z",
+        "text",
+        "eol",
+        "--",
+        rel_posix(path, repo),
+    )
+    parts = output.split("\0")
+    attributes = {
+        parts[index + 1]: parts[index + 2]
+        for index in range(0, len(parts) - 2, 3)
+    }
+    text_value = attributes.get("text", "unspecified")
+    if text_value == "unset":
+        return False
+    if text_value == "set" or attributes.get("eol") in {"lf", "crlf"}:
+        return True
+    return None
+
+
+def file_digest(path: Path, repo: Path | None = None) -> str:
+    content = path.read_bytes()
+    text_mode = git_text_mode(repo, path)
+    normalize_line_endings = text_mode is True
+    if text_mode is None and b"\0" not in content:
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError:
+            pass
+        else:
+            normalize_line_endings = True
+    if normalize_line_endings:
+        content = content.replace(b"\r\n", b"\n")
+    return hashlib.sha256(content).hexdigest()
 
 
 def legacy_context_state_path(repo: Path) -> Path:
@@ -1470,7 +1503,7 @@ def pack_purpose_text(text: str) -> str:
 def pack_fingerprint_current(repo: Path, entries: list[tuple[str, str]]) -> bool:
     for raw, digest in entries:
         target = repo / normalize_git_path(raw)
-        if not target.is_file() or file_digest(target) != digest:
+        if not target.is_file() or file_digest(target, repo) != digest:
             return False
     return True
 
@@ -1694,7 +1727,7 @@ def refresh_context_pack(
     )
     text = set_field(text, "Last refreshed", now().isoformat(timespec="seconds"), after="Base commit")
     file_lines = [
-        f"- `{rel_posix(item, repo)}` — `sha256:{file_digest(item)}`"
+        f"- `{rel_posix(item, repo)}` — `sha256:{file_digest(item, repo)}`"
         for item in tracked
     ]
     replace_files = (
@@ -1774,7 +1807,7 @@ def context_pack_errors(
         except LedgerError as exc:
             errors.append(str(exc))
             continue
-        if file_digest(target) != expected:
+        if file_digest(target, repo) != expected:
             errors.append(f"Context pack is stale; tracked file changed: {raw}")
     if is_evidence_quality(text):
         config = load_config(repo)
@@ -2509,6 +2542,16 @@ def spec_quality_errors(path: Path) -> list[str]:
     return errors
 
 
+def redact_record_local_paths(text: str, repo: Path) -> str:
+    checks = managed_text(text, CHECKS_START, CHECKS_END)
+    if not checks:
+        return text
+    redacted = redact_local_paths(checks, repo)
+    if redacted == checks:
+        return text
+    return replace_managed_text(text, CHECKS_START, CHECKS_END, redacted)
+
+
 def finish_change(
     repo: Path,
     raw_specs: list[str],
@@ -2523,6 +2566,10 @@ def finish_change(
     )
     ensure_finish_evidence(repo, config, session_id, draft)
     text = draft.read_text(encoding="utf-8")
+    redacted_text = redact_record_local_paths(text, repo)
+    if redacted_text != text:
+        atomic_write(draft, redacted_text.rstrip() + "\n")
+        text = redacted_text
     errors = handoff_validation_errors(text, repo, config)
     if raw_specs and no_spec:
         errors.append("Use either --spec or --no-spec, not both.")
@@ -2566,7 +2613,9 @@ def finish_change(
         ):
             print(f"Publish target already exists: {rel_posix(publish_path, repo)}", file=sys.stderr)
             return 2
-        completed_text = existing
+        completed_text = redact_record_local_paths(existing, repo).rstrip() + "\n"
+        if completed_text != existing:
+            atomic_write(publish_path, completed_text)
     else:
         atomic_write(publish_path, completed_text)
     for spec in specs:
@@ -2791,7 +2840,62 @@ def secret_values_from_command(command: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
 
 
-def redact_secret_text(text: str, extra_values: list[str] | None = None) -> str:
+def local_path_redactions(repo: Path | None = None) -> list[tuple[str, str]]:
+    roots: list[tuple[str, str]] = []
+
+    def add_root(path: Path, placeholder: str) -> None:
+        for candidate in (path, path.absolute(), path.resolve()):
+            raw = str(candidate)
+            if raw:
+                roots.append((raw, placeholder))
+
+    if repo is not None:
+        add_root(repo, "<REPO_ROOT>")
+    raw_codex_home = os.environ.get("CODEX_HOME", "").strip()
+    codex_home = Path(raw_codex_home).expanduser() if raw_codex_home else Path.home() / ".codex"
+    add_root(codex_home, "<CODEX_HOME>")
+    add_root(Path(tempfile.gettempdir()), "<TEMP_DIR>")
+    add_root(Path.home(), "<USER_HOME>")
+    replacements: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw, placeholder in sorted(roots, key=lambda item: len(item[0]), reverse=True):
+        normalized = raw.replace("\\", "/")
+        variants = {
+            raw,
+            raw.replace("\\", "\\\\"),
+            normalized,
+            normalized.replace("/", "\\/"),
+        }
+        for variant in sorted(variants, key=len, reverse=True):
+            key = (variant.casefold(), placeholder)
+            if variant and key not in seen:
+                seen.add(key)
+                replacements.append((variant, placeholder))
+    return replacements
+
+
+def redact_local_paths(text: str, repo: Path | None = None) -> str:
+    for raw, placeholder in local_path_redactions(repo):
+        text = re.sub(re.escape(raw), lambda _: placeholder, text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"(?i)\b[A-Za-z]:\\\\Users\\\\[^\\\s]+",
+        "<USER_HOME>",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b[A-Za-z]:\\Users\\[^\\\s]+",
+        "<USER_HOME>",
+        text,
+    )
+    text = re.sub(r"(?i)/home/[^/\s]+", "<USER_HOME>", text)
+    return text
+
+
+def redact_secret_text(
+    text: str,
+    extra_values: list[str] | None = None,
+    repo: Path | None = None,
+) -> str:
     secret_label = r"(?:password|passwd|secret|token|api[-_]?key|authorization|bearer|cookie|set-cookie)"
     text = re.sub(
         rf'''(?ix)
@@ -2811,12 +2915,7 @@ def redact_secret_text(text: str, extra_values: list[str] | None = None) -> str:
         "<redacted-url>",
         text,
     )
-    text = re.sub(
-        r"(?i)\b[A-Za-z]:\\Users\\[^\\\s]+",
-        r"<redacted-home>",
-        text,
-    )
-    text = re.sub(r"(?i)/home/[^/\s]+", "<redacted-home>", text)
+    text = redact_local_paths(text, repo)
     text = re.sub(r"\b[A-Za-z0-9_-]{32,}\b", "<redacted-token>", text)
     for value in extra_values or []:
         if value and len(value) >= 4:
@@ -2832,8 +2931,15 @@ def last_nonempty_line(text: str) -> str:
     return ""
 
 
-def failure_capsule(stdout: str, stderr: str, extra_values: list[str] | None = None) -> str:
-    combined = redact_secret_text((stderr or "") + "\n" + (stdout or ""), extra_values)
+def failure_capsule(
+    stdout: str,
+    stderr: str,
+    extra_values: list[str] | None = None,
+    repo: Path | None = None,
+) -> str:
+    combined = redact_secret_text(
+        (stderr or "") + "\n" + (stdout or ""), extra_values, repo
+    )
     lines = [line.strip() for line in combined.splitlines() if line.strip()]
     interesting = [
         line for line in lines
@@ -2853,6 +2959,7 @@ def verification_output_summary(
     stderr: str,
     status: str = "passed",
     extra_values: list[str] | None = None,
+    repo: Path | None = None,
 ) -> str:
     output = stdout + ("\n" if stdout and stderr else "") + stderr
     if not output:
@@ -2860,13 +2967,13 @@ def verification_output_summary(
     digest = hashlib.sha256(output.encode("utf-8", errors="replace")).hexdigest()
     prefix = f"sha256:{digest} ({len(output)} characters captured; content not persisted"
     if status == "passed":
-        last = redact_secret_text(last_nonempty_line(stdout or stderr), extra_values)
+        last = redact_secret_text(last_nonempty_line(stdout or stderr), extra_values, repo)
         if last:
             if len(last) > 160:
                 last = last[:160].rstrip() + "…"
             return f"{prefix}; last={last})"
         return f"{prefix})"
-    return f"{prefix}; failure={failure_capsule(stdout, stderr, extra_values)})"
+    return f"{prefix}; failure={failure_capsule(stdout, stderr, extra_values, repo)})"
 
 
 def redacted_command(command: list[str]) -> list[str]:
@@ -2908,7 +3015,8 @@ def record_verification(
             checks = managed_text(text, CHECKS_START, CHECKS_END)
             if "No verification recorded yet." in checks:
                 checks = ""
-            entry = f"- Not run — {reason.strip()}\n  - Recorded: {now().isoformat(timespec='seconds')}"
+            safe_reason = redact_secret_text(reason.strip(), repo=repo)
+            entry = f"- Not run — {safe_reason}\n  - Recorded: {now().isoformat(timespec='seconds')}"
             checks = "\n".join(item for item in (checks, entry) if item).strip()
             updated = replace_managed_text(text, CHECKS_START, CHECKS_END, checks)
             atomic_write(handoff, updated.rstrip() + "\n")
@@ -2957,6 +3065,7 @@ def record_verification(
     display_command = redact_secret_text(
         subprocess.list2cmdline(redacted_command(command)).replace("`", "'"),
         extras,
+        repo,
     )
     recorded = now().isoformat(timespec="seconds")
     entry = (
@@ -2965,7 +3074,7 @@ def record_verification(
         f"  - Exit code: {exit_code}\n"
         f"  - Duration: {duration:.2f}s\n"
         f"  - Recorded: {recorded}\n"
-        f"  - Output evidence: {verification_output_summary(stdout, stderr, status, extras)}"
+        f"  - Output evidence: {verification_output_summary(stdout, stderr, status, extras, repo)}"
     )
     try:
         with repo_lock(repo):

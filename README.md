@@ -18,6 +18,14 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 - what changed, why it changed, and how it was verified;
 - which project and module README summaries need refreshing.
 
+## What's new in v0.5.8
+
+- Context Pack fingerprints are portable across Windows and Unix checkouts: logically identical UTF-8 text receives the same digest with LF or CRLF line endings.
+- Git attributes remain authoritative. Files marked `-text`, files containing NUL bytes, and non-UTF-8 content remain byte-sensitive, so binary changes cannot be hidden by normalization.
+- Existing LF-based `sha256:` fingerprints remain compatible; a real text change still makes the related Pack stale.
+- Persisted verification commands, successful result lines, failure capsules, and not-run reasons replace repository, Codex, temporary, and user-home roots with `<REPO_ROOT>`, `<CODEX_HOME>`, `<TEMP_DIR>`, and `<USER_HOME>`.
+- Redaction recognizes ordinary Windows paths, slash-normalized paths, and JSON-escaped double-backslash paths. The currently visible historical records were corrected to remove five local absolute paths without rewriting Git history.
+
 ## What's new in v0.5.7
 
 - `init --dry-run` builds the exact same initialization plan as real `init`, then prints file creates, managed-block updates, deletions, migrations, detected modules, and a compact summary without writing repository files or private workspace state.

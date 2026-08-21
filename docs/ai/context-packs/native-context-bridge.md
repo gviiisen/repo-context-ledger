@@ -5,10 +5,10 @@ Feature: native-context-bridge
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: 650c18896bea6c287caae74a5b431cd68fa15cae
+Source commit: 5892ff462b3970d3e86555ac79d3cf304571c172
 Base branch: main
-Base commit: bd61e06cff7a1374cf842d8850604b1ab9567107
-Last refreshed: 2026-08-15T15:56:30+08:00
+Base commit: 5892ff462b3970d3e86555ac79d3cf304571c172
+Last refreshed: 2026-08-21T15:03:51+08:00
 
 ## Purpose
 
@@ -48,10 +48,10 @@ Native Context Bridge 将不同编码 Agent 的仓库入口连接到同一份 Gi
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:702a0569ffe0731b9fbffb07a84b26d96e827f11ab27274d9a759f57d5e5f7d1`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:87b83e43decd4db8a3ed5f002a3a31a15bd37f1a7584827983708956ee35b448`
-- `skills/repo-context-ledger/agents/openai.yaml` — `sha256:dc78c15dba0364f25f59f2c5ace283f1c64e200f3f88c4b03feedfe99b64c329`
-- `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:f0acc36162fd1e36a8dee438fd7160ad03845df4da6739c1811994b366271ec1`
-- `skills/repo-context-ledger/references/document-model.md` — `sha256:35752cc0cae464c9b0d5bbda84eaef1770ff12515f0cf66fa0b597cb4c6c011b`
-- `tests/test_ledger.py` — `sha256:0bbbbf7d6b5494aa5d7288e503343d9c1740eb9bdce38dd5db484063a6604650`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:c35cc09d2be70369bec0255253dc8ad44091af5a04ca0f33bfd329138a3835d2`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:e75be77d0ce3ec5b9e6e2db7f68afef2c3219ecbb4fdd759011f10c40847a66c`
+- `skills/repo-context-ledger/agents/openai.yaml` — `sha256:77d4dcdebd3300bd9b7920fe8c4eaea5116129dc56f29d993ad8f463da7171a7`
+- `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:cfb76dcea9238ffc40384e8118608d3bd89891ef42de622a8aad69478acdf945`
+- `skills/repo-context-ledger/references/document-model.md` — `sha256:9f6858193c4884adc578c887544556b96bcd9da04e6de8ed403aa7696ca2af48`
+- `tests/test_ledger.py` — `sha256:7a7aeea0a0880a31ee5d96801a6d12b88ee5606f67527154cac9a4f16eda45b6`
 <!-- repo-context-ledger:pack-files:end -->

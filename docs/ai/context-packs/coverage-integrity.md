@@ -5,10 +5,10 @@ Feature: coverage-integrity
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: 650c18896bea6c287caae74a5b431cd68fa15cae
+Source commit: 5892ff462b3970d3e86555ac79d3cf304571c172
 Base branch: main
-Base commit: bd61e06cff7a1374cf842d8850604b1ab9567107
-Last refreshed: 2026-08-15T15:56:30+08:00
+Base commit: 5892ff462b3970d3e86555ac79d3cf304571c172
+Last refreshed: 2026-08-21T15:03:50+08:00
 
 ## Purpose
 
@@ -24,6 +24,7 @@ Last refreshed: 2026-08-15T15:56:30+08:00
 
 | Path / symbol | Role |
 | --- | --- |
+| `skills/repo-context-ledger/scripts/ledger.py::file_digest` | 生成跨 LF/CRLF 稳定、同时尊重 Git binary 属性的 tracked-file 指纹。 |
 | `skills/repo-context-ledger/scripts/ledger.py::validate_config` | 校验并补齐 Coverage 分类配置。 |
 | `skills/repo-context-ledger/scripts/ledger.py::is_implementation_path` | 判定路径是否属于需要语义记录的生产实现。 |
 | `skills/repo-context-ledger/scripts/ledger.py::coverage_validation_errors` | 将本次 Git 变更与 handoff、spec 和关联 Context Pack 对齐。 |
@@ -32,13 +33,13 @@ Last refreshed: 2026-08-15T15:56:30+08:00
 
 ## Contracts and boundaries
 
-- Invariants and contracts: 私有 active draft 可为当前工作区提供 evidence，但不进入正式历史或 Manifest；文档、账本运行时状态和 Agent adapter 不属于生产实现；Context Pack 关联来自其 tracked file，而不是“任意 Pack 已修改”。并行 session 的 evidence 必须是当前任务显式声明的真实变更路径。
+- Invariants and contracts: 私有 active draft 可为当前工作区提供 evidence，但不进入正式历史或 Manifest；文档、账本运行时状态和 Agent adapter 不属于生产实现；Context Pack 关联来自其 tracked file，而不是“任意 Pack 已修改”。UTF-8 文本的 LF/CRLF 形式共享指纹，Git `-text` 与真实二进制保持字节敏感。并行 session 的 evidence 必须是当前任务显式声明的真实变更路径。
 - Failure / recovery: 当前 session 引用未变更路径、遗漏已有的相关 Pack 或相关 Pack 指纹过期时，`finish` 必须失败并保留草稿。配置非法、生产路径没有关联 Pack、其他任务的未记录路径或其他 Pack 过期由 `check --strict --coverage` 这个全仓集成门禁报告，不得据此干预另一个任务。
 - Non-goals: 本功能不进行 LLM 语义判断，不引入 Light Mode，也不重构单文件运行时分发模型。
 
 ## Verification
 
-`python -m unittest discover -s tests -p "test_ledger.py" -v` 验证分类、Pack 关联、显式 session evidence 与 foreign-stale 隔离；所有任务稳定后运行 `python .context-ledger/ledger.py check --strict --coverage` 验证仓库整体记录覆盖。
+`python -m unittest discover -s tests -p "test_ledger.py" -v` 验证分类、可移植指纹、Git binary 属性、Pack 关联、显式 session evidence 与 foreign-stale 隔离；所有任务稳定后运行 `python .context-ledger/ledger.py check --strict --coverage` 验证仓库整体记录覆盖。
 
 <!-- repo-context-ledger:pack-specs:start -->
 ## Stable context
@@ -49,6 +50,6 @@ Last refreshed: 2026-08-15T15:56:30+08:00
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:702a0569ffe0731b9fbffb07a84b26d96e827f11ab27274d9a759f57d5e5f7d1`
-- `tests/test_ledger.py` — `sha256:0bbbbf7d6b5494aa5d7288e503343d9c1740eb9bdce38dd5db484063a6604650`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:c35cc09d2be70369bec0255253dc8ad44091af5a04ca0f33bfd329138a3835d2`
+- `tests/test_ledger.py` — `sha256:7a7aeea0a0880a31ee5d96801a6d12b88ee5606f67527154cac9a4f16eda45b6`
 <!-- repo-context-ledger:pack-files:end -->
