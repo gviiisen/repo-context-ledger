@@ -1,0 +1,17 @@
+{
+  "schemas": {
+    "context": "context-bundle-v1",
+    "doctor": "doctor-v1",
+    "status": "status-v1",
+    "check": "check-v1"
+  },
+  "exit_codes": {
+    "success": 0,
+    "no_match": 1,
+    "invalid_or_unhealthy": 2
+  },
+  "required_fields": {
+    "status-v1": ["schema", "tool_version", "repository", "sessions", "inventory"],
+    "check-v1": ["schema", "tool_version", "command", "ok", "exit_code", "messages", "errors"]
+  }
+}

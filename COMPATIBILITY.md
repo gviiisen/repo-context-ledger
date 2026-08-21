@@ -1,0 +1,31 @@
+# Compatibility
+
+Repo Context Ledger ships a zero-dependency Python runtime and a vendor-neutral Agent Skill.
+
+## Supported environments
+
+- Python 3.10 through 3.12.
+- Windows and Ubuntu are exercised in the required CI matrix.
+- Git repositories are the supported collaboration environment. Non-Git directories keep a local fallback state but cannot provide branch/worktree isolation or PR checks.
+- Codex, Claude Code, Cursor, GitHub Copilot, Grok, and other tools may use the same Git-tracked Pack/spec/Change knowledge. Vendor-private Memory is outside the compatibility contract.
+
+## CLI compatibility
+
+Minor releases preserve existing command names, arguments, text-mode exit classes, repository schema migrations, and published JSON schema names. New optional fields and new commands may be added in a minor release. Automation must ignore unknown JSON fields and must select JSON explicitly with `--format json`.
+
+The stable JSON contracts are:
+
+| Command | Schema | Purpose |
+| --- | --- | --- |
+| `context --format json` | `context-bundle-v1` | Bounded context route and optional Resume Capsule. |
+| `doctor --format json` | `doctor-v1` | Read-only health findings and repair suggestions. |
+| `status --format json` | `status-v1` | Privacy-bounded session counts/details and repository inventory. |
+| `check --format json` | `check-v1` | Existing check result projected into separated messages and errors. |
+
+Exit classes are `0` for success, `1` for a valid query with no context match, and `2` for invalid input, an unhealthy required contract, or a failed gate. A future incompatible field removal, meaning change, or exit-class change requires a new JSON schema name and a major project version.
+
+## Repository and private-state compatibility
+
+`.context-ledger/config.json` and private task state currently use schema v8. `init --dry-run` must preview the same migration plan as real `init`. Git-tracked Packs, specs, and completed Changes remain readable across minor releases. Private active/paused state remains local to the clone/worktree and is not a portable Git contract.
+
+The initialized `.context-ledger/ledger.py` is a standalone artifact. Its version should match the installed Skill runtime after `init`; the repository does not require a Python package installation or API key.

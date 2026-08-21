@@ -1,0 +1,29 @@
+{
+  "schema": "routing-eval-v1",
+  "cases": [
+    {
+      "query": "continue webhook delivery",
+      "expected_feature": "webhook-delivery",
+      "candidates": [
+        {"feature": "payment-routing", "title": "Payment Routing", "purpose": "Routes payment requests.", "tracked": ["src/payments/router.py"]},
+        {"feature": "webhook-delivery", "title": "Webhook Delivery", "purpose": "Delivers signed webhook events.", "tracked": ["src/webhooks/delivery.py"]}
+      ]
+    },
+    {
+      "query": "fix delivery.py retry",
+      "expected_feature": "webhook-delivery",
+      "candidates": [
+        {"feature": "payment-routing", "title": "Payment Routing", "purpose": "Routes payment requests.", "tracked": ["src/payments/router.py"]},
+        {"feature": "webhook-delivery", "title": "Webhook Delivery", "purpose": "Delivers signed webhook events.", "tracked": ["src/webhooks/delivery.py"]}
+      ]
+    },
+    {
+      "query": "Payment Routing",
+      "expected_feature": "payment-routing",
+      "candidates": [
+        {"feature": "payment-routing", "title": "Payment Routing", "purpose": "Routes payment requests.", "tracked": ["src/payments/router.py"]},
+        {"feature": "webhook-delivery", "title": "Webhook Delivery", "purpose": "Delivers signed webhook events.", "tracked": ["src/webhooks/delivery.py"]}
+      ]
+    }
+  ]
+}

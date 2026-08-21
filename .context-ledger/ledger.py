@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import datetime as dt
 import fnmatch
 import hashlib
+import io
 import json
 import os
 import re
@@ -21,11 +22,16 @@ from pathlib import Path
 
 
 VERSION = 8
-TOOL_VERSION = "0.6.1"
+TOOL_VERSION = "0.6.2"
 MANIFEST_VERSION = 1
 ROUTER_CACHE_SCHEMA = 1
 CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
 DOCTOR_SCHEMA = "doctor-v1"
+STATUS_SCHEMA = "status-v1"
+CHECK_SCHEMA = "check-v1"
+EXIT_SUCCESS = 0
+EXIT_NO_MATCH = 1
+EXIT_INVALID = 2
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
 BLOCK_END = "<!-- repo-context-ledger:end -->"
@@ -5565,7 +5571,111 @@ def check_repo(
     return 0
 
 
-def show_status(repo: Path) -> int:
+def captured_command_json(repo: Path, schema: str, command: str, operation) -> int:
+    """Project an existing text command into stable JSON without changing its exit class."""
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        code = int(operation())
+    messages = [
+        redact_local_paths(line, repo)
+        for line in stdout.getvalue().splitlines()
+        if line.strip()
+    ]
+    errors = [
+        redact_local_paths(line, repo)
+        for line in stderr.getvalue().splitlines()
+        if line.strip()
+    ]
+    print(json.dumps({
+        "schema": schema,
+        "tool_version": TOOL_VERSION,
+        "command": command,
+        "ok": code == EXIT_SUCCESS,
+        "exit_code": code,
+        "messages": messages,
+        "errors": errors,
+    }, indent=2, ensure_ascii=False))
+    return code
+
+
+def status_report(repo: Path) -> dict[str, object]:
+    config = load_config(repo)
+    state = load_context_state(repo)
+    packs_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai") / "context-packs"
+    active = owned_session_candidates(repo, config, state, "active")
+    paused = owned_session_candidates(repo, config, state, "paused")
+    owned_ids = {session_id for session_id, _ in [*active, *paused]}
+    shared = [
+        (session_id, record, access)
+        for session_id, record in state.get("task_sessions", {}).items()
+        if record.get("status") in {"active", "paused"}
+        and (access := session_access_level(repo, config, session_id, record))
+        in {"transfer", "fork", "read-only"}
+    ]
+    shared_ids = {session_id for session_id, _, _ in shared}
+    foreign_count = sum(
+        1 for session_id, record in state.get("task_sessions", {}).items()
+        if record.get("status") in {"active", "paused"}
+        and session_id not in owned_ids
+        and session_id not in shared_ids
+    )
+
+    def owned_item(session_id: str, record: dict) -> dict[str, object]:
+        return {
+            "session_id": session_id,
+            "feature": record.get("feature") or "unknown",
+            "status": record.get("status"),
+            "resume_epoch": record.get("resume_epoch", 1),
+            "tool": record.get("continuation_tool", "unknown"),
+            "publish_path": normalize_git_path(str(record["publish_path"])),
+        }
+
+    return {
+        "schema": STATUS_SCHEMA,
+        "tool_version": TOOL_VERSION,
+        "repository": {
+            "git": is_git_repo(repo),
+            "branch": git_branch(repo),
+            "default_branch": config.get("team", {}).get("default_branch", "main"),
+        },
+        "principal": current_principal(repo),
+        "sessions": {
+            "active": {
+                "count": len(active),
+                "items": [owned_item(session_id, record) for session_id, record in active],
+            },
+            "paused": {
+                "count": len(paused),
+                "items": [owned_item(session_id, record) for session_id, record in paused],
+            },
+            "shared": {
+                "count": len(shared),
+                "items": [
+                    {
+                        "session_id": session_id,
+                        "feature": record.get("feature") or "unknown",
+                        "status": record.get("status"),
+                        "access": access,
+                    }
+                    for session_id, record, access in shared
+                ],
+            },
+            "foreign": {"count": foreign_count},
+        },
+        "inventory": {
+            "context_packs": len(list(packs_root.glob("*.md"))) if packs_root.exists() else 0,
+            "stable_specs": len(all_specs(repo, config)),
+            "recorded_changes": len(all_changes(repo, config)),
+            "detected_modules": len(config.get("modules", [])),
+        },
+    }
+
+
+def show_status(repo: Path, output_format: str = "text") -> int:
+    if output_format == "json":
+        print(json.dumps(status_report(repo), indent=2, ensure_ascii=False))
+        return EXIT_SUCCESS
     config = load_config(repo)
     state = load_context_state(repo)
     packs_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai") / "context-packs"
@@ -5617,7 +5727,7 @@ def show_status(repo: Path) -> int:
     print(f"Stable specs: {len(all_specs(repo, config))}")
     print(f"Recorded changes: {len(all_changes(repo, config))}")
     print(f"Detected modules: {len(config.get('modules', []))}")
-    return 0
+    return EXIT_SUCCESS
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -5718,6 +5828,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Validate only ledger documents changed since the merge base with this ref",
     )
+    check.add_argument("--format", choices=("text", "json"), default="text")
     doctor = sub.add_parser("doctor", help="Diagnose repository and Context Pack health without writing")
     doctor.add_argument("--format", choices=("text", "json"), default="text")
     doctor.add_argument(
@@ -5728,7 +5839,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     team = sub.add_parser("team-check", help="Detect branch, feature, and generated-file conflicts")
     team.add_argument("--base", default="", help="Base ref (default: configured origin default branch)")
-    sub.add_parser("status", help="Show ledger state")
+    status = sub.add_parser("status", help="Show ledger state")
+    status.add_argument("--format", choices=("text", "json"), default="text")
     return parser
 
 
@@ -5800,6 +5912,15 @@ def main(argv: list[str] | None = None) -> int:
                 args.session, args.epoch
             )
         if args.command == "check":
+            if args.format == "json":
+                return captured_command_json(
+                    repo,
+                    CHECK_SCHEMA,
+                    "check",
+                    lambda: check_repo(
+                        repo, args.strict, args.coverage, args.base, args.changed_since
+                    ),
+                )
             return check_repo(repo, args.strict, args.coverage, args.base, args.changed_since)
         if args.command == "doctor":
             return doctor_repo(repo, args.format, args.max_items)
@@ -5810,7 +5931,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "team-check":
             return team_check(repo, args.base)
         if args.command == "status":
-            return show_status(repo)
+            return show_status(repo, args.format)
         return 2
     except LedgerError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

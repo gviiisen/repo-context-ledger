@@ -36,6 +36,8 @@ Repo Context Ledger 为每个 AI 会话提供一份精简、持久的项目地�
 
 初始化后的项目还会包含普通指令文件，因此即使某个工具不能原生发现 Skill，也能遵循相同工作流。不同产品的原生发现方式和安装目录可能有所区别。
 
+支持的 Python/平台与 CLI schema 保证见 [COMPATIBILITY.md](COMPATIBILITY.md)，升级规则见 [MIGRATIONS.md](MIGRATIONS.md)。
+
 ## 安装
 
 克隆本仓库或下载 Release，然后把 `skills/repo-context-ledger` 目录安装到所使用的 AI 工具中。
@@ -267,6 +269,14 @@ python -m unittest discover -s tests -v
 ```text
 python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 ```
+
+## v0.6.2 新增能力
+
+- `status --format json` 与 `check --format json` 新增稳定的 `status-v1`、`check-v1` 自动化契约；原有文本输出与退出行为继续保留。
+- `context-bundle-v1` 与 `doctor-v1` 保持不变。golden fixture 固定 schema 名、必需字段、v8 仓库配置、v0.6.1 之前已有命令集合，以及 `0`、`1`、`2` 三类退出码。
+- 新增带版本且完全合成的路由评测集，核验精确 feature、title 与 tracked path 选择，不导入生产仓库资料。
+- Windows 与 Ubuntu CI 同时运行最低支持的 Python 3.10 和 Python 3.12。
+- 兼容与迁移文档明确 minor 版本加法规则、schema 破坏性变更的 major 版本规则、私有状态边界、standalone runtime 升级与回滚预期。
 
 ## v0.6.1 新增能力
 

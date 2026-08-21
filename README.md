@@ -36,6 +36,8 @@ The core skill follows the open Agent Skills `SKILL.md` format. It is designed f
 
 Initialized repositories also receive plain instruction files, so tools without native Skill discovery can follow the same workflow. Native discovery and exact installation locations vary by product.
 
+See [COMPATIBILITY.md](COMPATIBILITY.md) for supported Python/platform and CLI schema guarantees, and [MIGRATIONS.md](MIGRATIONS.md) for upgrade rules.
+
 ## Install
 
 Clone this repository or download a release, then install the directory `skills/repo-context-ledger` in your AI tool.
@@ -267,6 +269,14 @@ Validate the Skill with the OpenAI Skill Creator validator:
 ```text
 python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 ```
+
+## What's new in v0.6.2
+
+- `status --format json` and `check --format json` add stable `status-v1` and `check-v1` automation contracts; existing text output and exit behavior remain available.
+- `context-bundle-v1` and `doctor-v1` stay unchanged. Golden fixtures protect schema names, required fields, the v8 repository configuration, the pre-v0.6.1 command set, and exit classes `0`, `1`, and `2`.
+- A versioned, fully synthetic routing corpus checks exact feature, title, and tracked-path selection without importing production repository data.
+- Windows and Ubuntu CI now run on both the minimum supported Python 3.10 and Python 3.12.
+- Compatibility and migration documents define additive minor-version rules, schema-breaking major-version rules, private-state boundaries, standalone-runtime upgrades, and rollback expectations.
 
 ## What's new in v0.6.1
 

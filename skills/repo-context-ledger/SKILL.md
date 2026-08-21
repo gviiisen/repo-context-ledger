@@ -27,6 +27,7 @@ Do not run the full lifecycle for every request.
 
 - **Read-only understanding**: `context --query "<task>"`, then `focus --feature "<feature>"`. Do not `start` a session.
 - **Repository health audit**: run `doctor` for bounded, read-only diagnostics before deciding whether stale Packs, broken links, adapter drift, or private-state problems need a repair task. Use `doctor --format json` for automation.
+- **Automation integration**: use `status --format json`, `check --format json`, `doctor --format json`, and `context --format json`. Preserve each versioned schema and exit class; do not parse the human-readable text as an API.
 - **Single-task small fix**: `status` → `start --feature` → implement → `verify -- <command>` → `finish --spec`. `finish` records evidence automatically when this is the only session. If the worktree is large or another session exists, pass `evidence --path`.
 - **Parallel tasks**: pass `--session <id>` on every lifecycle command. Capture evidence with repeated `--path` values for only this task.
 - **Continue earlier work in a fresh Agent window**: run `context --query "<keywords>" --tool <agent>`. Resume only one uniquely matched session owned by the current principal, keep the returned continuation epoch, and pass it to later lifecycle writes.
