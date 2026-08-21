@@ -11,7 +11,17 @@
     "invalid_or_unhealthy": 2
   },
   "required_fields": {
-    "status-v1": ["schema", "tool_version", "repository", "sessions", "inventory"],
-    "check-v1": ["schema", "tool_version", "command", "ok", "exit_code", "messages", "errors"]
+    "context-bundle-v1": ["schema", "tool_version", "query", "result", "error", "required_reads"],
+    "doctor-v1": ["schema", "tool_version", "ok", "error_code", "summary", "findings"],
+    "status-v1": ["schema", "tool_version", "ok", "error_code", "repository", "sessions", "inventory"],
+    "check-v1": ["schema", "tool_version", "command", "ok", "exit_code", "error_code", "messages", "errors"]
+  },
+  "error_codes": {
+    "generic": "LEDGER_ERROR",
+    "invalid_argument": "INVALID_ARGUMENT",
+    "unsupported_schema": "UNSUPPORTED_SCHEMA",
+    "context_no_match": "CONTEXT_NO_MATCH",
+    "check_failed": "CHECK_FAILED",
+    "doctor_failed": "DOCTOR_FAILED"
   }
 }

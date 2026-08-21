@@ -55,6 +55,16 @@ class RuntimeBuildTests(unittest.TestCase):
             self.assertIn("drift", result.stderr.casefold())
             self.assertEqual(before, output.read_bytes())
 
+    def test_ordered_low_coupling_fragments_are_embedded_without_markers(self):
+        generated = CANONICAL.read_text(encoding="utf-8")
+        self.assertIn('TOOL_VERSION = "0.7.0"', generated)
+        self.assertIn("class LedgerError", generated)
+        self.assertIn("class CommandResult", generated)
+        self.assertLess(generated.index("class LedgerError"), generated.index("class CommandResult"))
+        self.assertNotIn("@repo-context-ledger:", generated)
+        for name in ("constants.pyfrag", "errors.pyfrag", "models.pyfrag"):
+            self.assertTrue((ROOT / "src" / "repo_context_ledger" / name).is_file(), name)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -32,6 +32,12 @@ CHECK_SCHEMA = "check-v1"
 EXIT_SUCCESS = 0
 EXIT_NO_MATCH = 1
 EXIT_INVALID = 2
+ERROR_LEDGER = "LEDGER_ERROR"
+ERROR_INVALID_ARGUMENT = "INVALID_ARGUMENT"
+ERROR_UNSUPPORTED_SCHEMA = "UNSUPPORTED_SCHEMA"
+ERROR_CONTEXT_NO_MATCH = "CONTEXT_NO_MATCH"
+ERROR_CHECK_FAILED = "CHECK_FAILED"
+ERROR_DOCTOR_FAILED = "DOCTOR_FAILED"
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
 BLOCK_END = "<!-- repo-context-ledger:end -->"
@@ -106,10 +112,12 @@ RESUME_INTENT_TOKENS = {
     "continue", "resume", "recover", "继续", "恢复", "接着", "续接",
 }
 
-
 class LedgerError(Exception):
     """Expected user-facing configuration or workflow error."""
 
+    def __init__(self, message: str, code: str = ERROR_LEDGER) -> None:
+        super().__init__(message)
+        self.code = code
 
 class CommandResult:
     """Stable machine-readable projection of one existing CLI command result."""
@@ -121,12 +129,14 @@ class CommandResult:
         exit_code: int,
         messages: list[str],
         errors: list[str],
+        error_code: str = "",
     ) -> None:
         self.schema = schema
         self.command = command
         self.exit_code = exit_code
         self.messages = messages
         self.errors = errors
+        self.error_code = error_code
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -135,6 +145,7 @@ class CommandResult:
             "command": self.command,
             "ok": self.exit_code == EXIT_SUCCESS,
             "exit_code": self.exit_code,
+            "error_code": self.error_code,
             "messages": self.messages,
             "errors": self.errors,
         }
@@ -824,6 +835,12 @@ def normalized_session_record(session_id: str, raw: object) -> dict[str, object]
 def normalize_context_state(raw: dict) -> dict:
     if not isinstance(raw, dict):
         raise LedgerError("Context state must be a JSON object.")
+    raw_schema = raw.get("schema_version", VERSION)
+    if isinstance(raw_schema, int) and not isinstance(raw_schema, bool) and raw_schema > VERSION:
+        raise LedgerError(
+            f"Context state schema {raw_schema} is newer than supported schema {VERSION}.",
+            ERROR_UNSUPPORTED_SCHEMA,
+        )
     recent = raw.get("recent_features", [])
     if not isinstance(recent, list) or not all(isinstance(item, str) for item in recent):
         raise LedgerError("context-state recent_features must be a list of feature slugs.")
@@ -1087,6 +1104,12 @@ def normalize_coverage_globs(raw_coverage: object) -> dict[str, list[str]]:
 def validate_config(repo: Path, config: dict) -> dict:
     if not isinstance(config, dict):
         raise LedgerError("Ledger configuration must be a JSON object.")
+    raw_schema = config.get("schema_version", VERSION)
+    if isinstance(raw_schema, int) and not isinstance(raw_schema, bool) and raw_schema > VERSION:
+        raise LedgerError(
+            f"Configuration schema {raw_schema} is newer than supported schema {VERSION}.",
+            ERROR_UNSUPPORTED_SCHEMA,
+        )
     docs = config.get("docs")
     if not isinstance(docs, dict) or set(docs) != {"ai", "specs", "changes"}:
         raise LedgerError("config.docs must contain exactly ai, specs, and changes paths.")
@@ -2100,7 +2123,7 @@ def load_live_context_packs(
         seen_packs.add(rel)
         entries = [(str(raw), str(digest)) for raw, digest in metadata["tracked_entries"]]
         seen_tracked.update(normalize_git_path(raw) for raw, _ in entries)
-        if metadata["status"] != "current" or metadata["superseded_by"]:
+        if not routable_context_pack(metadata):
             continue
         packs.append({
             **metadata,
@@ -2116,6 +2139,34 @@ def load_live_context_packs(
     if owned_cache:
         cache.save()
     return packs
+
+
+def routable_context_pack(pack: dict[str, object]) -> bool:
+    """Return whether a Pack participates in the live router."""
+    return pack.get("status") == "current" and not bool(pack.get("superseded_by"))
+
+
+def rank_context_pack_candidates(
+    candidates: list[dict[str, object]],
+    query: str,
+    tokens: list[str],
+    baseline_paths: set[str] | None = None,
+    resume_feature: str = "",
+) -> list[tuple[int, dict[str, object], list[str]]]:
+    """Apply the production metadata, baseline, and owned-session ranking boundary."""
+    ranked: list[tuple[int, dict[str, object], list[str]]] = []
+    for pack in candidates:
+        score, reasons = score_context_pack(pack, query, tokens)
+        baseline_score, baseline_reasons = baseline_pack_score(pack, baseline_paths or set())
+        score += baseline_score
+        reasons = list(dict.fromkeys([*baseline_reasons, *reasons]))
+        if resume_feature and str(pack["feature"]) == resume_feature:
+            score = max(score, 100000)
+            reasons = list(dict.fromkeys(["owned-session-feature", *reasons]))
+        if score > 0:
+            ranked.append((score, pack, reasons))
+    ranked.sort(key=lambda item: (-item[0], str(item[1].get("rel", item[1]["feature"]))))
+    return ranked
 
 
 def score_context_pack(pack: dict[str, object], query: str, tokens: list[str]) -> tuple[int, list[str]]:
@@ -2788,30 +2839,41 @@ def context_search(
         pack for pack in candidates if pack.get("fingerprints_ok") is None
     ])
     router_cache.save()
-    ranked: list[tuple[int, dict[str, object], list[str]]] = []
-    for pack in candidates:
-        score, reasons = score_context_pack(pack, query, tokens)
-        baseline_score, baseline_reasons = baseline_pack_score(pack, baseline_paths)
-        score += baseline_score
-        reasons = list(dict.fromkeys([*baseline_reasons, *reasons]))
-        if resume_view is not None and str(pack["feature"]) == str(resume_view["feature"]):
-            score = max(score, 100000)
-            reasons = list(dict.fromkeys(["owned-session-feature", *reasons]))
-        if score > 0:
-            ranked.append((score, pack, reasons))
-    ranked.sort(key=lambda item: (-item[0], str(item[1]["rel"])))
+    ranked = rank_context_pack_candidates(
+        candidates,
+        query,
+        tokens,
+        baseline_paths,
+        str(resume_view["feature"]) if resume_view is not None else "",
+    )
     if ranked:
         best_score, primary, reasons = ranked[0]
     elif resume_view is not None:
         best_score, primary, reasons = 0, None, ["private checkpoint without current Pack"]
     else:
-        if resume_route["foreign_overlap"]:
-            print("A matching task exists for another principal; only Git-tracked context may be loaded.")
-        if not packs:
-            print("No Context Packs found. Inspect docs/ai/context-packs.")
+        if output_format == "json":
+            print(json.dumps({
+                "schema": CONTEXT_BUNDLE_SCHEMA,
+                "tool_version": TOOL_VERSION,
+                "query": query,
+                "result": "no-match",
+                "error": {
+                    "code": ERROR_CONTEXT_NO_MATCH,
+                    "message": "No matching Git-tracked Context Pack was found.",
+                },
+                "required_reads": [],
+                "warnings": ([
+                    "a matching private task belongs to another principal"
+                ] if resume_route["foreign_overlap"] else []),
+            }, indent=2, ensure_ascii=True))
         else:
-            print("No matching Context Pack. Create one with pack --feature or inspect docs/ai/context-packs.")
-        return 1
+            if resume_route["foreign_overlap"]:
+                print("A matching task exists for another principal; only Git-tracked context may be loaded.")
+            if not packs:
+                print("No Context Packs found. Inspect docs/ai/context-packs.")
+            else:
+                print("No matching Context Pack. Create one with pack --feature or inspect docs/ai/context-packs.")
+        return EXIT_NO_MATCH
     context_config = config.get("context", CONTEXT_DEFAULTS)
     max_files = int(context_config["max_required_files"])
     max_specs = min(int(context_config["max_linked_specs"]), max(0, max_files - 1))
@@ -2884,7 +2946,10 @@ def context_search(
         route_warnings.append("the private router cache could not be written; live routing remained authoritative")
     plan = {
         "schema": CONTEXT_BUNDLE_SCHEMA,
+        "tool_version": TOOL_VERSION,
         "query": query,
+        "result": "ok",
+        "error": None,
         "request_principal": current_principal(repo),
         "request_tool": normalize_tool_id(tool),
         "confidence": confidence,
@@ -3409,16 +3474,24 @@ def doctor_state_findings(repo: Path, config: dict, max_items: int) -> list[dict
     try:
         state = load_context_state(repo)
     except LedgerError as exc:
+        if exc.code == ERROR_UNSUPPORTED_SCHEMA:
+            raise
         return [doctor_finding(
             "PRIVATE_STATE_INVALID", "error", "private-state",
             "Private task state is invalid and cannot be safely loaded.",
-            items=[redact_local_paths(str(exc), repo)], max_items=max_items,
+            items=["Private state failed structural validation; details stay local to the owning workflow."],
+            max_items=max_items,
             actions=["Restore or remove only this worktree's invalid private state file, then run init."],
         )]
     orphaned: list[str] = []
     seen_drafts: set[str] = set()
     seen_publish: set[str] = set()
-    for session_id, record in state.get("task_sessions", {}).items():
+    visible_sessions = [
+        (session_id, record)
+        for session_id, record in state.get("task_sessions", {}).items()
+        if session_access_level(repo, config, session_id, record) in {"owner", "legacy-owner"}
+    ]
+    for session_id, record in visible_sessions:
         draft = str(record["draft"])
         publish = str(record["publish_path"])
         if draft in seen_drafts or publish in seen_publish:
@@ -3450,11 +3523,14 @@ def doctor_state_findings(repo: Path, config: dict, max_items: int) -> list[dict
 
 def doctor_repo(repo: Path, output_format: str = "text", max_items: int = 20) -> int:
     """Run bounded, deterministic, read-only repository health diagnostics."""
-    max_items = max(1, min(max_items, 100))
+    if not 1 <= max_items <= 100:
+        raise LedgerError("doctor --max-items must be between 1 and 100.", ERROR_INVALID_ARGUMENT)
     findings: list[dict[str, object]] = []
     try:
         config = load_config(repo)
     except LedgerError as exc:
+        if exc.code == ERROR_UNSUPPORTED_SCHEMA:
+            raise
         findings.append(doctor_finding(
             "CONFIG_INVALID", "error", "configuration",
             "Ledger configuration is missing or invalid.",
@@ -3540,6 +3616,8 @@ def doctor_repo(repo: Path, output_format: str = "text", max_items: int = 20) ->
     report = {
         "schema": DOCTOR_SCHEMA,
         "tool_version": TOOL_VERSION,
+        "ok": counts["error"] == 0,
+        "error_code": ERROR_DOCTOR_FAILED if counts["error"] else "",
         "repository": {
             "git": is_git_repo(repo),
             "branch": git_branch(repo) if is_git_repo(repo) else "none",
@@ -5476,6 +5554,8 @@ def check_repo(
     try:
         config = load_config(repo)
     except LedgerError as exc:
+        if exc.code == ERROR_UNSUPPORTED_SCHEMA:
+            raise
         print(str(exc), file=sys.stderr)
         return 2
     if changed_since:
@@ -5604,8 +5684,14 @@ def captured_command_json(repo: Path, schema: str, command: str, operation) -> i
     """Project an existing text command into stable JSON without changing its exit class."""
     stdout = io.StringIO()
     stderr = io.StringIO()
-    with redirect_stdout(stdout), redirect_stderr(stderr):
-        code = int(operation())
+    error_code = ""
+    try:
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = int(operation())
+    except LedgerError as exc:
+        code = EXIT_INVALID
+        error_code = exc.code
+        stderr.write(f"ERROR: {exc}\n")
     messages = [
         redact_local_paths(line, repo)
         for line in stdout.getvalue().splitlines()
@@ -5616,7 +5702,9 @@ def captured_command_json(repo: Path, schema: str, command: str, operation) -> i
         for line in stderr.getvalue().splitlines()
         if line.strip()
     ]
-    result = CommandResult(schema, command, code, messages, errors)
+    if code != EXIT_SUCCESS and not error_code:
+        error_code = ERROR_CHECK_FAILED if command == "check" else ERROR_LEDGER
+    result = CommandResult(schema, command, code, messages, errors, error_code)
     print(json.dumps(result.as_dict(), indent=2, ensure_ascii=False))
     return code
 
@@ -5656,6 +5744,8 @@ def status_report(repo: Path) -> dict[str, object]:
     return {
         "schema": STATUS_SCHEMA,
         "tool_version": TOOL_VERSION,
+        "ok": True,
+        "error_code": "",
         "repository": {
             "git": is_git_repo(repo),
             "branch": git_branch(repo),
@@ -5696,8 +5786,23 @@ def status_report(repo: Path) -> dict[str, object]:
 
 def show_status(repo: Path, output_format: str = "text") -> int:
     if output_format == "json":
-        print(json.dumps(status_report(repo), indent=2, ensure_ascii=False))
-        return EXIT_SUCCESS
+        try:
+            report = status_report(repo)
+            code = EXIT_SUCCESS
+        except LedgerError as exc:
+            code = EXIT_INVALID
+            report = {
+                "schema": STATUS_SCHEMA,
+                "tool_version": TOOL_VERSION,
+                "ok": False,
+                "error_code": exc.code,
+                "error": redact_local_paths(str(exc), repo),
+                "repository": {"git": is_git_repo(repo)},
+                "sessions": {},
+                "inventory": {},
+            }
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return code
     config = load_config(repo)
     state = load_context_state(repo)
     packs_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai") / "context-packs"
@@ -5752,8 +5857,25 @@ def show_status(repo: Path, output_format: str = "text") -> int:
     return EXIT_SUCCESS
 
 
+def doctor_max_items(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer from 1 to 100") from exc
+    if not 1 <= value <= 100:
+        raise argparse.ArgumentTypeError("must be from 1 to 100")
+    return value
+
+
+class LedgerArgumentParser(argparse.ArgumentParser):
+    """Turn expected CLI validation failures into the shared error boundary."""
+
+    def error(self, message: str) -> None:
+        raise LedgerError(message, ERROR_INVALID_ARGUMENT)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Maintain AI-friendly repository context documentation.")
+    parser = LedgerArgumentParser(description="Maintain AI-friendly repository context documentation.")
     parser.add_argument("--version", action="version", version=f"repo-context-ledger {TOOL_VERSION}")
     parser.add_argument("--repo", default=".", help="Repository root (default: current directory)")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -5855,7 +5977,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--format", choices=("text", "json"), default="text")
     doctor.add_argument(
         "--max-items",
-        type=int,
+        type=doctor_max_items,
         default=20,
         help="Maximum detail items shown per finding (1-100)",
     )
@@ -5866,10 +5988,111 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def requested_json_command(argv: list[str]) -> str:
+    explicit_json = "--format=json" in argv
+    if not explicit_json:
+        try:
+            explicit_json = argv[argv.index("--format") + 1] == "json"
+        except (ValueError, IndexError):
+            explicit_json = False
+    if not explicit_json:
+        return ""
+    index = 0
+    while index < len(argv):
+        raw = argv[index]
+        if raw == "--repo":
+            index += 2
+            continue
+        if raw.startswith("--repo=") or raw in {"--version", "-h", "--help"}:
+            index += 1
+            continue
+        if raw.startswith("-"):
+            index += 1
+            continue
+        return raw if raw in {"context", "doctor", "status", "check"} else ""
+    return ""
+
+
+def argument_value(argv: list[str], name: str) -> str:
+    prefix = f"{name}="
+    for raw in argv:
+        if raw.startswith(prefix):
+            return raw[len(prefix):]
     try:
-        args = build_parser().parse_args(argv)
-        repo = resolve_repo(args.repo, explicit=argv_has_explicit_repo(argv))
+        return argv[argv.index(name) + 1]
+    except (ValueError, IndexError):
+        return ""
+
+
+def emit_requested_json_error(argv: list[str], repo: Path, exc: LedgerError) -> bool:
+    command = requested_json_command(argv)
+    if not command:
+        return False
+    message = redact_local_paths(str(exc), repo)
+    if command == "context":
+        report = {
+            "schema": CONTEXT_BUNDLE_SCHEMA,
+            "tool_version": TOOL_VERSION,
+            "query": argument_value(argv, "--query"),
+            "result": "error",
+            "error": {"code": exc.code, "message": message},
+            "required_reads": [],
+            "warnings": [],
+        }
+    elif command == "doctor":
+        finding = doctor_finding(
+            exc.code,
+            "error",
+            "command",
+            "Doctor could not complete the requested read-only diagnostic.",
+            items=[message],
+            max_items=1,
+        )
+        report = {
+            "schema": DOCTOR_SCHEMA,
+            "tool_version": TOOL_VERSION,
+            "ok": False,
+            "error_code": exc.code,
+            "repository": {"git": is_git_repo(repo), "initialized": False},
+            "summary": {
+                "overall": "error",
+                "counts": {"pass": 0, "warning": 0, "repairable": 0, "error": 1},
+                "finding_count": 1,
+            },
+            "findings": [finding],
+        }
+    elif command == "status":
+        report = {
+            "schema": STATUS_SCHEMA,
+            "tool_version": TOOL_VERSION,
+            "ok": False,
+            "error_code": exc.code,
+            "error": message,
+            "repository": {"git": is_git_repo(repo)},
+            "sessions": {},
+            "inventory": {},
+        }
+    else:
+        report = CommandResult(
+            CHECK_SCHEMA,
+            "check",
+            EXIT_INVALID,
+            [],
+            [f"ERROR: {message}"],
+            exc.code,
+        ).as_dict()
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    return True
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    repo = Path.cwd().resolve()
+    try:
+        args = build_parser().parse_args(raw_argv)
+        if args.repo:
+            repo = Path(args.repo).resolve()
+        repo = resolve_repo(args.repo, explicit=argv_has_explicit_repo(raw_argv))
         mutating = args.command in {
             "start", "pack", "focus", "checkpoint", "pause", "resume", "share", "finish",
             "evidence", "sync",
@@ -5956,8 +6179,10 @@ def main(argv: list[str] | None = None) -> int:
             return show_status(repo, args.format)
         return 2
     except LedgerError as exc:
+        if emit_requested_json_error(raw_argv, repo, exc):
+            return EXIT_INVALID
         print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
+        return EXIT_INVALID
 
 
 if __name__ == "__main__":

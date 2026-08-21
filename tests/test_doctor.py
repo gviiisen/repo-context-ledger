@@ -9,13 +9,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "skills" / "repo-context-ledger" / "scripts" / "ledger.py"
-GOLDEN = ROOT / "tests" / "golden" / "v0.6.0-contract.json"
 SPEC = importlib.util.spec_from_file_location("repo_context_ledger_contract_runtime", LEDGER)
 RUNTIME = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNTIME)
 
 
-class ContractAndDoctorTests(unittest.TestCase):
+class DoctorTests(unittest.TestCase):
     def run_git(self, repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
             ["git", "-C", str(repo), *args],
@@ -101,18 +100,6 @@ class ContractAndDoctorTests(unittest.TestCase):
         )
         return pack
 
-    def test_v060_golden_contract_remains_compatible(self):
-        golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
-        parser = RUNTIME.build_parser()
-        choices = next(
-            action.choices
-            for action in parser._actions
-            if getattr(action, "dest", "") == "command"
-        )
-        self.assertTrue(set(golden["commands"]).issubset(choices))
-        self.assertEqual(golden["config_schema"], RUNTIME.VERSION)
-        self.assertEqual(golden["context_schema"], RUNTIME.CONTEXT_BUNDLE_SCHEMA)
-
     def test_doctor_reports_a_versioned_read_only_json_contract(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw) / "repo"
@@ -183,6 +170,60 @@ class ContractAndDoctorTests(unittest.TestCase):
             finding = next(item for item in report["findings"] if item["code"] == "PRIVATE_STATE_INVALID")
             self.assertEqual("error", finding["severity"])
             self.assertNotIn(str(state_path.parent), result.stdout)
+
+    def test_doctor_never_exposes_foreign_private_session_fields(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_repo(repo)
+            session_id = "foreign-private-secret-session"
+            draft = RUNTIME.task_session_draft_path(repo, session_id)
+            draft.parent.mkdir(parents=True, exist_ok=True)
+            draft.write_text("# Foreign customer secret\n", encoding="utf-8")
+            state = RUNTIME.load_context_state(repo)
+            state["task_sessions"][session_id] = {
+                "draft": RUNTIME.session_draft_ref(repo, draft),
+                "publish_path": "docs/changes/2026/08/foreign-secret.md",
+                "feature": "foreign-secret-feature",
+                "status": "active",
+                "updated_at": "2026-08-21T00:00:00+08:00",
+                "owner_principal": "p-1111111111111111",
+                "resume_epoch": 1,
+                "epoch_required": False,
+                "continuation_tool": "cursor",
+                "grants": [],
+            }
+            RUNTIME.save_context_state(repo, state)
+            result = self.run_ledger(repo, "doctor", "--format", "json")
+            self.assertNotIn(session_id, result.stdout)
+            self.assertNotIn("foreign-secret", result.stdout)
+            self.assertNotIn("Foreign customer", result.stdout)
+
+            state_path = RUNTIME.context_state_path(repo)
+            malformed_id = "foreign-malformed-secret"
+            state["task_sessions"] = {
+                malformed_id: {
+                    "owner_principal": "p-1111111111111111",
+                    "status": "active",
+                }
+            }
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            malformed = self.run_ledger(repo, "doctor", "--format", "json", expected=2)
+            self.assertNotIn(malformed_id, malformed.stdout)
+            self.assertNotIn("owner_principal", malformed.stdout)
+
+    def test_doctor_rejects_out_of_range_detail_bounds(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_repo(repo)
+            result = self.run_ledger(repo, "doctor", "--max-items", "0", expected=2)
+            self.assertIn("must be from 1 to 100", result.stderr)
+            structured = self.run_ledger(
+                repo, "doctor", "--format", "json", "--max-items", "0", expected=2
+            )
+            report = json.loads(structured.stdout)
+            self.assertEqual("doctor-v1", report["schema"])
+            self.assertEqual("INVALID_ARGUMENT", report["error_code"])
+            self.assertEqual("", structured.stderr)
 
     def test_doctor_validates_explicit_pack_lineage_without_auto_superseding_overlap(self):
         with tempfile.TemporaryDirectory() as raw:

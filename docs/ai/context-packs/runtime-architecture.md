@@ -5,14 +5,14 @@ Feature: runtime-architecture
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 6bdf90c56b59fde8890632b113bd61ccb9239c73
+Source commit: f71e59fd47dfa3a39d192d3bee2c7990d365320b
 Base branch: main
 Base commit: b5086a53c21962593ada4a0b96903faf10a7e54c
-Last refreshed: 2026-08-21T23:41:26+08:00
+Last refreshed: 2026-08-22T00:28:00+08:00
 
 ## Purpose
 
-Routes runtime changes to one editable template, the contracts fragment, deterministic builder, and focused architecture tests. Generated Skill/dogfood runtimes remain byte-identical standalone files so initialized repositories gain the maintainability improvement without a package dependency.
+Routes runtime changes to one editable template, ordered low-coupling fragments, the deterministic builder, and focused architecture tests. Generated Skill/dogfood runtimes remain byte-identical standalone files so initialized repositories gain the maintainability improvement without a package dependency.
 
 ## Load order
 
@@ -24,8 +24,11 @@ Routes runtime changes to one editable template, the contracts fragment, determi
 
 | Path / symbol | Role |
 | --- | --- |
-| `src/repo_context_ledger/runtime.py.tmpl` | Canonical executable body and one ordered build marker. |
-| `src/repo_context_ledger/contracts.pyfrag` | Canonical version/schema/exit constants, `LedgerError`, and typed `CommandResult`. |
+| `src/repo_context_ledger/runtime.py.tmpl` | Canonical executable body and ordered build markers. |
+| `src/repo_context_ledger/constants.pyfrag` | Canonical version/schema/exit and runtime constants. |
+| `src/repo_context_ledger/errors.pyfrag` | Canonical `LedgerError` and stable machine error codes. |
+| `src/repo_context_ledger/models.pyfrag` | Canonical typed result models such as `CommandResult`. |
+| `src/repo_context_ledger/contracts.pyfrag` | Non-built compatibility pointer to the ordered fragments. |
 | `scripts/build_runtime.py::render_runtime` | Produces normalized deterministic standalone bytes. |
 | `tests/test_runtime_build.py` | Verifies drift detection, atomic build outputs, byte identity, compilation, and standalone execution. |
 
@@ -49,11 +52,14 @@ Routes runtime changes to one editable template, the contracts fragment, determi
 ## Tracked file fingerprints
 
 - `src/repo_context_ledger/__init__.py` — `sha256:afeadce023c709f93c003327e9b023da4b14aaf59e275418e47de6978ce42615`
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:39eeac3c3784b2facf2feb142ef2f14e8cb7ec674a51db8dd64fd9d86681f7ce`
-- `src/repo_context_ledger/contracts.pyfrag` — `sha256:83cacf48c9ef9e8f8edfe072ecc85961e8a6d1acf210b6808c7caa80fe21dce1`
-- `scripts/build_runtime.py` — `sha256:17845507aeae186087f4c42df07c84252362c2b8420073316a011108d83d7c4e`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:15141c54d126e9d9d74b41163430e4c3d8bada1169b32e96a56e6fe8451ea9a9`
-- `tests/test_runtime_build.py` — `sha256:753d14de763f5ac82441e2b28701e4e3a36829e38137369201e750e93b18402c`
-- `ARCHITECTURE.md` — `sha256:48e5be9d3540eb82b6b6649f2855694f61bc205ab7db0310d7799092e4425d1e`
-- `.github/workflows/test.yml` — `sha256:417cceafdabf577bb67d831cb5f58ec739aed3e75413a4357d65d4c2ef9884fd`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:749a0e9e21aaeb2aa30458d4e6362093f378cd686fbe15eb388fab38e2bf4095`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:9f8f74c038568a3960d15e9591fcd3c57d4a9dd6b8f3a7e03e7ce7afb5c7ca70`
+- `src/repo_context_ledger/errors.pyfrag` — `sha256:7cd76293bd376f12cf7e13ba747159820667919afcc720098e7958ee05bb9717`
+- `src/repo_context_ledger/models.pyfrag` — `sha256:b059542121c00e2177408be18fc1252d4d3f32a5ae4438b2634eb3da49f874d4`
+- `src/repo_context_ledger/contracts.pyfrag` — `sha256:7c16c987fa157b6333528f6f6d42bb5aa72718ba28dc7186c3832fb5c59ca860`
+- `scripts/build_runtime.py` — `sha256:23b564a2d6517b80f2266f0f6304bbf122839c691486873302de858c9f68446c`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:10ad9799b414ba117d7d6c16598f31401bdce626ecf959d9c4ef3f6ae69dd561`
+- `tests/test_runtime_build.py` — `sha256:bcfcc1a0f6db972b5da68a579a3a4478bdd86cf0511e6ed18386be086803fb90`
+- `ARCHITECTURE.md` — `sha256:eea140b99405958b26834b6da7e224824c606ed0d3201f0cc8c3a8dd8a6b9efe`
+- `.github/workflows/test.yml` — `sha256:8d268c040a7c68c86a738aee36d01e5a34d102723bbf722e3665ee982d195ade`
 <!-- repo-context-ledger:pack-files:end -->

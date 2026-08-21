@@ -1,0 +1,6 @@
+class LedgerError(Exception):
+    """Expected user-facing configuration or workflow error."""
+
+    def __init__(self, message: str, code: str = ERROR_LEDGER) -> None:
+        super().__init__(message)
+        self.code = code

@@ -16,7 +16,7 @@ Last reviewed: 2026-08-21
 | --- | --- |
 | `skills/repo-context-ledger/scripts/ledger.py::doctor_repo` | Builds and renders the `doctor-v1` report and determines the exit class. |
 | `skills/repo-context-ledger/scripts/ledger.py::doctor_pack_findings` | Groups Pack freshness, missing files, duplicate features, overlap, and explicit lineage findings. |
-| `tests/test_contract_and_doctor.py` | Locks the public report schema, bounded output, read-only behavior, and lifecycle rules. |
+| `tests/test_doctor.py` | Locks the public report schema, bounded output, read-only behavior, privacy boundary, and lifecycle rules. |
 
 ## Data flow and contracts
 
@@ -28,7 +28,7 @@ Last reviewed: 2026-08-21
 ## Boundaries and failure modes
 
 - Invariants: Doctor never rewrites files, refreshes a fingerprint, changes Pack status, infers semantic replacement, cleans a private session, or regenerates derived indexes. Every public path stays repository-relative and detail counts remain accurate when items are omitted.
-- Permissions / concurrency: Doctor reveals no foreign private Capsule content and uses no repository write lock because it never writes. A concurrent writer may make observations momentarily stale, so repair commands must revalidate their own preconditions rather than treating a Doctor report as a lock or lease.
+- Permissions / concurrency: Doctor does not inspect or report foreign private session fields and uses no repository write lock because it never writes. A concurrent writer may make observations momentarily stale, so repair commands must revalidate their own preconditions rather than treating a Doctor report as a lock or lease.
 - Failure / recovery: invalid configuration and invalid private state become redacted structured errors instead of uncaught command failures. Missing tracked files, stale fingerprints, adapter/Manifest drift, broken links, and orphan reservations remain visible as repair plans; recovery occurs only through a separately reviewed command or code change.
 - Non-goals: Doctor does not judge business semantics, become a release gate by itself, contact another task, clean historical debt, auto-supersede Packs, or replace focused `check`, `team-check`, and executed tests.
 
@@ -36,7 +36,7 @@ A `superseded` Pack must identify its replacement. A `current` Pack must not cla
 
 ## Verification
 
-Run `python -m unittest discover -s tests -p test_contract_and_doctor.py` for the focused contract and health suite. Run `python -m unittest discover -s tests -v` plus the Skill validator before release.
+Run `python -m unittest discover -s tests -p test_doctor.py` for the focused health and privacy suite. Run `python -m unittest discover -s tests -v` plus the Skill validator before release.
 
 <!-- repo-context-ledger:changes:start -->
 ## Related changes

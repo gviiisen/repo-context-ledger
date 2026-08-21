@@ -5,7 +5,7 @@ Repo Context Ledger ships a zero-dependency Python runtime and a vendor-neutral 
 ## Supported environments
 
 - Python 3.10 through 3.12.
-- Windows and Ubuntu are exercised in the required CI matrix.
+- Windows and Ubuntu are exercised in the required push/PR CI matrix. macOS is exercised for release tags, scheduled runs, and manually dispatched validation.
 - Git repositories are the supported collaboration environment. Non-Git directories keep a local fallback state but cannot provide branch/worktree isolation or PR checks.
 - Codex, Claude Code, Cursor, GitHub Copilot, Grok, and other tools may use the same Git-tracked Pack/spec/Change knowledge. Vendor-private Memory is outside the compatibility contract.
 
@@ -23,6 +23,8 @@ The stable JSON contracts are:
 | `check --format json` | `check-v1` | Existing check result projected into separated messages and errors. |
 
 Exit classes are `0` for success, `1` for a valid query with no context match, and `2` for invalid input, an unhealthy required contract, or a failed gate. A future incompatible field removal, meaning change, or exit-class change requires a new JSON schema name and a major project version.
+
+Expected JSON failures remain inside the requested schema and use stable machine codes: `LEDGER_ERROR`, `INVALID_ARGUMENT`, `UNSUPPORTED_SCHEMA`, `CONTEXT_NO_MATCH`, `CHECK_FAILED`, and `DOCTOR_FAILED`. Human messages may improve without changing the code. Unknown future repository/private-state schemas fail closed with `UNSUPPORTED_SCHEMA` rather than being normalized or rewritten.
 
 ## Repository and private-state compatibility
 

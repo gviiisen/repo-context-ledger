@@ -12,8 +12,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "src" / "repo_context_ledger" / "runtime.py.tmpl"
-CONTRACTS = ROOT / "src" / "repo_context_ledger" / "contracts.pyfrag"
-MARKER = "# @repo-context-ledger:contracts@"
+FRAGMENTS = (
+    ("# @repo-context-ledger:constants@", ROOT / "src" / "repo_context_ledger" / "constants.pyfrag"),
+    ("# @repo-context-ledger:errors@", ROOT / "src" / "repo_context_ledger" / "errors.pyfrag"),
+    ("# @repo-context-ledger:models@", ROOT / "src" / "repo_context_ledger" / "models.pyfrag"),
+)
 DEFAULT_OUTPUTS = (
     ROOT / "skills" / "repo-context-ledger" / "scripts" / "ledger.py",
     ROOT / ".context-ledger" / "ledger.py",
@@ -26,10 +29,11 @@ def normalized_text(path: Path) -> str:
 
 def render_runtime() -> bytes:
     template = normalized_text(TEMPLATE)
-    if template.count(MARKER) != 1:
-        raise ValueError(f"runtime template must contain exactly one {MARKER!r} marker")
-    contracts = normalized_text(CONTRACTS).rstrip()
-    return template.replace(MARKER, contracts).rstrip().encode("utf-8") + b"\n"
+    for marker, fragment_path in FRAGMENTS:
+        if template.count(marker) != 1:
+            raise ValueError(f"runtime template must contain exactly one {marker!r} marker")
+        template = template.replace(marker, normalized_text(fragment_path).rstrip())
+    return template.rstrip().encode("utf-8") + b"\n"
 
 
 def write_atomic(path: Path, content: bytes) -> None:

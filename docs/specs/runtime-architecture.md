@@ -14,16 +14,19 @@ Runtime Architecture provides one editable source and a deterministic path to th
 
 | Path / symbol | Ownership and role |
 | --- | --- |
-| `scripts/build_runtime.py::render_runtime` | Normalizes and combines the runtime template with exactly one contracts fragment. |
+| `scripts/build_runtime.py::render_runtime` | Normalizes and combines the runtime template with ordered low-coupling fragments. |
 | `scripts/build_runtime.py::write_atomic` | Replaces generated outputs atomically without embedding timestamps or machine paths. |
 | `src/repo_context_ledger/runtime.py.tmpl` | Owns the executable runtime body and build marker. |
-| `src/repo_context_ledger/contracts.pyfrag` | Owns stable constants, errors, and `CommandResult`. |
+| `src/repo_context_ledger/constants.pyfrag` | Owns stable versions, schemas, exit classes, and constants. |
+| `src/repo_context_ledger/errors.pyfrag` | Owns `LedgerError` and stable machine error codes. |
+| `src/repo_context_ledger/models.pyfrag` | Owns typed result contracts such as `CommandResult`. |
+| `src/repo_context_ledger/contracts.pyfrag` | Keeps a non-built migration pointer for older contributor instructions. |
 | `tests/test_runtime_build.py` | Protects drift detection, byte determinism, compilation, and standalone version execution. |
 
 ## Data flow and contracts
 
 - Input: UTF-8 template and ordered fragment text plus either the two default repository outputs or explicit test outputs.
-- Flow: the builder normalizes CRLF/CR to LF, requires exactly one contracts marker, injects the fragment, terminates with one newline, compares or atomically writes each complete byte sequence, and reports repository-relative default paths.
+- Flow: the builder normalizes CRLF/CR to LF, requires one marker for each ordered fragment, injects constants then errors then models, terminates with one newline, compares or atomically writes each complete byte sequence, and reports repository-relative default paths.
 - Persistence / dependencies: the builder uses only Python 3.10+ standard library. Temporary files stay beside their target and are replaced atomically. Generated artifacts import no source package and keep all runtime dependencies embedded.
 - Output: `.context-ledger/ledger.py` and `skills/repo-context-ledger/scripts/ledger.py` are byte-identical standalone Python reporting version 0.7.0. `--check` returns 0 when current and 2 on drift or build-source failure without writing.
 

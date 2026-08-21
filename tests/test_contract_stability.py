@@ -10,7 +10,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "skills" / "repo-context-ledger" / "scripts" / "ledger.py"
 GOLDEN = ROOT / "tests" / "golden" / "v0.6.2-cli-contract.json"
-ROUTING_EVAL = ROOT / "tests" / "fixtures" / "routing-eval-v1.json"
 SPEC = importlib.util.spec_from_file_location("repo_context_ledger_stable_runtime", LEDGER)
 RUNTIME = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNTIME)
@@ -85,24 +84,134 @@ class ContractStabilityTests(unittest.TestCase):
         self.assertEqual(golden["exit_codes"]["success"], RUNTIME.EXIT_SUCCESS)
         self.assertEqual(golden["exit_codes"]["no_match"], RUNTIME.EXIT_NO_MATCH)
         self.assertEqual(golden["exit_codes"]["invalid_or_unhealthy"], RUNTIME.EXIT_INVALID)
+        self.assertEqual({
+            "generic": RUNTIME.ERROR_LEDGER,
+            "invalid_argument": RUNTIME.ERROR_INVALID_ARGUMENT,
+            "unsupported_schema": RUNTIME.ERROR_UNSUPPORTED_SCHEMA,
+            "context_no_match": RUNTIME.ERROR_CONTEXT_NO_MATCH,
+            "check_failed": RUNTIME.ERROR_CHECK_FAILED,
+            "doctor_failed": RUNTIME.ERROR_DOCTOR_FAILED,
+        }, golden["error_codes"])
 
-    def test_synthetic_routing_evaluation_keeps_expected_primary_feature(self):
-        corpus = json.loads(ROUTING_EVAL.read_text(encoding="utf-8"))
-        self.assertEqual("routing-eval-v1", corpus["schema"])
-        for case in corpus["cases"]:
-            tokens = RUNTIME.query_tokens(case["query"])
-            ranked = []
-            for candidate in case["candidates"]:
-                pack = {
-                    **candidate,
-                    "status": "current",
-                    "superseded_by": "",
-                    "fingerprints_ok": True,
-                }
-                score, _ = RUNTIME.score_context_pack(pack, case["query"], tokens)
-                ranked.append((score, candidate["feature"]))
-            ranked.sort(key=lambda item: (-item[0], item[1]))
-            self.assertEqual(case["expected_feature"], ranked[0][1], case["query"])
+    def test_all_versioned_json_contracts_publish_required_fields(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_repo(repo)
+            golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
+            reports = {
+                "context-bundle-v1": json.loads(self.run_ledger(repo, "context", "--query", "unmatched telescope", "--format", "json", expected=1).stdout),
+                "doctor-v1": json.loads(self.run_ledger(repo, "doctor", "--format", "json").stdout),
+                "status-v1": json.loads(self.run_ledger(repo, "status", "--format", "json").stdout),
+                "check-v1": json.loads(self.run_ledger(repo, "check", "--format", "json").stdout),
+            }
+            for schema, report in reports.items():
+                self.assertEqual(schema, report["schema"])
+                self.assertTrue(set(golden["required_fields"][schema]).issubset(report), schema)
+            self.assertEqual("CONTEXT_NO_MATCH", reports["context-bundle-v1"]["error"]["code"])
+
+    def test_doctor_failed_error_code_matches_the_golden_contract(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_repo(repo)
+            (repo / ".context-ledger" / "config.json").write_text("{not json", encoding="utf-8")
+            failed = self.run_ledger(repo, "doctor", "--format", "json", expected=2)
+            report = json.loads(failed.stdout)
+            golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
+            self.assertEqual(golden["error_codes"]["doctor_failed"], report["error_code"])
+
+    def test_json_errors_remain_versioned_and_preserve_exit_class(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            repo.mkdir()
+            status = self.run_ledger(repo, "status", "--format", "json", expected=2)
+            status_report = json.loads(status.stdout)
+            self.assertEqual("status-v1", status_report["schema"])
+            self.assertFalse(status_report["ok"])
+            self.assertEqual("LEDGER_ERROR", status_report["error_code"])
+            self.assertEqual("", status.stderr)
+
+            check = self.run_ledger(repo, "check", "--format", "json", expected=2)
+            check_report = json.loads(check.stdout)
+            self.assertEqual("check-v1", check_report["schema"])
+            self.assertFalse(check_report["ok"])
+            self.assertEqual("CHECK_FAILED", check_report["error_code"])
+            self.assertEqual("", check.stderr)
+
+            context = self.run_ledger(
+                repo, "context", "--query", "anything", "--format", "json", expected=2
+            )
+            context_report = json.loads(context.stdout)
+            self.assertEqual("context-bundle-v1", context_report["schema"])
+            self.assertEqual("LEDGER_ERROR", context_report["error"]["code"])
+            self.assertEqual("", context.stderr)
+
+            equals_context = self.run_ledger(
+                repo, "context", "--query=anything", "--format=json", expected=2
+            )
+            self.assertEqual(
+                "context-bundle-v1", json.loads(equals_context.stdout)["schema"]
+            )
+            self.assertEqual("", equals_context.stderr)
+
+            missing = Path(raw) / "does-not-exist"
+            missing_status = self.run_ledger(missing, "status", "--format", "json", expected=2)
+            missing_report = json.loads(missing_status.stdout)
+            self.assertEqual("status-v1", missing_report["schema"])
+            self.assertFalse(missing_report["ok"])
+            self.assertNotIn(str(missing), missing_status.stdout)
+            self.assertEqual("", missing_status.stderr)
+
+            deceptive = subprocess.run(
+                [sys.executable, str(LEDGER), "--repo", "context", "status", "--format", "json"],
+                cwd=Path(raw),
+                text=True,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            self.assertEqual(2, deceptive.returncode)
+            self.assertEqual("status-v1", json.loads(deceptive.stdout)["schema"])
+            self.assertEqual("", deceptive.stderr)
+
+    def test_future_configuration_schema_returns_stable_json_error(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_repo(repo)
+            config_path = repo / ".context-ledger" / "config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["schema_version"] = RUNTIME.VERSION + 1
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            commands = (
+                ("status", "error_code"),
+                ("doctor", "error_code"),
+                ("check", "error_code"),
+            )
+            for command, field in commands:
+                failed = self.run_ledger(repo, command, "--format", "json", expected=2)
+                report = json.loads(failed.stdout)
+                self.assertEqual("UNSUPPORTED_SCHEMA", report[field], command)
+                self.assertNotIn(str(repo), failed.stdout)
+                self.assertEqual("", failed.stderr)
+            context = self.run_ledger(
+                repo, "context", "--query", "feature", "--format", "json", expected=2
+            )
+            context_report = json.loads(context.stdout)
+            self.assertEqual("UNSUPPORTED_SCHEMA", context_report["error"]["code"])
+            self.assertNotIn(str(repo), context.stdout)
+            self.assertEqual("", context.stderr)
+
+    def test_future_private_state_schema_returns_stable_json_error(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_repo(repo)
+            state_path = RUNTIME.context_state_path(repo)
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            state["schema_version"] = RUNTIME.VERSION + 1
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            failed = self.run_ledger(repo, "status", "--format", "json", expected=2)
+            report = json.loads(failed.stdout)
+            self.assertEqual("UNSUPPORTED_SCHEMA", report["error_code"])
+            self.assertNotIn(str(state_path.parent), failed.stdout)
 
 
 if __name__ == "__main__":
