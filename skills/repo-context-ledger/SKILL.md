@@ -26,6 +26,7 @@ Use `python3` instead of `python` when that is the available interpreter.
 Do not run the full lifecycle for every request.
 
 - **Read-only understanding**: `context --query "<task>"`, then `focus --feature "<feature>"`. Do not `start` a session.
+- **Repository health audit**: run `doctor` for bounded, read-only diagnostics before deciding whether stale Packs, broken links, adapter drift, or private-state problems need a repair task. Use `doctor --format json` for automation.
 - **Single-task small fix**: `status` → `start --feature` → implement → `verify -- <command>` → `finish --spec`. `finish` records evidence automatically when this is the only session. If the worktree is large or another session exists, pass `evidence --path`.
 - **Parallel tasks**: pass `--session <id>` on every lifecycle command. Capture evidence with repeated `--path` values for only this task.
 - **Continue earlier work in a fresh Agent window**: run `context --query "<keywords>" --tool <agent>`. Resume only one uniquely matched session owned by the current principal, keep the returned continuation epoch, and pass it to later lifecycle writes.
@@ -144,6 +145,7 @@ For read-only analysis, questions, formatting-only edits, or tasks that do not c
 
 ## Recovery
 
+- Run `python .context-ledger/ledger.py doctor` first when the failure scope is unclear. Doctor groups stale paths by Pack, caps detail output, and suggests actions without changing files, private sessions, Pack status, or lineage.
 - Run `python .context-ledger/ledger.py status` to inspect the current state.
 - Reuse an active or paused draft only when its session belongs to the current principal and uniquely matches the task. After `resume`, use its continuation epoch for every write.
 - Start a separate private draft rather than pausing or overwriting another task.

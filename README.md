@@ -268,6 +268,14 @@ Validate the Skill with the OpenAI Skill Creator validator:
 python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 ```
 
+## What's new in v0.6.1
+
+- `doctor` provides one bounded, read-only repository health report in human-readable text or the versioned `doctor-v1` JSON contract.
+- Health checks aggregate runtime/configuration, native adapters, the Context Manifest, private task state, Context Pack freshness and lifecycle, local documentation links, and feature-branch derived-file safety.
+- Stale and missing tracked paths are grouped by Pack and capped with `--max-items`, so mature repositories no longer receive hundreds of repetitive lines for one repair decision.
+- Duplicate current feature IDs and broken explicit lineage are errors. Shared tracked files are warnings only; the runtime never auto-supersedes a Pack from file overlap.
+- Findings distinguish `pass`, `warning`, `repairable`, and `error`, include deterministic suggested actions, and never mutate files, sessions, fingerprints, Pack status, or lineage.
+
 ## What's new in v0.6.0
 
 - `context --query` now emits `context-bundle-v1`. It still returns one primary Pack and bounded Required reads, but also carries an optional PR baseline, route warnings, cache/index metrics, and a Pack-scoped Resume Capsule without loading source or Change bodies.

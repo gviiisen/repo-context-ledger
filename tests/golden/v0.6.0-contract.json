@@ -1,0 +1,29 @@
+{
+  "config_schema": 8,
+  "context_schema": "context-bundle-v1",
+  "commands": [
+    "adapters",
+    "check",
+    "checkpoint",
+    "context",
+    "evidence",
+    "finish",
+    "focus",
+    "init",
+    "manifest",
+    "pack",
+    "pause",
+    "resume",
+    "share",
+    "start",
+    "status",
+    "sync",
+    "team-check",
+    "verify"
+  ],
+  "exit_codes": {
+    "success": 0,
+    "no_context_match": 1,
+    "invalid_or_unhealthy": 2
+  }
+}

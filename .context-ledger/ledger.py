@@ -21,10 +21,11 @@ from pathlib import Path
 
 
 VERSION = 8
-TOOL_VERSION = "0.6.0"
+TOOL_VERSION = "0.6.1"
 MANIFEST_VERSION = 1
 ROUTER_CACHE_SCHEMA = 1
 CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
+DOCTOR_SCHEMA = "doctor-v1"
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
 BLOCK_END = "<!-- repo-context-ledger:end -->"
@@ -3180,6 +3181,358 @@ def context_pack_errors(
     return errors
 
 
+def doctor_finding(
+    code: str,
+    severity: str,
+    scope: str,
+    summary: str,
+    *,
+    items: list[str] | None = None,
+    max_items: int = 20,
+    actions: list[str] | None = None,
+) -> dict[str, object]:
+    """Build one bounded, stable Doctor finding without exposing absolute paths."""
+    bounded = list(dict.fromkeys(items or []))
+    shown = bounded[:max_items]
+    return {
+        "code": code,
+        "severity": severity,
+        "scope": scope,
+        "summary": summary,
+        "details": {
+            "items": shown,
+            "total": len(bounded),
+            "omitted": max(0, len(bounded) - len(shown)),
+        },
+        "suggested_actions": actions or [],
+    }
+
+
+def doctor_pack_findings(
+    repo: Path,
+    config: dict,
+    max_items: int,
+) -> list[dict[str, object]]:
+    packs_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai") / "context-packs"
+    if not packs_root.is_dir():
+        return [doctor_finding(
+            "PACK_HEALTH", "pass", "packs", "No Context Packs require health action."
+        )]
+
+    records: list[dict[str, object]] = []
+    findings: list[dict[str, object]] = []
+    malformed: list[str] = []
+    missing_by_pack: dict[str, list[str]] = {}
+    stale_by_pack: dict[str, list[str]] = {}
+    lineage_errors: list[str] = []
+    allowed_statuses = {"current", "superseded", "archived"}
+
+    for path in sorted(packs_root.glob("*.md")):
+        if path.name.casefold() == "readme.md":
+            continue
+        pack_rel = rel_posix(path, repo)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            malformed.append(pack_rel)
+            continue
+        feature = feature_slug(field_value(text, "Feature") or path.stem)
+        status = field_value(text, "Status").casefold() or "unknown"
+        superseded_by = field_value(text, "Superseded by")
+        entries = pack_file_entries(text)
+        if status not in allowed_statuses:
+            lineage_errors.append(f"{pack_rel}: unsupported status {status}")
+        if status == "current" and superseded_by:
+            lineage_errors.append(f"{pack_rel}: current Pack declares Superseded by")
+        if status == "superseded" and not superseded_by:
+            lineage_errors.append(f"{pack_rel}: superseded Pack has no Superseded by target")
+        tracked: list[str] = []
+        for raw, expected in entries:
+            normalized = normalize_git_path(raw)
+            tracked.append(normalized)
+            try:
+                target = normalize_tracked_file(repo, normalized)
+            except LedgerError:
+                missing_by_pack.setdefault(pack_rel, []).append(normalized)
+                continue
+            if file_digest(target, repo) != expected:
+                stale_by_pack.setdefault(pack_rel, []).append(normalized)
+        records.append({
+            "path": pack_rel,
+            "feature": feature,
+            "status": status,
+            "superseded_by": superseded_by,
+            "tracked": tracked,
+        })
+
+    if malformed:
+        findings.append(doctor_finding(
+            "PACK_INVALID", "error", "packs", "Some Context Packs cannot be read.",
+            items=malformed, max_items=max_items,
+            actions=["Restore valid UTF-8 Markdown or remove the invalid Pack."],
+        ))
+    if lineage_errors:
+        findings.append(doctor_finding(
+            "PACK_LINEAGE_INVALID", "error", "packs",
+            "Pack status and explicit lineage metadata disagree.",
+            items=lineage_errors, max_items=max_items,
+            actions=["Correct Status and Superseded by metadata; Doctor never changes lineage automatically."],
+        ))
+
+    current_by_feature: dict[str, list[str]] = {}
+    current_by_file: dict[str, list[str]] = {}
+    known_features = {str(record["feature"]) for record in records}
+    for record in records:
+        if record["status"] != "current" or record["superseded_by"]:
+            continue
+        current_by_feature.setdefault(str(record["feature"]), []).append(str(record["path"]))
+        for raw in record["tracked"]:
+            current_by_file.setdefault(str(raw), []).append(str(record["path"]))
+    duplicates = [
+        f"{feature}: {', '.join(paths)}"
+        for feature, paths in sorted(current_by_feature.items())
+        if len(paths) > 1
+    ]
+    if duplicates:
+        findings.append(doctor_finding(
+            "PACK_DUPLICATE_FEATURE", "error", "packs",
+            "More than one current Pack owns the same feature ID.",
+            items=duplicates, max_items=max_items,
+            actions=["Choose one current Pack and explicitly supersede or archive the older Pack."],
+        ))
+    overlaps = [
+        f"{raw}: {', '.join(paths)}"
+        for raw, paths in sorted(current_by_file.items())
+        if len(paths) > 1
+    ]
+    if overlaps:
+        findings.append(doctor_finding(
+            "PACK_SCOPE_OVERLAP", "warning", "packs",
+            "Current Packs share tracked files; shared scope is visible but is not auto-superseded.",
+            items=overlaps, max_items=max_items,
+            actions=["Confirm the overlap is intentional or add explicit Pack lineage."],
+        ))
+    unknown_targets = [
+        f"{record['path']}: {record['superseded_by']}"
+        for record in records
+        if record["superseded_by"]
+        and feature_slug(str(record["superseded_by"])) not in known_features
+        and normalize_git_path(str(record["superseded_by"]))
+        not in {str(item["path"]) for item in records}
+    ]
+    if unknown_targets:
+        findings.append(doctor_finding(
+            "PACK_LINEAGE_BROKEN", "error", "packs",
+            "Superseded by metadata points to an unknown Pack.",
+            items=unknown_targets, max_items=max_items,
+            actions=["Point Superseded by to an existing feature ID or repository-relative Pack path."],
+        ))
+    for pack_rel, paths in sorted(missing_by_pack.items()):
+        findings.append(doctor_finding(
+            "PACK_MISSING_TRACKED_FILE", "repairable", pack_rel,
+            "The Pack tracks files that no longer exist.",
+            items=paths, max_items=max_items,
+            actions=["Refresh the Pack with current entry points or supersede it if the feature was replaced."],
+        ))
+    for pack_rel, paths in sorted(stale_by_pack.items()):
+        findings.append(doctor_finding(
+            "PACK_STALE", "repairable", pack_rel,
+            "Tracked file fingerprints are stale.",
+            items=paths, max_items=max_items,
+            actions=["Review the changed behavior, then refresh this Pack from verified code."],
+        ))
+    if not findings:
+        findings.append(doctor_finding(
+            "PACK_HEALTH", "pass", "packs", "Context Pack health checks passed."
+        ))
+    return findings
+
+
+def doctor_link_findings(repo: Path, config: dict, max_items: int) -> list[dict[str, object]]:
+    broken: list[str] = []
+    roots = [safe_repo_path(repo, config["docs"][key], f"config.docs.{key}") for key in ("ai", "specs", "changes")]
+    markdown = [path for root in roots if root.exists() for path in root.rglob("*.md")]
+    if (repo / "README.md").is_file():
+        markdown.append(repo / "README.md")
+    for path in sorted(dict.fromkeys(markdown)):
+        for raw_link in local_links(path):
+            link = raw_link.split("#", 1)[0].strip()
+            if not link or re.match(r"^[a-z][a-z0-9+.-]*:", link, re.I):
+                continue
+            if not (path.parent / link).resolve().exists():
+                broken.append(f"{rel_posix(path, repo)} -> {raw_link}")
+    if not broken:
+        return [doctor_finding("LINK_HEALTH", "pass", "links", "Local documentation links resolve.")]
+    return [doctor_finding(
+        "BROKEN_LOCAL_LINK", "repairable", "links", "Local documentation links are broken.",
+        items=broken, max_items=max_items,
+        actions=["Update or remove each broken repository-local link."],
+    )]
+
+
+def doctor_state_findings(repo: Path, config: dict, max_items: int) -> list[dict[str, object]]:
+    try:
+        state = load_context_state(repo)
+    except LedgerError as exc:
+        return [doctor_finding(
+            "PRIVATE_STATE_INVALID", "error", "private-state",
+            "Private task state is invalid and cannot be safely loaded.",
+            items=[redact_local_paths(str(exc), repo)], max_items=max_items,
+            actions=["Restore or remove only this worktree's invalid private state file, then run init."],
+        )]
+    orphaned: list[str] = []
+    seen_drafts: set[str] = set()
+    seen_publish: set[str] = set()
+    for session_id, record in state.get("task_sessions", {}).items():
+        draft = str(record["draft"])
+        publish = str(record["publish_path"])
+        if draft in seen_drafts or publish in seen_publish:
+            orphaned.append(f"{session_id}: duplicate private draft or publish reservation")
+            continue
+        seen_drafts.add(draft)
+        seen_publish.add(publish)
+        try:
+            draft_path = resolve_session_draft(repo, config, session_id, record)
+            publish_path = validate_handoff_path(
+                repo, config, publish, f"task session {session_id} publish path"
+            )
+        except LedgerError:
+            orphaned.append(f"{session_id}: unsafe private session path")
+            continue
+        if not draft_path.is_file():
+            orphaned.append(f"{session_id}: private draft is missing")
+        elif publish_path.exists():
+            orphaned.append(f"{session_id}: publish target is already occupied")
+    if not orphaned:
+        return [doctor_finding("PRIVATE_STATE", "pass", "private-state", "Private task state is consistent.")]
+    return [doctor_finding(
+        "PRIVATE_SESSION_ORPHAN", "repairable", "private-state",
+        "Private task sessions contain recoverable orphaned reservations.",
+        items=orphaned, max_items=max_items,
+        actions=["Inspect the named session with status before removing only its private state."],
+    )]
+
+
+def doctor_repo(repo: Path, output_format: str = "text", max_items: int = 20) -> int:
+    """Run bounded, deterministic, read-only repository health diagnostics."""
+    max_items = max(1, min(max_items, 100))
+    findings: list[dict[str, object]] = []
+    try:
+        config = load_config(repo)
+    except LedgerError as exc:
+        findings.append(doctor_finding(
+            "CONFIG_INVALID", "error", "configuration",
+            "Ledger configuration is missing or invalid.",
+            items=[redact_local_paths(str(exc), repo)], max_items=max_items,
+            actions=["Correct repository-relative configuration paths, then run init --dry-run."],
+        ))
+        config = None
+
+    if is_git_repo(repo):
+        findings.append(doctor_finding("GIT_REPOSITORY", "pass", "repository", "Git repository detected."))
+    else:
+        findings.append(doctor_finding(
+            "GIT_REPOSITORY", "warning", "repository",
+            "No Git repository was detected; private state uses the local fallback.",
+            actions=["Initialize Git before team collaboration or release checks."],
+        ))
+
+    canonical = repo / "skills" / "repo-context-ledger" / "scripts" / "ledger.py"
+    installed = repo / ".context-ledger" / "ledger.py"
+    if canonical.is_file() and installed.is_file() and canonical.read_bytes() != installed.read_bytes():
+        findings.append(doctor_finding(
+            "RUNTIME_DRIFT", "error", "runtime",
+            "The canonical Skill runtime and repository runtime differ.",
+            items=[rel_posix(canonical, repo), rel_posix(installed, repo)], max_items=max_items,
+            actions=["Regenerate both standalone runtimes from the canonical source."],
+        ))
+    else:
+        findings.append(doctor_finding("RUNTIME", "pass", "runtime", "Runtime installation is consistent."))
+
+    if config is not None:
+        drifted = [
+            f"{name}: {rel_posix(path, repo)}"
+            for name, (path, _, current) in adapter_states(repo, config).items()
+            if config.get("adapters", {}).get(name, True) and not current
+        ]
+        if drifted:
+            findings.append(doctor_finding(
+                "ADAPTER_DRIFT", "repairable", "adapters",
+                "Enabled Agent adapters are missing or drifted.",
+                items=drifted, max_items=max_items,
+                actions=["Run adapters sync after reviewing the managed instruction changes."],
+            ))
+        else:
+            findings.append(doctor_finding("ADAPTERS", "pass", "adapters", "Enabled Agent adapters are current."))
+        if should_update_derived(repo, config):
+            manifest_errors = context_manifest_errors(repo, config)
+            if manifest_errors:
+                findings.append(doctor_finding(
+                    "MANIFEST_DRIFT", "repairable", "manifest",
+                    "The shared Context Manifest is missing or stale.",
+                    items=manifest_errors, max_items=max_items,
+                    actions=["Run manifest sync on the default branch."],
+                ))
+            else:
+                findings.append(doctor_finding("MANIFEST", "pass", "manifest", "Context Manifest is current."))
+        else:
+            dirty_derived = [raw for raw in git_dirty_paths(repo) if is_generated_index(config, raw)]
+            if dirty_derived:
+                findings.append(doctor_finding(
+                    "DERIVED_BRANCH_DIRTY", "warning", "derived-files",
+                    "A feature branch modifies shared derived files.",
+                    items=dirty_derived, max_items=max_items,
+                    actions=["Restore derived files on this branch and regenerate once after merge."],
+                ))
+            else:
+                findings.append(doctor_finding(
+                    "DERIVED_BRANCH", "pass", "derived-files",
+                    "Shared derived files remain deferred on this feature branch."
+                ))
+        findings.extend(doctor_state_findings(repo, config, max_items))
+        findings.extend(doctor_pack_findings(repo, config, max_items))
+        findings.extend(doctor_link_findings(repo, config, max_items))
+
+    severity_order = {"pass": 0, "warning": 1, "repairable": 2, "error": 3}
+    counts = {name: 0 for name in severity_order}
+    for finding in findings:
+        counts[str(finding["severity"])] += 1
+    overall = max(
+        (name for name, count in counts.items() if count),
+        key=lambda name: severity_order[name],
+        default="pass",
+    )
+    report = {
+        "schema": DOCTOR_SCHEMA,
+        "tool_version": TOOL_VERSION,
+        "repository": {
+            "git": is_git_repo(repo),
+            "branch": git_branch(repo) if is_git_repo(repo) else "none",
+            "initialized": config is not None,
+        },
+        "summary": {"overall": overall, "counts": counts, "finding_count": len(findings)},
+        "findings": findings,
+    }
+    if output_format == "json":
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+    else:
+        print(f"Repo Context Ledger Doctor: {overall.upper()}")
+        print(
+            "Findings: "
+            + ", ".join(f"{name}={counts[name]}" for name in severity_order)
+        )
+        for finding in findings:
+            print(f"[{str(finding['severity']).upper()}] {finding['code']}: {finding['summary']}")
+            details = finding["details"]
+            for item in details["items"]:
+                print(f"  - {item}")
+            if details["omitted"]:
+                print(f"  - ... {details['omitted']} more")
+            for action in finding["suggested_actions"]:
+                print(f"  -> {action}")
+    return 2 if counts["error"] else 0
+
+
 def focus_context(repo: Path, feature: str, session: str = "") -> int:
     config = load_config(repo)
     feature = feature_slug(feature)
@@ -5365,6 +5718,14 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Validate only ledger documents changed since the merge base with this ref",
     )
+    doctor = sub.add_parser("doctor", help="Diagnose repository and Context Pack health without writing")
+    doctor.add_argument("--format", choices=("text", "json"), default="text")
+    doctor.add_argument(
+        "--max-items",
+        type=int,
+        default=20,
+        help="Maximum detail items shown per finding (1-100)",
+    )
     team = sub.add_parser("team-check", help="Detect branch, feature, and generated-file conflicts")
     team.add_argument("--base", default="", help="Base ref (default: configured origin default branch)")
     sub.add_parser("status", help="Show ledger state")
@@ -5440,6 +5801,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.command == "check":
             return check_repo(repo, args.strict, args.coverage, args.base, args.changed_since)
+        if args.command == "doctor":
+            return doctor_repo(repo, args.format, args.max_items)
         if args.command == "manifest":
             return manage_context_manifest(repo, args.action)
         if args.command == "adapters":

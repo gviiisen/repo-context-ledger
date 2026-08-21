@@ -268,6 +268,14 @@ python -m unittest discover -s tests -v
 python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 ```
 
+## v0.6.1 新增能力
+
+- `doctor` 提供有上限、严格只读的仓库健康报告，支持适合人工阅读的文本与带版本的 `doctor-v1` JSON。
+- 健康检查统一覆盖运行时/配置、原生 Agent 适配器、Context Manifest、私有任务状态、Context Pack 新鲜度与生命周期、本地文档链接，以及功能分支上的派生文件安全。
+- stale 与缺失路径按 Pack 聚合，并通过 `--max-items` 限制详情；成熟仓库不会再为同一次修复决策输出数百条重复信息。
+- 重复的 current feature ID 与断裂的显式谱系属于错误；多个 Pack 共享跟踪文件只产生警告，运行时绝不会根据文件重叠自动 supersede。
+- finding 区分 `pass`、`warning`、`repairable` 与 `error`，给出确定性的建议动作，但不会修改文件、session、指纹、Pack 状态或谱系。
+
 ## v0.6.0 新增能力
 
 - `context --query` 现在输出 `context-bundle-v1`。它仍然只选择一个主 Pack 和有预算的 Required reads，同时加入可选 PR baseline、路由 warning、cache/index 指标，以及按主 Pack 限定的 Resume Capsule；不会加载源码正文或 Change 正文。
