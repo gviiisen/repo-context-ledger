@@ -31,7 +31,7 @@ Do not run the full lifecycle for every request.
 - **Continue earlier work in a fresh Agent window**: run `context --query "<keywords>" --tool <agent>`. Resume only one uniquely matched session owned by the current principal, keep the returned continuation epoch, and pass it to later lifecycle writes.
 - **Medium or large change**: also refresh the related Context Pack, update the stable spec, and write Before/After evidence before `finish`.
 
-`context` returns `context-plan-v2` with one current primary Pack, bounded Required reads, cold-history summaries, and an owned Resume Capsule when one task matches. Read only Required reads initially; never recursively read `docs/ai`, `docs/specs`, or `docs/changes`. Do not open a completed Change body unless the plan selects it, a required Pack cites it for a named reason, or the user asks for history. Required reads and the Capsule are a starting route, not a maximum code-reading limit. State the unresolved question, then expand whenever callers, implementations, configuration, persistence, permissions, concurrency, retries, tests, or external boundaries can affect the requested behavior. Read [production-workflow.md](references/production-workflow.md) for large repositories and pull-request validation.
+`context` returns `context-bundle-v1` with one current primary Pack, bounded Required reads, cold-history summaries, an optional PR baseline, and an owned Resume Capsule when one task matches. Pack metadata and tracked-file digests may be reused only from the disposable private cache below Git metadata; Git files, current code, and executed verification remain authoritative. Read only Required reads initially; never recursively read `docs/ai`, `docs/specs`, or `docs/changes`. Do not open a completed Change body unless the Bundle selects it, a required Pack cites it for a named reason, or the user asks for history. Required reads and the Capsule are a starting route, not a maximum code-reading limit. State the unresolved question, then expand whenever callers, implementations, configuration, persistence, permissions, concurrency, retries, tests, or external boundaries can affect the requested behavior. Read [production-workflow.md](references/production-workflow.md) for large repositories and pull-request validation.
 
 ## Initialize a repository
 
@@ -55,7 +55,7 @@ Apply this workflow autonomously when code behavior changes. Follow [Choose the 
 1. Run `python .context-ledger/ledger.py status`. Reuse only this task's private draft. Never adopt, pause, publish, or rewrite another task's draft.
 2. Resolve the record language. Keep code identifiers in source form.
 3. If this task will change behavior and has no session, `start --title "<title>" --feature "<feature>" --tool <agent>`. Keep the session ID. When more than one task is active, pass `--session <id>`; omission must fail.
-4. Route context, then read only the Context Plan's Required reads:
+4. Route context, then read only the Context Bundle's Required reads:
 
    ```text
    python .context-ledger/ledger.py context --query "<feature, interface, or module>" --tool <agent>
@@ -67,7 +67,7 @@ Apply this workflow autonomously when code behavior changes. Follow [Choose the 
 6. For a small single-session fix, `finish` can collect evidence. If another session exists, or automatic collection finds too many implementation paths, run `evidence --path` for only this task. Read the repository-local `.context-ledger/writing-quality.md` and remove every `TODO`. Code paths may cite `file.go::Symbol`; the path part is matched against evidence.
 7. On medium or large changes, refresh every related Context Pack after tracked production paths change, and update the stable spec when current behavior or contracts changed.
 8. Finish with `finish --session <id> [--epoch <n>] --spec docs/specs/<feature>.md`, or `finish --no-spec --reason "<why>"`. `finish` validates only this session.
-9. At pull-request time, prefer `check --strict --coverage --changed-since <base-ref>` so unrelated historical debt cannot block the current delta while directly related current Packs/specs remain fail-closed. Coverage may use only private sessions whose evidence intersects the changed implementation paths. Reserve the full `check --strict --coverage` audit for scheduled health work or controlled release integration, not to unblock a parallel session.
+9. At pull-request time, route once with `context --query "<task>" --baseline <base-ref>` so the Bundle can expose the bounded merge-base delta, then prefer `check --strict --coverage --changed-since <base-ref>` so unrelated historical debt cannot block the current delta while directly related current Packs/specs remain fail-closed. Coverage may use only private sessions whose evidence intersects the changed implementation paths. Reserve the full `check --strict --coverage` audit for scheduled health work or controlled release integration, not to unblock a parallel session.
 
 ## Bridge native Agent entry points
 

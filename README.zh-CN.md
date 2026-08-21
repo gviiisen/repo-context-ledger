@@ -268,6 +268,15 @@ python -m unittest discover -s tests -v
 python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 ```
 
+## v0.6.0 新增能力
+
+- `context --query` 现在输出 `context-bundle-v1`。它仍然只选择一个主 Pack 和有预算的 Required reads，同时加入可选 PR baseline、路由 warning、cache/index 指标，以及按主 Pack 限定的 Resume Capsule；不会加载源码正文或 Change 正文。
+- Git metadata 下新增可丢弃私有缓存，复用已解析的 Pack 元数据和 tracked-file digest。Pack 变化、tracked file 的 stat 或 Git text mode 变化、缓存缺失/损坏以及工具 schema 变化都会安全失效或重建；缓存不进入 Git，也不成为事实权威。
+- 反向索引只缩小昂贵的指纹核验候选；运行时仍会低成本扫描全部 Pack 元数据作为正确性安全网。owned session feature、完整 title、tracked path 和 PR delta 精确重叠不会被候选缩减排除。
+- `context --baseline <ref>` 解析 merge base，用 PR delta 提升相关 Pack，并只返回有上限的仓库相对相关路径。ref 无法解析时会明确 warning，不会伪装成已获得 baseline。
+- Resume Capsule 会按主 Pack 对 evidence 排序。无关旧路径不再按名称进入 Capsule，只报告省略数量；Agent 仍必须核验当前 diff 和所有影响行为的代码边界。
+- 公开的[性能基线](benchmarks/README.md)只记录匿名聚合值。一次 59-Pack 观测中，路由从约 10.55 秒改善到冷缓存 1.365 秒、热缓存 0.913 秒，首轮 Required reads 仍为 1 个文件。可复现 benchmark 只使用合成 Pack、代码和 checkpoint。
+
 ## v0.5.10 新增能力
 
 - 新开的 Codex、Cursor、Claude、Copilot 或 Grok 窗口可以只用任务关键词，路由到当前 principal 自己的一个 active/paused Ledger session。`context-plan-v2` 会按需从私有状态生成有界 Resume Capsule，不保存完整聊天记录，也不会不断新增 Capsule Markdown 文件。

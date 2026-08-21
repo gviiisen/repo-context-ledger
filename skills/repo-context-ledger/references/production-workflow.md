@@ -2,7 +2,7 @@
 
 Use this reference in repositories where accumulated Packs, specs, and completed changes make broad context loading or full local audits expensive.
 
-## Context Plan is the initial read boundary
+## Context Bundle is the initial read boundary
 
 Run:
 
@@ -10,7 +10,7 @@ Run:
 python .context-ledger/ledger.py context --query "<task>"
 ```
 
-The runtime returns one `context-plan-v2` with one current primary Pack, bounded Required reads, cold-history summaries, the configured character budget, and—when one owned private task matches—a bounded Resume Capsule. Superseded or archived Packs are never eligible as Required reads.
+The runtime returns one `context-bundle-v1` with one current primary Pack, bounded Required reads, cold-history summaries, the configured character budget, an optional PR baseline, and—when one owned private task matches—a bounded Resume Capsule. Superseded or archived Packs are never eligible as Required reads. A disposable cache below Git metadata reuses Pack parsing and tracked-file digests; it never replaces current Pack/code verification and never enters Git.
 
 - Read Required reads in order.
 - Do not recursively read `docs/ai`, `docs/specs`, or `docs/changes`.
@@ -18,7 +18,7 @@ The runtime returns one `context-plan-v2` with one current primary Pack, bounded
 - Open a completed Change only when the user asks for historical reasoning, a Required Pack cites it for a named reason, or the unresolved question cannot be answered from current code/specs.
 - If more context is needed, state the unresolved question before opening another document. Always expand into behavior-relevant callers, implementations, configuration, persistence, permissions, concurrency, retries, tests, and external APIs. The budget limits only the initial route; it never limits necessary code investigation.
 
-Use `--format json` when a native Agent integration needs the exact plan, budget, and local timing metrics.
+Use `--format json` when a native Agent integration needs the exact Bundle, budget, baseline, cache state, and local timing metrics. At PR time, add `--baseline origin/main`; an unresolved ref remains an explicit warning rather than silently pretending a delta was loaded.
 
 ## Resume without replaying a long chat
 

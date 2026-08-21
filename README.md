@@ -268,6 +268,15 @@ Validate the Skill with the OpenAI Skill Creator validator:
 python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 ```
 
+## What's new in v0.6.0
+
+- `context --query` now emits `context-bundle-v1`. It still returns one primary Pack and bounded Required reads, but also carries an optional PR baseline, route warnings, cache/index metrics, and a Pack-scoped Resume Capsule without loading source or Change bodies.
+- A disposable private cache below Git metadata reuses parsed Pack metadata and tracked-file digests. Pack edits, tracked-file stat or Git text-mode changes, missing/corrupt cache data, and tool-schema changes invalidate or rebuild safely; the cache never enters Git and never becomes an authority.
+- A reverse index shortlists expensive fingerprint checks while a cheap all-Pack metadata ranking remains as a correctness safety net. Exact owned-session features, titles, tracked paths, and PR-delta overlap cannot be excluded by the shortlist.
+- `context --baseline <ref>` resolves the merge base, boosts Packs that track the PR delta, and returns only bounded repository-relative relevant paths. An unresolved ref produces an explicit warning instead of a false baseline.
+- Resume Capsules rank recorded evidence against the selected Pack. Unrelated legacy paths are omitted by name and reported only as a count; the Agent must still inspect the current diff and every behavior-relevant code boundary.
+- The public [performance baseline](benchmarks/README.md) records only anonymous aggregates. In one 59-Pack observation, routing improved from about 10.55 seconds to 1.365 seconds cold and 0.913 seconds warm, while keeping the first Required reads at one file. The reproducible benchmark uses only synthetic Packs, code, and checkpoints.
+
 ## What's new in v0.5.10
 
 - A fresh Codex, Cursor, Claude, Copilot, or Grok window can use task keywords to route to one owned active/paused Ledger session. `context-plan-v2` creates a bounded Resume Capsule on demand from private state; it does not persist chat transcripts or a growing capsule Markdown file.
