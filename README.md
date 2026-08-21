@@ -18,112 +18,6 @@ Repo Context Ledger gives every AI session a small, durable map of the repositor
 - what changed, why it changed, and how it was verified;
 - which project and module README summaries need refreshing.
 
-## What's new in v0.5.10
-
-- A fresh Codex, Cursor, Claude, Copilot, or Grok window can use task keywords to route to one owned active/paused Ledger session. `context-plan-v2` creates a bounded Resume Capsule on demand from private state; it does not persist chat transcripts or a growing capsule Markdown file.
-- `resume --query "<keywords>" --tool <agent>` continues the same Ledger session instead of creating a replacement. It increments a continuation epoch, and subsequent lifecycle writes require `--epoch <n>` so a stale window cannot silently overwrite the newer checkpoint.
-- Private sessions now have a pseudonymous principal owner independent of the Agent tool. Another principal receives only a foreign-overlap signal by default and cannot read the Capsule or resume, pause, checkpoint, verify, finish, or invalidate the task.
-- Explicit expiring grants support `read-only`, `fork`, and paused-session `transfer` workflows. A fork creates a new private child session and leaves the source untouched; a transfer changes ownership only when the recipient accepts it.
-- Required reads remain an initial route, never a cap on code investigation. Generated Agent policies require expansion through callers, implementations, configuration, persistence, permissions, concurrency, retries, tests, and external boundaries whenever they can affect the requested behavior.
-- Git-tracked Packs, specs, and completed changes remain shared normally. Private unfinished state stays in worktree Git metadata and still does not travel to another clone or machine.
-
-## What's new in v0.5.9
-
-- `context --query` now emits a bounded `context-plan-v1`: exactly one primary Pack, only the linked specs that fit the configured file/character budget, and explicit Required reads.
-- `context --format json` provides a stable cross-Agent contract with repository-relative paths, selection confidence, budget usage, and local timing/file-count metrics.
-- Recent completed changes remain cold history. The plan may include bounded ID/title/feature/date/summary/evidence metadata from the Context Manifest, but it never loads a Change body into Required reads.
-- All generated Agent adapters prohibit recursive reads of `docs/ai`, `docs/specs`, and `docs/changes`; an Agent must read Required reads first, keep completed Change bodies cold, and name an unresolved question before expanding context.
-- `check --strict --changed-since <base-ref>` validates the merge-base delta plus directly related current Packs/specs, so unrelated pre-existing debt does not block the current PR while a source change that makes its Pack stale still fails. Coverage considers only private sessions whose evidence intersects the changed implementation paths.
-- Full `check --strict [--coverage]` behavior is unchanged and remains available for scheduled repository health audits and controlled release integration.
-
-## What's new in v0.5.8
-
-- Context Pack fingerprints are portable across Windows and Unix checkouts: logically identical UTF-8 text receives the same digest with LF or CRLF line endings.
-- Git attributes remain authoritative. Files marked `-text`, files containing NUL bytes, and non-UTF-8 content remain byte-sensitive, so binary changes cannot be hidden by normalization.
-- Existing LF-based `sha256:` fingerprints remain compatible; a real text change still makes the related Pack stale.
-- Persisted verification commands, successful result lines, failure capsules, and not-run reasons replace repository, Codex, temporary, and user-home roots with `<REPO_ROOT>`, `<CODEX_HOME>`, `<TEMP_DIR>`, and `<USER_HOME>`.
-- Redaction recognizes ordinary Windows paths, slash-normalized paths, and JSON-escaped double-backslash paths. The currently visible historical records were corrected to remove five local absolute paths without rewriting Git history.
-
-## What's new in v0.5.7
-
-- `init --dry-run` builds the exact same initialization plan as real `init`, then prints file creates, managed-block updates, deletions, migrations, detected modules, and a compact summary without writing repository files or private workspace state.
-- Preview and apply share one in-memory filesystem plan, so the preview cannot drift into a separate approximation of initialization behavior.
-- Dry-run does not acquire the repository write lock and remains read-only even while inspecting legacy workspace-state migrations.
-- Existing prose, mature change history, custom documentation paths, nested Git boundaries, and session drafts keep the same preservation rules during preview and apply.
-
-> Version note: v0.5.5 was reserved for this work but never released. The completed feature ships in v0.5.7; no published release or functionality is missing.
-
-## Added in v0.5.6
-
-- `context --query` is a Context Pack router: it reads current Pack metadata, excludes superseded/archived Packs, penalizes stale fingerprints, and returns one primary Pack plus linked specs and the selection reason.
-- Omitting `--repo` walks up from the current directory to the nearest `.context-ledger/config.json` and stops at a nested Git repository boundary. An explicit `--repo` still wins.
-- Failed `verify` records a redacted Failure Capsule instead of only a hash. Success still stores a hash plus the last result line. Raw logs are not persisted.
-- Handoff Code paths may cite `file.go::Symbol`; the path part is matched against Git evidence.
-- Automatic single-session evidence skips generated/managed paths and refuses oversized dirty trees, so a shared worktree cannot silently swallow unrelated files.
-- The Skill now leads with the shortest path: read-only `context`/`focus`, small single-task `start → verify → finish`, and the full evidence/spec/Pack flow only for larger work.
-
-## What's new in v0.5.4
-
-- Parallel-session evidence is explicit: when another task session exists, `evidence --session <id>` requires repeated `--path <path>` values and refuses to absorb the shared worktree's entire dirty set.
-- `finish` now uses a session-scoped gate. It validates only the selected draft, its recorded paths, explicit specs, and relevant Context Pack fingerprints.
-- Dirty paths and stale Context Packs belonging to another session no longer block the current session's publication; the current session's own stale Pack still fails closed.
-- Repository-wide `check --strict --coverage` remains the integration/PR gate instead of being an implicit per-session finish dependency.
-- Generated Agent rules explicitly forbid contacting another task because of foreign dirt, a stale Pack, or a failed global check.
-
-## Added in v0.5.3
-
-- Active and paused handoffs are private session drafts under worktree Git metadata; `start`, `checkpoint`, `evidence`, and `verify` no longer add unfinished records to `docs/changes/`.
-- `finish` reserves a unique history path, validates the draft, atomically publishes one completed change, and deletes only that session's private draft after repository checks pass.
-- Interrupted publication is idempotent: a matching completed record can be validated and cleaned up on retry without duplicating history.
-- Registered v0.5.2 active or paused records migrate into private v7 drafts while completed and legacy history remains unchanged.
-- Ledger concurrency is explicitly limited to bookkeeping. It does not copy, lock, claim, merge, or coordinate source-code files; the host Agent and Git retain that responsibility.
-
-## Added in v0.5.2
-
-- Task-scoped sessions replace the single active-handoff pointer: multiple coding tasks can keep independent active or paused handoffs in one worktree.
-- Every lifecycle command accepts `--session <id>`; when several sessions match, omission fails closed instead of selecting, pausing, or completing another task.
-- `verify` binds its target under a short lock, runs the external command without the repository write lock, then records the result under another short lock.
-- Generated Agent instructions prohibit unsolicited cross-task messages, delegation, steering, and interruption. Sharing a worktree does not grant coordination authority.
-- Existing v2-v5 active and paused state migrates into v6 task sessions without rewriting historical change records.
-
-## Added in v0.5.1
-
-- Coverage path classes distinguish production implementation from tests, CI, configuration, generated output, managed ledger files, and project-specific ignored paths.
-- Repository-relative glob policies under `coverage` are validated, persisted by `init`, and remain optional for existing v5 repositories.
-- Context Pack coverage is now relational: every changed production path must be tracked by a Context Pack, and that related Pack must be refreshed.
-- Changing an unrelated Context Pack no longer satisfies `check --coverage`.
-- Coverage failures name the uncovered implementation path and the related Pack that was not updated.
-- Root translated READMEs and configured module READMEs are treated as managed documentation rather than production implementation.
-
-## Added in v0.5.0
-
-- Native Context Bridge: `AGENTS.md`, `CLAUDE.md`, Cursor rules, and GitHub Copilot instructions route every supported agent to the same Git-tracked source of truth.
-- Context Manifest: `docs/ai/context-manifest.json` provides a deterministic machine-readable map from features to Context Packs, stable specs, tracked code paths, and recent changes.
-- Cross-agent checkpoints: an active task can record its verified state and next action without pausing, allowing another agent in the same worktree to continue it.
-- Adapter lifecycle: `adapters sync/check/status` preserves user prose while detecting missing or drifted native entry files.
-- Git-diff coverage gate: `check --coverage` reports behavior-changing paths that lack handoff evidence, a stable spec or explicit exception, or an updated Context Pack.
-- Private-memory boundary: Codex, Cursor, Claude, and Copilot Memory remain private caches; only code-verified facts are promoted to the shared ledger.
-- Schema v5 migration preserves existing records, custom documentation paths, mature history layouts, and README prose.
-
-## Added in v0.4.1
-
-- Mature-repository adoption: existing `YYYY-MM/...` change trees are grouped at the month root instead of producing an index in every date or feature directory.
-- Existing monthly `YYYY-MM/index.md` files are preserved and reused as the month link; the runtime does not rewrite their human-maintained content.
-- Legacy and native trees for the same calendar month share one root-index entry, preferring an existing human-maintained month index.
-- Safe index cleanup: an obsolete `README.md` is removed only when the runtime can reproduce it byte-for-byte from current sibling records. Ambiguous or human-edited files are retained.
-- Worktree boundaries: module discovery stops at nested Git repositories and worktrees, preventing duplicate module entries and README updates.
-- Correct history counts: monthly `index.md` files are treated as indexes rather than change records.
-
-## Added in v0.4.0
-
-- Evidence-first records: new handoffs, specs, and Context Packs use the backward-compatible `evidence-v1` quality profile.
-- Real verification capture: `verify` executes the check and records its command, status, exit code, duration, and output hash without persisting command output.
-- Git-derived evidence: `evidence` records actual changed paths so agents do not rely on memory.
-- Language policy: choose `auto`, `en`, or `zh-CN` while preserving source identifiers and commands.
-- Configurable detail: choose `concise`, `standard`, or `detailed`; Context Packs have a size limit.
-- Purpose-specific forms: handoffs capture Before/After evidence, specs capture current truth, and Context Packs remain minimal loading routes.
-- Legacy-safe adoption: existing records keep their language, format, filenames, and content until explicitly upgraded.
-
 ## What it maintains
 
 - `docs/ai/`: concise repository-wide orientation for fresh AI sessions.
@@ -358,6 +252,112 @@ Validate the Skill with the OpenAI Skill Creator validator:
 ```text
 python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 ```
+
+## What's new in v0.5.10
+
+- A fresh Codex, Cursor, Claude, Copilot, or Grok window can use task keywords to route to one owned active/paused Ledger session. `context-plan-v2` creates a bounded Resume Capsule on demand from private state; it does not persist chat transcripts or a growing capsule Markdown file.
+- `resume --query "<keywords>" --tool <agent>` continues the same Ledger session instead of creating a replacement. It increments a continuation epoch, and subsequent lifecycle writes require `--epoch <n>` so a stale window cannot silently overwrite the newer checkpoint.
+- Private sessions now have a pseudonymous principal owner independent of the Agent tool. Another principal receives only a foreign-overlap signal by default and cannot read the Capsule or resume, pause, checkpoint, verify, finish, or invalidate the task.
+- Explicit expiring grants support `read-only`, `fork`, and paused-session `transfer` workflows. A fork creates a new private child session and leaves the source untouched; a transfer changes ownership only when the recipient accepts it.
+- Required reads remain an initial route, never a cap on code investigation. Generated Agent policies require expansion through callers, implementations, configuration, persistence, permissions, concurrency, retries, tests, and external boundaries whenever they can affect the requested behavior.
+- Git-tracked Packs, specs, and completed changes remain shared normally. Private unfinished state stays in worktree Git metadata and still does not travel to another clone or machine.
+
+## What's new in v0.5.9
+
+- `context --query` now emits a bounded `context-plan-v1`: exactly one primary Pack, only the linked specs that fit the configured file/character budget, and explicit Required reads.
+- `context --format json` provides a stable cross-Agent contract with repository-relative paths, selection confidence, budget usage, and local timing/file-count metrics.
+- Recent completed changes remain cold history. The plan may include bounded ID/title/feature/date/summary/evidence metadata from the Context Manifest, but it never loads a Change body into Required reads.
+- All generated Agent adapters prohibit recursive reads of `docs/ai`, `docs/specs`, and `docs/changes`; an Agent must read Required reads first, keep completed Change bodies cold, and name an unresolved question before expanding context.
+- `check --strict --changed-since <base-ref>` validates the merge-base delta plus directly related current Packs/specs, so unrelated pre-existing debt does not block the current PR while a source change that makes its Pack stale still fails. Coverage considers only private sessions whose evidence intersects the changed implementation paths.
+- Full `check --strict [--coverage]` behavior is unchanged and remains available for scheduled repository health audits and controlled release integration.
+
+## What's new in v0.5.8
+
+- Context Pack fingerprints are portable across Windows and Unix checkouts: logically identical UTF-8 text receives the same digest with LF or CRLF line endings.
+- Git attributes remain authoritative. Files marked `-text`, files containing NUL bytes, and non-UTF-8 content remain byte-sensitive, so binary changes cannot be hidden by normalization.
+- Existing LF-based `sha256:` fingerprints remain compatible; a real text change still makes the related Pack stale.
+- Persisted verification commands, successful result lines, failure capsules, and not-run reasons replace repository, Codex, temporary, and user-home roots with `<REPO_ROOT>`, `<CODEX_HOME>`, `<TEMP_DIR>`, and `<USER_HOME>`.
+- Redaction recognizes ordinary Windows paths, slash-normalized paths, and JSON-escaped double-backslash paths. The currently visible historical records were corrected to remove five local absolute paths without rewriting Git history.
+
+## What's new in v0.5.7
+
+- `init --dry-run` builds the exact same initialization plan as real `init`, then prints file creates, managed-block updates, deletions, migrations, detected modules, and a compact summary without writing repository files or private workspace state.
+- Preview and apply share one in-memory filesystem plan, so the preview cannot drift into a separate approximation of initialization behavior.
+- Dry-run does not acquire the repository write lock and remains read-only even while inspecting legacy workspace-state migrations.
+- Existing prose, mature change history, custom documentation paths, nested Git boundaries, and session drafts keep the same preservation rules during preview and apply.
+
+> Version note: v0.5.5 was reserved for this work but never released. The completed feature ships in v0.5.7; no published release or functionality is missing.
+
+## Added in v0.5.6
+
+- `context --query` is a Context Pack router: it reads current Pack metadata, excludes superseded/archived Packs, penalizes stale fingerprints, and returns one primary Pack plus linked specs and the selection reason.
+- Omitting `--repo` walks up from the current directory to the nearest `.context-ledger/config.json` and stops at a nested Git repository boundary. An explicit `--repo` still wins.
+- Failed `verify` records a redacted Failure Capsule instead of only a hash. Success still stores a hash plus the last result line. Raw logs are not persisted.
+- Handoff Code paths may cite `file.go::Symbol`; the path part is matched against Git evidence.
+- Automatic single-session evidence skips generated/managed paths and refuses oversized dirty trees, so a shared worktree cannot silently swallow unrelated files.
+- The Skill now leads with the shortest path: read-only `context`/`focus`, small single-task `start → verify → finish`, and the full evidence/spec/Pack flow only for larger work.
+
+## What's new in v0.5.4
+
+- Parallel-session evidence is explicit: when another task session exists, `evidence --session <id>` requires repeated `--path <path>` values and refuses to absorb the shared worktree's entire dirty set.
+- `finish` now uses a session-scoped gate. It validates only the selected draft, its recorded paths, explicit specs, and relevant Context Pack fingerprints.
+- Dirty paths and stale Context Packs belonging to another session no longer block the current session's publication; the current session's own stale Pack still fails closed.
+- Repository-wide `check --strict --coverage` remains the integration/PR gate instead of being an implicit per-session finish dependency.
+- Generated Agent rules explicitly forbid contacting another task because of foreign dirt, a stale Pack, or a failed global check.
+
+## Added in v0.5.3
+
+- Active and paused handoffs are private session drafts under worktree Git metadata; `start`, `checkpoint`, `evidence`, and `verify` no longer add unfinished records to `docs/changes/`.
+- `finish` reserves a unique history path, validates the draft, atomically publishes one completed change, and deletes only that session's private draft after repository checks pass.
+- Interrupted publication is idempotent: a matching completed record can be validated and cleaned up on retry without duplicating history.
+- Registered v0.5.2 active or paused records migrate into private v7 drafts while completed and legacy history remains unchanged.
+- Ledger concurrency is explicitly limited to bookkeeping. It does not copy, lock, claim, merge, or coordinate source-code files; the host Agent and Git retain that responsibility.
+
+## Added in v0.5.2
+
+- Task-scoped sessions replace the single active-handoff pointer: multiple coding tasks can keep independent active or paused handoffs in one worktree.
+- Every lifecycle command accepts `--session <id>`; when several sessions match, omission fails closed instead of selecting, pausing, or completing another task.
+- `verify` binds its target under a short lock, runs the external command without the repository write lock, then records the result under another short lock.
+- Generated Agent instructions prohibit unsolicited cross-task messages, delegation, steering, and interruption. Sharing a worktree does not grant coordination authority.
+- Existing v2-v5 active and paused state migrates into v6 task sessions without rewriting historical change records.
+
+## Added in v0.5.1
+
+- Coverage path classes distinguish production implementation from tests, CI, configuration, generated output, managed ledger files, and project-specific ignored paths.
+- Repository-relative glob policies under `coverage` are validated, persisted by `init`, and remain optional for existing v5 repositories.
+- Context Pack coverage is now relational: every changed production path must be tracked by a Context Pack, and that related Pack must be refreshed.
+- Changing an unrelated Context Pack no longer satisfies `check --coverage`.
+- Coverage failures name the uncovered implementation path and the related Pack that was not updated.
+- Root translated READMEs and configured module READMEs are treated as managed documentation rather than production implementation.
+
+## Added in v0.5.0
+
+- Native Context Bridge: `AGENTS.md`, `CLAUDE.md`, Cursor rules, and GitHub Copilot instructions route every supported agent to the same Git-tracked source of truth.
+- Context Manifest: `docs/ai/context-manifest.json` provides a deterministic machine-readable map from features to Context Packs, stable specs, tracked code paths, and recent changes.
+- Cross-agent checkpoints: an active task can record its verified state and next action without pausing, allowing another agent in the same worktree to continue it.
+- Adapter lifecycle: `adapters sync/check/status` preserves user prose while detecting missing or drifted native entry files.
+- Git-diff coverage gate: `check --coverage` reports behavior-changing paths that lack handoff evidence, a stable spec or explicit exception, or an updated Context Pack.
+- Private-memory boundary: Codex, Cursor, Claude, and Copilot Memory remain private caches; only code-verified facts are promoted to the shared ledger.
+- Schema v5 migration preserves existing records, custom documentation paths, mature history layouts, and README prose.
+
+## Added in v0.4.1
+
+- Mature-repository adoption: existing `YYYY-MM/...` change trees are grouped at the month root instead of producing an index in every date or feature directory.
+- Existing monthly `YYYY-MM/index.md` files are preserved and reused as the month link; the runtime does not rewrite their human-maintained content.
+- Legacy and native trees for the same calendar month share one root-index entry, preferring an existing human-maintained month index.
+- Safe index cleanup: an obsolete `README.md` is removed only when the runtime can reproduce it byte-for-byte from current sibling records. Ambiguous or human-edited files are retained.
+- Worktree boundaries: module discovery stops at nested Git repositories and worktrees, preventing duplicate module entries and README updates.
+- Correct history counts: monthly `index.md` files are treated as indexes rather than change records.
+
+## Added in v0.4.0
+
+- Evidence-first records: new handoffs, specs, and Context Packs use the backward-compatible `evidence-v1` quality profile.
+- Real verification capture: `verify` executes the check and records its command, status, exit code, duration, and output hash without persisting command output.
+- Git-derived evidence: `evidence` records actual changed paths so agents do not rely on memory.
+- Language policy: choose `auto`, `en`, or `zh-CN` while preserving source identifiers and commands.
+- Configurable detail: choose `concise`, `standard`, or `detailed`; Context Packs have a size limit.
+- Purpose-specific forms: handoffs capture Before/After evidence, specs capture current truth, and Context Packs remain minimal loading routes.
+- Legacy-safe adoption: existing records keep their language, format, filenames, and content until explicitly upgraded.
 
 ## License
 
