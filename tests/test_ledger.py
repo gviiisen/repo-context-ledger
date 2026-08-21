@@ -46,6 +46,44 @@ def publish_target(repo: Path, result) -> Path:
 
 
 class LedgerFlowTests(unittest.TestCase):
+    def test_empty_metadata_field_does_not_consume_the_next_line(self):
+        text = (
+            "Checkpointed:\n"
+            "Checkpoint actor:\n"
+            "Resume summary:\n"
+            "Next step:\n"
+            "Specs: none\n"
+        )
+        self.assertEqual("", LEDGER_MODULE.field_value(text, "Checkpointed"))
+        self.assertEqual("", LEDGER_MODULE.field_value(text, "Resume summary"))
+        self.assertEqual("", LEDGER_MODULE.field_value(text, "Next step"))
+        self.assertEqual("none", LEDGER_MODULE.field_value(text, "Specs"))
+        crlf = text.replace("\n", "\r\n")
+        self.assertEqual("", LEDGER_MODULE.field_value(crlf, "Resume summary"))
+        self.assertEqual("none", LEDGER_MODULE.field_value(crlf, "Specs"))
+
+    def test_uncheckpointed_owned_session_routes_as_guided_not_ready(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            self.run_git(repo, "config", "repo-context-ledger.principal", "alice-profile")
+            started = self.run_ledger(
+                repo,
+                "start", "--title", "Announcement rate limiting",
+                "--feature", "announcement-rate-limit", "--tool", "codex",
+            )
+            plan = json.loads(self.run_ledger(
+                repo,
+                "context", "--query", "continue announcement rate limiting",
+                "--tool", "cursor", "--format", "json",
+            ).stdout)
+            capsule = plan["resume"]["capsule"]
+            self.assertEqual(session_from_result(started), capsule["session_id"])
+            self.assertEqual("guided", plan["resume"]["mode"])
+            self.assertEqual("", capsule["summary"])
+            self.assertEqual("", capsule["next_step"])
+            self.assertIn("the task has no checkpoint resume summary", capsule["unknowns"])
+
     def test_skill_metadata_matches_open_agent_skills_shape(self):
         skill = ROOT / "skills" / "repo-context-ledger" / "SKILL.md"
         text = skill.read_text(encoding="utf-8")
@@ -191,7 +229,7 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertTrue((repo / ".context-ledger/templates/context-pack-template.md").exists())
             self.assertTrue((repo / ".context-ledger/writing-quality.md").exists())
             self.assertEqual(
-                7,
+                8,
                 json.loads((repo / ".context-ledger/config.json").read_text(encoding="utf-8"))["schema_version"],
             )
             quality = json.loads(
@@ -331,12 +369,22 @@ class LedgerFlowTests(unittest.TestCase):
 
             self.run_ledger(repo, "init")
             config = json.loads((repo / ".context-ledger/config.json").read_text(encoding="utf-8"))
-            self.assertEqual(7, config["schema_version"])
+            self.assertEqual(8, config["schema_version"])
             self.assertEqual(
                 {"agents": True, "claude": True, "cursor": True, "copilot": True},
                 config["adapters"],
             )
             self.assertEqual(["**"], config["coverage"]["implementation_globs"])
+            self.assertEqual(
+                {
+                    "max_required_files": 3,
+                    "max_linked_specs": 2,
+                    "max_change_summaries": 3,
+                    "max_total_characters": 30000,
+                    "show_close_candidates": 0,
+                },
+                config["context"],
+            )
             self.assertIn(
                 "Never message or steer another user-owned task",
                 (repo / ".cursor/rules/repo-context-ledger.mdc").read_text(encoding="utf-8"),
@@ -345,6 +393,23 @@ class LedgerFlowTests(unittest.TestCase):
                 "Never send a message, delegation",
                 (repo / "AGENTS.md").read_text(encoding="utf-8"),
             )
+            adapter_paths = [
+                repo / "AGENTS.md",
+                repo / "CLAUDE.md",
+                repo / ".cursor/rules/repo-context-ledger.mdc",
+                repo / ".github/copilot-instructions.md",
+            ]
+            policy_phrases = [
+                "context --query",
+                "Required reads",
+                "Never recursively read",
+                "Do not open completed Change bodies unless",
+                "Expand context only after stating the unresolved question",
+            ]
+            for adapter_path in adapter_paths:
+                adapter_text = adapter_path.read_text(encoding="utf-8")
+                for phrase in policy_phrases:
+                    self.assertIn(phrase, adapter_text, f"{phrase!r} missing from {adapter_path}")
             self.assertIn("tests/**", config["coverage"]["test_globs"])
             self.assertIn("Keep this prose.", copilot.read_text(encoding="utf-8"))
             checked = self.run_ledger(repo, "adapters", "check")
@@ -382,7 +447,7 @@ class LedgerFlowTests(unittest.TestCase):
 
             manifest = json.loads((repo / "docs/ai/context-manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(1, manifest["manifest_version"])
-            self.assertEqual("0.5.8", manifest["tool_version"])
+            self.assertEqual("0.5.10", manifest["tool_version"])
             route = manifest["features"][0]
             self.assertEqual("authentication", route["feature"])
             self.assertEqual("docs/ai/context-packs/authentication.md", route["context_pack"])
@@ -533,6 +598,54 @@ class LedgerFlowTests(unittest.TestCase):
                 "--spec", "docs/specs/service.md",
             )
             self.run_ledger(repo, "check", "--coverage")
+
+    def test_coverage_ignores_spec_exception_from_an_unrelated_private_session(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            other = repo / "src/other.py"
+            other.write_text("OTHER = 1\n", encoding="utf-8")
+            self.run_git(repo, "add", "src/other.py")
+            self.run_git(repo, "commit", "-m", "Add unrelated source")
+
+            other.write_text("OTHER = 2\n", encoding="utf-8")
+            foreign = self.run_ledger(
+                repo, "start", "--title", "Change other", "--feature", "other"
+            )
+            foreign_session = session_from_result(foreign)
+            self.run_ledger(repo, "evidence", "--session", foreign_session)
+            foreign_draft = private_draft(repo, foreign)
+            foreign_text = foreign_draft.read_text(encoding="utf-8").replace(
+                "Spec exception:",
+                "Spec exception: This unrelated task has no durable stable behavior to specify.",
+            )
+            foreign_draft.write_text(foreign_text, encoding="utf-8")
+            self.run_git(repo, "restore", "--", "src/other.py")
+
+            service = repo / "src/service.py"
+            service.write_text("VALUE = 2\n", encoding="utf-8")
+            current = self.run_ledger(
+                repo, "start", "--title", "Change service", "--feature", "service"
+            )
+            current_session = session_from_result(current)
+            created = self.run_ledger(
+                repo, "pack", "--feature", "service", "--file", "src/service.py"
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            self.run_ledger(
+                repo,
+                "evidence",
+                "--session",
+                current_session,
+                "--path",
+                "src/service.py",
+            )
+
+            result = self.run_ledger(repo, "check", "--coverage", expected=2)
+            self.assertIn(
+                "Behavior-changing paths require a changed stable spec or a completed spec exception.",
+                result.stderr,
+            )
 
     def test_parallel_task_sessions_are_isolated_and_ambiguous_commands_fail_closed(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -1011,7 +1124,7 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertEqual("paused", state["task_sessions"][second_session]["status"])
 
             ambiguous = self.run_ledger(repo, "resume", expected=2)
-            self.assertIn("Multiple paused task sessions exist", ambiguous.stderr)
+            self.assertIn("Multiple resumable task sessions exist", ambiguous.stderr)
             resumed_second = self.run_ledger(repo, "resume", "--session", second_session)
             self.assertIn(second_session, resumed_second.stdout)
             self.assertEqual("active", field_from_file(second_path, "Status"))
@@ -1024,6 +1137,8 @@ class LedgerFlowTests(unittest.TestCase):
                 "Apply the timeout change when this task becomes active again.",
                 "--session",
                 second_session,
+                "--epoch",
+                "2",
             )
             resumed_first = self.run_ledger(repo, "resume", "--session", first_session)
             self.assertIn(first_session, resumed_first.stdout)
@@ -1034,6 +1149,313 @@ class LedgerFlowTests(unittest.TestCase):
                 final_state["task_sessions"][first_session]["draft"],
             )
             self.assertEqual("paused", final_state["task_sessions"][second_session]["status"])
+
+    def test_owned_session_routes_across_agents_and_requires_new_epoch(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            self.run_git(repo, "config", "repo-context-ledger.principal", "alice-profile")
+            started = self.run_ledger(
+                repo,
+                "start", "--title", "Announcement rate limiting",
+                "--feature", "announcement-rate-limit", "--tool", "codex",
+            )
+            session_id = session_from_result(started)
+            source = repo / "src/service.py"
+            source.write_text("VALUE = 2\n", encoding="utf-8")
+            created = self.run_ledger(
+                repo,
+                "pack", "--feature", "announcement-rate-limit",
+                "--title", "Announcement Rate Limiting", "--file", "src/service.py",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            self.run_ledger(
+                repo,
+                "checkpoint", "--session", session_id,
+                "--summary", "Measured announcement request latency and refreshed the focused Pack.",
+                "--next", "Add bounded concurrency to detail hydration.",
+            )
+
+            plan = json.loads(self.run_ledger(
+                repo,
+                "context", "--query", "continue announcement rate limiting",
+                "--tool", "cursor", "--format", "json",
+            ).stdout)
+
+            self.assertEqual("context-plan-v2", plan["schema"])
+            self.assertEqual("ready", plan["resume"]["mode"])
+            capsule = plan["resume"]["capsule"]
+            self.assertEqual(session_id, capsule["session_id"])
+            self.assertEqual(["src/service.py"], capsule["evidence_paths"])
+            self.assertLessEqual(
+                capsule["budget"]["used_characters"], capsule["budget"]["max_characters"]
+            )
+            serialized_capsule = json.dumps(capsule, ensure_ascii=False, sort_keys=True)
+            self.assertEqual(len(serialized_capsule), capsule["budget"]["used_characters"])
+            self.assertLessEqual(len(serialized_capsule), capsule["budget"]["max_characters"])
+            self.assertTrue(any(
+                "not as a maximum" in instruction for instruction in plan["instructions"]
+            ))
+            self.assertNotIn(str(repo), json.dumps(plan))
+
+            resumed = self.run_ledger(
+                repo,
+                "resume", "--query", "continue announcement rate limiting", "--tool", "cursor",
+            )
+            self.assertIn("Continuation epoch: 2", resumed.stdout)
+            state = LEDGER_MODULE.load_context_state(repo)
+            self.assertEqual({session_id}, set(state["task_sessions"]))
+            record = state["task_sessions"][session_id]
+            self.assertEqual(2, record["resume_epoch"])
+            self.assertEqual("cursor", record["continuation_tool"])
+            self.assertTrue(record["epoch_required"])
+
+            stale = self.run_ledger(
+                repo,
+                "checkpoint", "--session", session_id,
+                "--summary", "The stale Agent window attempted to overwrite the checkpoint.",
+                "--next", "This write must be rejected.",
+                expected=2,
+            )
+            self.assertIn("rerun with --epoch 2", stale.stderr)
+            self.run_ledger(
+                repo,
+                "checkpoint", "--session", session_id, "--epoch", "2",
+                "--summary", "Cursor revalidated the resumed task against the current code paths.",
+                "--next", "Continue through every behavior-relevant caller and boundary.",
+            )
+
+    def test_foreign_principal_cannot_read_or_mutate_private_resume_capsule(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            self.run_git(repo, "config", "repo-context-ledger.principal", "alice-profile")
+            created = self.run_ledger(
+                repo,
+                "pack", "--feature", "announcement-rate-limit",
+                "--title", "Announcement Rate Limiting", "--file", "src/service.py",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            started = self.run_ledger(
+                repo,
+                "start", "--title", "Announcement rate limiting",
+                "--feature", "announcement-rate-limit", "--tool", "codex",
+            )
+            session_id = session_from_result(started)
+            self.run_ledger(
+                repo,
+                "checkpoint", "--session", session_id,
+                "--summary", "Alice recorded a private announcement throttling checkpoint.",
+                "--next", "Alice will inspect the shared HTTP client boundary.",
+            )
+            owner_before = LEDGER_MODULE.load_context_state(repo)["task_sessions"][session_id]
+
+            self.run_git(repo, "config", "repo-context-ledger.principal", "bob-profile")
+            with mock.patch.object(
+                LEDGER_MODULE,
+                "resume_session_view",
+                side_effect=AssertionError("foreign private draft must not be loaded"),
+            ):
+                private_route, private_selected = LEDGER_MODULE.route_resume_sessions(
+                    repo,
+                    LEDGER_MODULE.load_config(repo),
+                    "continue announcement rate limiting",
+                    LEDGER_MODULE.load_live_context_packs(repo, LEDGER_MODULE.load_config(repo)),
+                )
+            self.assertTrue(private_route["foreign_overlap"])
+            self.assertIsNone(private_selected)
+            plan = json.loads(self.run_ledger(
+                repo,
+                "context", "--query", "continue announcement rate limiting", "--format", "json",
+            ).stdout)
+            self.assertEqual("guided", plan["resume"]["mode"])
+            self.assertTrue(plan["resume"]["foreign_overlap"])
+            self.assertIsNone(plan["resume"]["capsule"])
+            self.assertNotIn("Alice recorded", json.dumps(plan))
+
+            denied = self.run_ledger(repo, "resume", "--session", session_id, expected=2)
+            self.assertIn("owned by another principal", denied.stderr)
+            denied = self.run_ledger(
+                repo,
+                "pause", "--session", session_id,
+                "--summary", "Bob must not pause Alice's private task session.",
+                "--next", "Use only Git-tracked context instead.",
+                expected=2,
+            )
+            self.assertIn("owned by another principal", denied.stderr)
+            owner_after = LEDGER_MODULE.load_context_state(repo)["task_sessions"][session_id]
+            self.assertEqual(owner_before, owner_after)
+            status = self.run_ledger(repo, "status")
+            self.assertIn("Active task sessions: 0", status.stdout)
+            self.assertIn("Foreign task sessions: 1", status.stdout)
+
+    def test_resume_query_fails_closed_for_multiple_owned_matches(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            self.run_git(repo, "config", "repo-context-ledger.principal", "alice-profile")
+            created = self.run_ledger(
+                repo,
+                "pack", "--feature", "announcement-rate-limit",
+                "--title", "Announcement Rate Limiting", "--file", "src/service.py",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            sessions = []
+            for venue in ("OKX", "Gate"):
+                started = self.run_ledger(
+                    repo,
+                    "start", "--title", f"Announcement rate limiting {venue}",
+                    "--feature", "announcement-rate-limit", "--tool", "codex",
+                )
+                session_id = session_from_result(started)
+                sessions.append(session_id)
+                self.run_ledger(
+                    repo,
+                    "checkpoint", "--session", session_id,
+                    "--summary", f"Measured the {venue} announcement request path and latency.",
+                    "--next", f"Apply the {venue} detail request concurrency boundary.",
+                )
+
+            plan = json.loads(self.run_ledger(
+                repo,
+                "context", "--query", "continue announcement rate limiting", "--format", "json",
+            ).stdout)
+            self.assertEqual("blocked", plan["resume"]["mode"])
+            self.assertEqual(set(sessions), {
+                candidate["session_id"] for candidate in plan["resume"]["candidates"]
+            })
+            ambiguous = self.run_ledger(
+                repo,
+                "resume", "--query", "continue announcement rate limiting", expected=2,
+            )
+            self.assertIn("Resume query is ambiguous", ambiguous.stderr)
+
+    def test_explicit_session_grants_are_bounded_and_do_not_mutate_owner_by_default(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            self.run_git(repo, "config", "repo-context-ledger.principal", "alice-profile")
+            created = self.run_ledger(
+                repo,
+                "pack", "--feature", "announcement-rate-limit",
+                "--title", "Announcement Rate Limiting", "--file", "src/service.py",
+            )
+            self.fill_context_pack(repo / created.stdout.splitlines()[0])
+            started = self.run_ledger(
+                repo,
+                "start", "--title", "Announcement rate limiting",
+                "--feature", "announcement-rate-limit", "--tool", "codex",
+            )
+            source_session = session_from_result(started)
+            self.run_ledger(
+                repo,
+                "checkpoint", "--session", source_session,
+                "--summary", "Alice checkpointed the announcement request throttling boundary.",
+                "--next", "Revalidate the shared HTTP client before changing concurrency.",
+            )
+
+            self.run_git(repo, "config", "repo-context-ledger.principal", "bob-profile")
+            bob_principal = LEDGER_MODULE.current_principal(repo)
+            self.run_git(repo, "config", "repo-context-ledger.principal", "alice-profile")
+            source_draft = LEDGER_MODULE.resolve_session_draft(
+                repo,
+                LEDGER_MODULE.load_config(repo),
+                source_session,
+                LEDGER_MODULE.load_context_state(repo)["task_sessions"][source_session],
+            )
+            source_before_fork = source_draft.read_bytes()
+            self.run_ledger(
+                repo,
+                "share", "--session", source_session, "--to", bob_principal,
+                "--mode", "read-only", "--expires-hours", "2",
+            )
+
+            self.run_git(repo, "config", "repo-context-ledger.principal", "bob-profile")
+            read_plan = json.loads(self.run_ledger(
+                repo,
+                "context", "--query", "continue announcement rate limiting", "--format", "json",
+            ).stdout)
+            self.assertEqual("read-only", read_plan["resume"]["capsule"]["access"])
+            self.assertIn("Alice checkpointed", read_plan["resume"]["capsule"]["summary"])
+            denied = self.run_ledger(repo, "resume", "--session", source_session, expected=2)
+            self.assertIn("read-only", denied.stderr)
+            status = self.run_ledger(repo, "status")
+            self.assertIn("Shared task sessions: 1", status.stdout)
+            self.assertIn("access=read-only", status.stdout)
+
+            expired = LEDGER_MODULE.load_context_state(repo)
+            expired["task_sessions"][source_session]["grants"][0]["expires_at"] = (
+                LEDGER_MODULE.now() - dt.timedelta(seconds=1)
+            ).isoformat(timespec="seconds")
+            LEDGER_MODULE.save_context_state(repo, expired)
+            expired_plan = json.loads(self.run_ledger(
+                repo,
+                "context", "--query", "continue announcement rate limiting", "--format", "json",
+            ).stdout)
+            self.assertTrue(expired_plan["resume"]["foreign_overlap"])
+            self.assertIsNone(expired_plan["resume"]["capsule"])
+
+            self.run_git(repo, "config", "repo-context-ledger.principal", "alice-profile")
+            self.run_ledger(
+                repo,
+                "share", "--session", source_session, "--to", bob_principal,
+                "--mode", "fork", "--expires-hours", "2",
+            )
+            self.run_git(repo, "config", "repo-context-ledger.principal", "bob-profile")
+            forked = self.run_ledger(
+                repo, "resume", "--session", source_session, "--tool", "cursor"
+            )
+            self.assertIn(f"Forked session {source_session} ->", forked.stdout)
+            state = LEDGER_MODULE.load_context_state(repo)
+            self.assertEqual(2, len(state["task_sessions"]))
+            source = state["task_sessions"][source_session]
+            self.assertNotEqual(bob_principal, source["owner_principal"])
+            child_id = next(item for item in state["task_sessions"] if item != source_session)
+            child = state["task_sessions"][child_id]
+            self.assertEqual(bob_principal, child["owner_principal"])
+            self.assertEqual("cursor", child["continuation_tool"])
+            self.assertEqual(source_before_fork, source_draft.read_bytes())
+            child_draft = LEDGER_MODULE.resolve_session_draft(
+                repo, LEDGER_MODULE.load_config(repo), child_id, child
+            )
+            self.assertEqual(source_session, field_from_file(child_draft, "Parent session"))
+
+            self.run_git(repo, "config", "repo-context-ledger.principal", "alice-profile")
+            rejected_transfer = self.run_ledger(
+                repo,
+                "share", "--session", source_session, "--to", bob_principal,
+                "--mode", "transfer", "--expires-hours", "2",
+                expected=2,
+            )
+            self.assertIn("Pause the task session", rejected_transfer.stderr)
+            self.run_ledger(
+                repo,
+                "pause", "--session", source_session,
+                "--summary", "Alice paused the source task before transferring ownership to Bob.",
+                "--next", "Bob must accept the transfer and revalidate current code.",
+            )
+            self.run_ledger(
+                repo,
+                "share", "--session", source_session, "--to", bob_principal,
+                "--mode", "transfer", "--expires-hours", "2",
+            )
+            self.run_git(repo, "config", "repo-context-ledger.principal", "bob-profile")
+            transferred = self.run_ledger(
+                repo, "resume", "--session", source_session, "--tool", "cursor"
+            )
+            self.assertIn("Continuation epoch: 2", transferred.stdout)
+            state = LEDGER_MODULE.load_context_state(repo)
+            self.assertEqual(bob_principal, state["task_sessions"][source_session]["owner_principal"])
+
+            self.run_git(repo, "config", "repo-context-ledger.principal", "alice-profile")
+            denied = self.run_ledger(
+                repo,
+                "pause", "--session", source_session,
+                "--summary", "Alice must not mutate the task after transferring ownership.",
+                "--next", "Use the forked or Git-tracked context instead.",
+                expected=2,
+            )
+            self.assertIn("owned by another principal", denied.stderr)
 
     def test_git_workspace_state_is_private_and_handoff_has_identity(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -1232,7 +1654,7 @@ class LedgerFlowTests(unittest.TestCase):
             oversized = self.run_ledger(repo, "focus", "--feature", "validation", expected=2)
             self.assertIn("configured maximum is 60", oversized.stderr)
 
-    def test_v2_git_state_and_active_pointer_migrate_to_private_v7_draft(self):
+    def test_v2_git_state_and_active_pointer_migrate_to_private_v8_draft(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw) / "repo"
             self.init_git_repo(repo, "Alice")
@@ -1271,7 +1693,7 @@ class LedgerFlowTests(unittest.TestCase):
             before_preview = self.repository_snapshot(repo)
             preview = self.run_ledger(repo, "init", "--dry-run")
             self.assertEqual(before_preview, self.repository_snapshot(repo))
-            self.assertIn("MIGRATE configuration schema v2 to v7", preview.stdout)
+            self.assertIn("MIGRATE configuration schema v2 to v8", preview.stdout)
             self.assertIn("MIGRATE workspace state to session-isolated storage", preview.stdout)
             self.assertTrue(legacy_handoff.exists())
             self.assertTrue(legacy_state.exists())
@@ -1295,10 +1717,12 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertTrue(migrated_draft.is_file())
             self.assertEqual(handoff_rel, sessions[0]["publish_path"])
             self.assertEqual("active", sessions[0]["status"])
+            self.assertEqual(LEDGER_MODULE.current_principal(repo), sessions[0]["owner_principal"])
+            self.assertEqual([], sessions[0]["grants"])
             self.assertFalse(legacy_handoff.exists())
             self.assertFalse(legacy_state.exists())
             self.assertFalse(legacy_pointer.exists())
-            self.assertEqual(7, json.loads(config_path.read_text(encoding="utf-8"))["schema_version"])
+            self.assertEqual(8, json.loads(config_path.read_text(encoding="utf-8"))["schema_version"])
 
     def test_git_worktrees_have_independent_active_state(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -1503,7 +1927,7 @@ class LedgerFlowTests(unittest.TestCase):
             self.run_ledger(repo, "check", "--strict")
             self.assertTrue((repo / "knowledge/changes/README.md").exists())
 
-    def test_legacy_repository_migrates_to_v7_without_losing_docs(self):
+    def test_legacy_repository_migrates_to_v8_without_losing_docs(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
             self.run_ledger(repo, "init")
@@ -1526,7 +1950,7 @@ class LedgerFlowTests(unittest.TestCase):
 
             self.run_ledger(repo, "init")
             migrated = json.loads(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(7, migrated["schema_version"])
+            self.assertEqual(8, migrated["schema_version"])
             self.assertTrue((repo / ".context-ledger/context-state.json").exists())
             self.assertTrue((repo / ".context-ledger/templates/context-pack-template.md").exists())
             self.assertIn("Preserved project purpose.", project_context.read_text(encoding="utf-8"))
@@ -1708,6 +2132,214 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertIn("Another Repo Context Ledger write is active", result.stderr)
             self.assertEqual("existing writer", lock.read_text(encoding="utf-8"))
 
+    def test_context_plan_bounds_required_reads(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            (repo / "src").mkdir()
+            source = repo / "src/router.py"
+            source.write_text("def route():\n    return 'ok'\n", encoding="utf-8")
+            spec_paths = []
+            for index in range(1, 5):
+                relative = f"docs/specs/router-{index}.md"
+                path = repo / relative
+                path.write_text(
+                    f"# Router contract {index}\n\nStable routing contract {index}.\n",
+                    encoding="utf-8",
+                )
+                spec_paths.append(relative)
+            command = [
+                "pack", "--feature", "bounded-router", "--title", "Bounded Router",
+                "--file", "src/router.py",
+            ]
+            for relative in spec_paths:
+                command.extend(["--spec", relative])
+            self.run_ledger(repo, *command)
+
+            result = self.run_ledger(repo, "context", "--query", "bounded router")
+
+            self.assertIn("Context plan: context-plan-v2", result.stdout)
+            required = result.stdout.split("Required reads:\n", 1)[1].split("Change summaries:\n", 1)[0]
+            self.assertIn("- pack: docs/ai/context-packs/bounded-router.md", required)
+            self.assertIn("- spec: docs/specs/router-1.md", required)
+            self.assertIn("- spec: docs/specs/router-2.md", required)
+            self.assertNotIn("docs/specs/router-3.md", required)
+            self.assertNotIn("docs/specs/router-4.md", required)
+            self.assertIn("Budget: files 3/3", result.stdout)
+
+    def test_context_plan_json_is_stable_and_repository_relative(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            (repo / "src").mkdir()
+            (repo / "src/router.py").write_text("def route():\n    return 'ok'\n", encoding="utf-8")
+            spec = repo / "docs/specs/router.md"
+            spec.write_text("# Router\n\nStable routing contract.\n", encoding="utf-8")
+            self.run_ledger(
+                repo,
+                "pack", "--feature", "bounded-router", "--title", "Bounded Router",
+                "--file", "src/router.py", "--spec", "docs/specs/router.md",
+            )
+
+            result = self.run_ledger(
+                repo, "context", "--query", "bounded router", "--format", "json"
+            )
+            plan = json.loads(result.stdout)
+
+            self.assertEqual("context-plan-v2", plan["schema"])
+            self.assertEqual("bounded router", plan["query"])
+            self.assertEqual("docs/ai/context-packs/bounded-router.md", plan["primary_pack"])
+            self.assertEqual(
+                ["pack", "spec"],
+                [item["kind"] for item in plan["required_reads"]],
+            )
+            self.assertEqual(
+                [
+                    "docs/ai/context-packs/bounded-router.md",
+                    "docs/specs/router.md",
+                ],
+                [item["path"] for item in plan["required_reads"]],
+            )
+            self.assertEqual(2, plan["budget"]["used_files"])
+            self.assertEqual(3, plan["budget"]["max_files"])
+            self.assertFalse(plan["budget"]["truncated"])
+            self.assertEqual(1, plan["metrics"]["packs_considered"])
+            self.assertEqual(2, plan["metrics"]["required_files"])
+            self.assertGreaterEqual(plan["metrics"]["elapsed_ms"], 0)
+            self.assertNotIn(str(repo), result.stdout)
+
+    def test_context_plan_uses_change_metadata_without_loading_change_bodies(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            (repo / "src").mkdir()
+            (repo / "src/router.py").write_text("def route():\n    return 'ok'\n", encoding="utf-8")
+            self.run_ledger(
+                repo,
+                "pack", "--feature", "bounded-router", "--title", "Bounded Router",
+                "--file", "src/router.py",
+            )
+            change = repo / "docs/changes/2026/08/20260801-router.md"
+            change.parent.mkdir(parents=True, exist_ok=True)
+            change.write_text(
+                "# 修复历史路由\n\n"
+                "Status: completed\n"
+                "Feature: bounded-router\n"
+                "Quality profile: evidence-v1\n"
+                "Handoff ID: 20260801-router\n"
+                "Completed: 2026-08-01T12:30:00+08:00\n\n"
+                "## Changed behavior\n\n"
+                "After: Routes now preserve the bounded selection contract.\n\n"
+                "BODY_MUST_STAY_COLD\n\n"
+                "<!-- repo-context-ledger:evidence:start -->\n"
+                "## Git change evidence\n\n"
+                "- Changed paths:\n"
+                "  - `src/router.py`\n"
+                "<!-- repo-context-ledger:evidence:end -->\n",
+                encoding="utf-8",
+            )
+            self.run_ledger(repo, "manifest", "sync")
+
+            result = self.run_ledger(
+                repo, "context", "--query", "bounded router", "--format", "json"
+            )
+            plan = json.loads(result.stdout)
+
+            self.assertEqual(
+                [
+                    {
+                        "id": "20260801-router",
+                        "path": "docs/changes/2026/08/20260801-router.md",
+                        "title": "修复历史路由",
+                        "feature": "bounded-router",
+                        "date": "2026-08-01",
+                        "summary": "Routes now preserve the bounded selection contract.",
+                        "evidence_paths": ["src/router.py"],
+                        "status": "completed",
+                    }
+                ],
+                plan["change_summaries"],
+            )
+            self.assertIn("\\u4fee\\u590d", result.stdout)
+            self.assertNotIn("BODY_MUST_STAY_COLD", result.stdout)
+            self.assertNotIn(
+                "docs/changes/2026/08/20260801-router.md",
+                [item["path"] for item in plan["required_reads"]],
+            )
+
+    def test_context_plan_does_not_grow_with_unrelated_change_history(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            (repo / "src").mkdir()
+            (repo / "src/router.py").write_text("def route():\n    return 'ok'\n", encoding="utf-8")
+            self.run_ledger(
+                repo,
+                "pack", "--feature", "bounded-router", "--title", "Bounded Router",
+                "--file", "src/router.py",
+            )
+            before = json.loads(
+                self.run_ledger(
+                    repo, "context", "--query", "bounded router", "--format", "json"
+                ).stdout
+            )
+            history = repo / "docs/changes/2026/08"
+            history.mkdir(parents=True, exist_ok=True)
+            for index in range(1000):
+                (history / f"historical-{index:04d}.md").write_text(
+                    f"# Unrelated historical change {index}\n\nCold body {index}.\n",
+                    encoding="utf-8",
+                )
+
+            after = json.loads(
+                self.run_ledger(
+                    repo, "context", "--query", "bounded router", "--format", "json"
+                ).stdout
+            )
+
+            self.assertEqual(before["primary_pack"], after["primary_pack"])
+            self.assertEqual(before["required_reads"], after["required_reads"])
+            self.assertEqual(before["change_summaries"], after["change_summaries"])
+            self.assertEqual(before["budget"], after["budget"])
+            self.assertEqual(
+                before["metrics"]["packs_considered"],
+                after["metrics"]["packs_considered"],
+            )
+
+    def test_context_plan_output_budget_holds_with_one_hundred_unrelated_packs(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            (repo / "src").mkdir()
+            (repo / "src/router.py").write_text("def route():\n    return 'ok'\n", encoding="utf-8")
+            self.run_ledger(
+                repo,
+                "pack", "--feature", "bounded-router", "--title", "Bounded Router",
+                "--file", "src/router.py",
+            )
+            target = repo / "docs/ai/context-packs/bounded-router.md"
+            template = target.read_text(encoding="utf-8")
+            for index in range(100):
+                feature = f"unrelated-{index:03d}"
+                text = template.replace("bounded-router", feature).replace(
+                    "Bounded Router", f"Unrelated Feature {index:03d}"
+                )
+                (target.parent / f"{feature}.md").write_text(text, encoding="utf-8")
+
+            plan = json.loads(
+                self.run_ledger(
+                    repo, "context", "--query", "bounded router", "--format", "json"
+                ).stdout
+            )
+
+            self.assertEqual("docs/ai/context-packs/bounded-router.md", plan["primary_pack"])
+            self.assertLessEqual(plan["budget"]["used_files"], plan["budget"]["max_files"])
+            self.assertLessEqual(
+                plan["budget"]["used_characters"], plan["budget"]["max_characters"]
+            )
+            self.assertEqual([], plan["optional_candidates"])
+            self.assertEqual(101, plan["metrics"]["packs_considered"])
+
     def test_context_router_prefers_live_pack_feature_and_tracked_path(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
@@ -1739,7 +2371,7 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertNotIn("market-data-to-spread-pipeline.md", result.stdout)
             self.assertNotIn("\tscore=", result.stdout)
 
-    def test_context_router_demotes_superseded_pack(self):
+    def test_context_router_prefers_current_pack_over_superseded_pack(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
             self.run_ledger(repo, "init")
@@ -1763,6 +2395,88 @@ class LedgerFlowTests(unittest.TestCase):
             result = self.run_ledger(repo, "context", "--query", "authority")
             self.assertIn("Primary pack: docs/ai/context-packs/authority.md", result.stdout)
             self.assertNotIn("Primary pack: docs/ai/context-packs/legacy-authority.md", result.stdout)
+
+    def test_context_router_never_selects_a_superseded_pack(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            (repo / "src").mkdir()
+            (repo / "src/legacy.py").write_text("VALUE = 1\n", encoding="utf-8")
+            created = self.run_ledger(
+                repo, "pack", "--feature", "legacy-only", "--file", "src/legacy.py"
+            )
+            legacy = repo / created.stdout.splitlines()[0]
+            legacy.write_text(
+                legacy.read_text(encoding="utf-8").replace(
+                    "Status: current", "Status: superseded\nSuperseded by: replacement"
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_ledger(
+                repo, "context", "--query", "legacy only", expected=1
+            )
+            self.assertNotIn("Primary pack:", result.stdout)
+
+    def test_changed_scope_strict_check_ignores_unrelated_existing_debt(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.init_git_repo(repo)
+            legacy = repo / "docs/ai/legacy-note.md"
+            legacy.write_text(
+                "# Legacy note\n\n[Old missing target](missing-old-target.md)\n",
+                encoding="utf-8",
+            )
+            self.run_git(repo, "add", "docs/ai/legacy-note.md")
+            self.run_git(repo, "commit", "-m", "Record existing documentation debt")
+            base = self.run_git(repo, "rev-parse", "HEAD").stdout.strip()
+            readme = repo / "README.md"
+            readme.write_text(readme.read_text(encoding="utf-8") + "\nValid branch note.\n", encoding="utf-8")
+
+            changed = self.run_ledger(repo, "check", "--strict", "--changed-since", base)
+            self.assertIn("Changed-scope Repo Context Ledger check passed.", changed.stdout)
+
+            full = self.run_ledger(repo, "check", "--strict", expected=2)
+            self.assertIn("Broken link in docs/ai/legacy-note.md", full.stderr)
+
+    def test_changed_scope_strict_check_rejects_new_broken_link(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.init_git_repo(repo)
+            base = self.run_git(repo, "rev-parse", "HEAD").stdout.strip()
+            self.run_git(repo, "switch", "-c", "feature/new-doc")
+            new_note = repo / "docs/ai/new-note.md"
+            new_note.write_text(
+                "# New note\n\n[Missing target](missing-new-target.md)\n",
+                encoding="utf-8",
+            )
+
+            changed = self.run_ledger(
+                repo, "check", "--strict", "--changed-since", base, expected=2
+            )
+            self.assertIn("Broken link in docs/ai/new-note.md", changed.stderr)
+
+    def test_changed_scope_strict_check_rejects_changed_stale_pack(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.init_git_repo(repo)
+            self.run_ledger(
+                repo,
+                "pack", "--feature", "service", "--title", "Service",
+                "--file", "src/service.py",
+            )
+            pack = repo / "docs/ai/context-packs/service.md"
+            self.fill_context_pack(pack)
+            self.run_git(repo, "add", "-A")
+            self.run_git(repo, "commit", "-m", "Add service context")
+            base = self.run_git(repo, "rev-parse", "HEAD").stdout.strip()
+            self.run_git(repo, "switch", "-c", "feature/stale-pack")
+            (repo / "src/service.py").write_text("VALUE = 2\n", encoding="utf-8")
+
+            changed = self.run_ledger(
+                repo, "check", "--strict", "--changed-since", base, expected=2
+            )
+            self.assertIn("Context pack is stale", changed.stderr)
 
     def test_discover_repo_finds_ledger_config_and_stops_at_nested_git(self):
         with tempfile.TemporaryDirectory() as raw:

@@ -20,8 +20,8 @@ import uuid
 from pathlib import Path
 
 
-VERSION = 7
-TOOL_VERSION = "0.5.8"
+VERSION = 8
+TOOL_VERSION = "0.5.10"
 MANIFEST_VERSION = 1
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
@@ -77,6 +77,22 @@ COVERAGE_GLOB_DEFAULTS = {
     "ignore_globs": [],
 }
 COVERAGE_GLOB_KEYS = tuple(COVERAGE_GLOB_DEFAULTS)
+CONTEXT_DEFAULTS = {
+    "max_required_files": 3,
+    "max_linked_specs": 2,
+    "max_change_summaries": 3,
+    "max_total_characters": 30000,
+    "show_close_candidates": 0,
+}
+RESUME_NEAR_SCORE_RATIO = 0.85
+RESUME_SUMMARY_CHARS = 600
+RESUME_NEXT_CHARS = 320
+RESUME_VERIFICATION_CHARS = 600
+RESUME_MAX_PATHS = 16
+RESUME_CAPSULE_CHARS = 4000
+RESUME_INTENT_TOKENS = {
+    "continue", "resume", "recover", "继续", "恢复", "接着", "续接",
+}
 
 
 class LedgerError(Exception):
@@ -392,7 +408,10 @@ def first_heading(path: Path) -> str:
 
 
 def field_value(text: str, field: str) -> str:
-    match = re.search(rf"(?mi)^{re.escape(field)}:\s*(.+?)\s*$", text)
+    match = re.search(
+        rf"(?mi)^{re.escape(field)}:[^\S\r\n]*([^\r\n]*)\r?$",
+        text,
+    )
     return match.group(1).strip() if match else ""
 
 
@@ -504,6 +523,36 @@ def git_actor(repo: Path) -> str:
         or os.environ.get("USER")
         or "unknown"
     )
+
+
+def principal_material(repo: Path) -> str:
+    explicit = (
+        os.environ.get("REPO_CONTEXT_LEDGER_PRINCIPAL", "").strip()
+        or git_output(repo, "config", "--get", "repo-context-ledger.principal").strip()
+    )
+    if explicit:
+        return f"configured:{explicit.casefold()}"
+    if os.name == "nt":
+        domain = os.environ.get("USERDOMAIN", "").strip()
+        username = os.environ.get("USERNAME", "").strip()
+        account = "\\".join(part for part in (domain, username) if part)
+    else:
+        uid = str(os.getuid()) if hasattr(os, "getuid") else "unknown"
+        username = os.environ.get("USER", "").strip()
+        account = f"uid={uid};user={username}"
+    return f"os:{account.casefold() or 'unknown'}"
+
+
+def current_principal(repo: Path) -> str:
+    digest = hashlib.sha256(principal_material(repo).encode("utf-8")).hexdigest()[:16]
+    return f"p-{digest}"
+
+
+def normalize_tool_id(raw: str) -> str:
+    value = (raw or os.environ.get("REPO_CONTEXT_LEDGER_TOOL", "unknown")).strip().casefold()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,31}", value):
+        raise LedgerError("Tool ID must contain 1 to 32 lowercase letters, digits, dots, underscores, or hyphens.")
+    return value
 
 
 def detect_default_branch(repo: Path) -> str:
@@ -621,7 +670,7 @@ def legacy_session_id(raw_handoff: str) -> str:
     return "legacy-" + hashlib.sha1(raw_handoff.encode("utf-8")).hexdigest()[:12]
 
 
-def normalized_session_record(session_id: str, raw: object) -> dict[str, str]:
+def normalized_session_record(session_id: str, raw: object) -> dict[str, object]:
     if not isinstance(raw, dict):
         raise LedgerError(f"context-state task session {session_id} must be an object.")
     draft = raw.get("draft") or raw.get("handoff")
@@ -629,6 +678,11 @@ def normalized_session_record(session_id: str, raw: object) -> dict[str, str]:
     feature = raw.get("feature", "")
     status = raw.get("status")
     updated = raw.get("updated_at", "")
+    owner_principal = raw.get("owner_principal", "")
+    resume_epoch = raw.get("resume_epoch", 1)
+    epoch_required = raw.get("epoch_required", False)
+    continuation_tool = raw.get("continuation_tool", "unknown")
+    raw_grants = raw.get("grants", [])
     if not isinstance(draft, str) or not draft:
         raise LedgerError(f"context-state task session {session_id} requires a draft path.")
     if not isinstance(publish_path, str) or not publish_path:
@@ -639,12 +693,47 @@ def normalized_session_record(session_id: str, raw: object) -> dict[str, str]:
         raise LedgerError(f"context-state task session {session_id} status must be active or paused.")
     if not isinstance(updated, str):
         raise LedgerError(f"context-state task session {session_id} updated_at must be a string.")
+    if not isinstance(owner_principal, str):
+        raise LedgerError(f"context-state task session {session_id} owner_principal must be a string.")
+    if not isinstance(resume_epoch, int) or isinstance(resume_epoch, bool) or resume_epoch < 1:
+        raise LedgerError(f"context-state task session {session_id} resume_epoch must be a positive integer.")
+    if not isinstance(epoch_required, bool):
+        raise LedgerError(f"context-state task session {session_id} epoch_required must be a boolean.")
+    if not isinstance(continuation_tool, str):
+        raise LedgerError(f"context-state task session {session_id} continuation_tool must be a string.")
+    if not isinstance(raw_grants, list):
+        raise LedgerError(f"context-state task session {session_id} grants must be a list.")
+    grants: list[dict[str, str]] = []
+    for grant in raw_grants:
+        if not isinstance(grant, dict):
+            raise LedgerError(f"context-state task session {session_id} grant must be an object.")
+        principal = grant.get("principal", "")
+        mode = grant.get("mode", "")
+        created_at = grant.get("created_at", "")
+        expires_at = grant.get("expires_at", "")
+        if not isinstance(principal, str) or not re.fullmatch(r"p-[0-9a-f]{16}", principal):
+            raise LedgerError(f"context-state task session {session_id} grant principal is invalid.")
+        if mode not in {"transfer", "fork", "read-only"}:
+            raise LedgerError(f"context-state task session {session_id} grant mode is invalid.")
+        if not isinstance(created_at, str) or not isinstance(expires_at, str):
+            raise LedgerError(f"context-state task session {session_id} grant timestamps must be strings.")
+        grants.append({
+            "principal": principal,
+            "mode": mode,
+            "created_at": created_at,
+            "expires_at": expires_at,
+        })
     return {
         "draft": draft,
         "publish_path": publish_path,
         "feature": feature_slug(feature) if feature else "",
         "status": status,
         "updated_at": updated,
+        "owner_principal": owner_principal,
+        "resume_epoch": resume_epoch,
+        "epoch_required": epoch_required,
+        "continuation_tool": continuation_tool or "unknown",
+        "grants": grants,
     }
 
 
@@ -676,6 +765,11 @@ def normalize_context_state(raw: dict) -> dict:
                 "feature": feature_slug(active_feature) if active_feature else "",
                 "status": "active",
                 "updated_at": "",
+                "owner_principal": "",
+                "resume_epoch": 1,
+                "epoch_required": False,
+                "continuation_tool": "unknown",
+                "grants": [],
             }
         for handoff in paused:
             session_id = legacy_session_id(handoff)
@@ -685,6 +779,11 @@ def normalize_context_state(raw: dict) -> dict:
                 "feature": "",
                 "status": "paused",
                 "updated_at": "",
+                "owner_principal": "",
+                "resume_epoch": 1,
+                "epoch_required": False,
+                "continuation_tool": "unknown",
+                "grants": [],
             })
     return {
         "schema_version": VERSION,
@@ -748,6 +847,11 @@ def migrate_workspace_state(repo: Path, config: dict) -> bool:
                 "feature": "",
                 "status": "active",
                 "updated_at": "",
+                "owner_principal": "",
+                "resume_epoch": 1,
+                "epoch_required": False,
+                "continuation_tool": "unknown",
+                "grants": [],
             })
         migrated = True
     canonical_sessions: dict[str, dict] = {}
@@ -779,10 +883,16 @@ def migrate_workspace_state(repo: Path, config: dict) -> bool:
             if draft == publish_path:
                 planned_unlink(draft, "legacy task draft")
             migrated = True
+        owner_principal = str(record.get("owner_principal", ""))
+        if not owner_principal:
+            draft_text = planned_read_text(private_draft)
+            if field_value(draft_text, "Actor").casefold() == git_actor(repo).casefold():
+                owner_principal = current_principal(repo)
         canonical_sessions[canonical_id] = {
             **record,
             "draft": session_draft_ref(repo, private_draft),
             "publish_path": rel_posix(publish_path, repo),
+            "owner_principal": owner_principal,
         }
         migrated = migrated or canonical_id != session_id
     state["task_sessions"] = canonical_sessions
@@ -977,6 +1087,27 @@ def validate_config(repo: Path, config: dict) -> dict:
         if not isinstance(enabled, bool):
             raise LedgerError(f"config.adapters.{name} must be true or false.")
         adapters[name] = enabled
+    raw_context = config.get("context", {})
+    if not isinstance(raw_context, dict):
+        raise LedgerError("config.context must be an object.")
+    unknown_context = set(raw_context).difference(CONTEXT_DEFAULTS)
+    if unknown_context:
+        raise LedgerError(f"Unknown context setting: {sorted(unknown_context)[0]}")
+    context = {}
+    context_ranges = {
+        "max_required_files": (1, 12),
+        "max_linked_specs": (0, 8),
+        "max_change_summaries": (0, 20),
+        "max_total_characters": (4000, 200000),
+        "show_close_candidates": (0, 5),
+    }
+    for key, (minimum, maximum) in context_ranges.items():
+        value = raw_context.get(key, CONTEXT_DEFAULTS[key])
+        if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= maximum:
+            raise LedgerError(
+                f"config.context.{key} must be an integer from {minimum} to {maximum}."
+            )
+        context[key] = value
     coverage = normalize_coverage_globs(config.get("coverage"))
     return {
         "schema_version": VERSION,
@@ -984,6 +1115,7 @@ def validate_config(repo: Path, config: dict) -> dict:
         "modules": normalized_modules,
         "readme_managed_blocks": bool(config.get("readme_managed_blocks", True)),
         "adapters": adapters,
+        "context": context,
         "coverage": coverage,
         "team": {
             "enabled": team_enabled,
@@ -1042,6 +1174,32 @@ def discover_modules(repo: Path) -> list[dict[str, str]]:
     return [found[key] for key in sorted(found)]
 
 
+def context_plan_policy() -> str:
+    return (
+        "Before broad documentation exploration, run `context --query \"<task>\"`. "
+        "Read only the Context Plan's Required reads initially. "
+        "Never recursively read `docs/ai`, `docs/specs`, or `docs/changes`. "
+        "Do not open completed Change bodies unless the plan selects one, a required Pack cites "
+        "one for a named reason, or the user asks for historical reasoning. "
+        "Required reads are a starting route, not a maximum code-reading limit. "
+        "Expand context only after stating the unresolved question, and always expand whenever "
+        "callers, implementations, configuration, persistence, "
+        "permissions, concurrency, retries, tests, or external boundaries can affect the behavior."
+    )
+
+
+def resume_plan_policy(tool: str = "<agent>") -> str:
+    return (
+        "When the user says to continue earlier work, query the keywords first and use only an owned "
+        "unique Resume Capsule. Continue the same Ledger session with `resume --query \"<keywords>\" "
+        f"--tool {tool}`; keep the returned continuation epoch and pass `--epoch <n>` to later writes. "
+        "Never read, resume, pause, checkpoint, finish, or invalidate another principal's private "
+        "session unless an explicit unexpired grant authorizes that exact access. Read-only grants "
+        "never permit writes. A foreign overlap without a grant permits only Git-tracked "
+        "Pack/spec/Change guidance."
+    )
+
+
 def managed_rules(config: dict) -> str:
     changes = config["docs"]["changes"]
     specs = config["docs"]["specs"]
@@ -1051,8 +1209,8 @@ For every feature, bug fix, refactor, interface change, or other behavior-changi
 
 1. Before editing code, run `status`, then start or reuse only this task's private draft session. Keep the returned session ID and pass `--session <id>` whenever multiple sessions exist.
 2. Resolve `quality.language`; when it is `auto`, follow nearby docs or the user's language. Keep paths, symbols, commands, and error text untranslated.
-3. Use `context --query "<task>"` and focus the feature Context Pack before broad code exploration. If none exists, create and fill one.
-4. Run `checkpoint --session <id> --summary "..." --next "..."` before handing active work to another Agent. Pause only this task's session; never pause, resume, or finish another task's session.
+3. {context_plan_policy()} Focus the selected feature Context Pack before broad code exploration. If no Pack exists, create and fill one.
+4. {resume_plan_policy()} Run `checkpoint --session <id> --summary "..." --next "..."` before handing active work to another Agent. Pause only this task's session; never pause, resume, or finish another task's session.
 5. Run every claimed check through `python .context-ledger/ledger.py verify -- <command>`. Use `verify --not-run --reason \"...\"` only when verification is genuinely unavailable.
 6. Run `evidence`, read `.context-ledger/writing-quality.md`, and fill the private draft from actual changed paths. When another session exists, pass repeated `--path <path>` values for only this task; never capture foreign dirty paths. Refresh affected Context Packs with `pack --file ...`.
 7. Update `{specs}/` when current behavior, contracts, boundaries, or code navigation changes.
@@ -1068,25 +1226,27 @@ Do not ask the user to run bookkeeping commands. Do not create a handoff for rea
 
 
 def claude_adapter_body() -> str:
-    return """@AGENTS.md
+    return f"""@AGENTS.md
+
+{context_plan_policy()} {resume_plan_policy('claude')}
 
 Treat Git-tracked Context Packs, stable specs, and handoffs as the cross-Agent source of truth. Follow the repository context ledger workflow without asking the user to run lifecycle commands. Never message or steer another user-owned task unless the user explicitly requested cross-task coordination."""
 
 
 def cursor_adapter_content() -> str:
-    return """---
+    return f"""---
 description: Route Cursor through the repository's verified, cross-Agent context ledger.
 alwaysApply: true
 ---
 
-Read and follow the repository root `AGENTS.md`. Use `python .context-ledger/ledger.py context --query "<task>"` to load the smallest relevant Context Pack and stable spec. Treat Cursor Memory as a private cache, never as the repository source of truth. Run ledger lifecycle commands autonomously; never delegate them to the user. Never message or steer another user-owned task unless the user explicitly requested cross-task coordination.
+Read and follow the repository root `AGENTS.md`. {context_plan_policy()} {resume_plan_policy('cursor')} Treat Cursor Memory as a private cache, never as the repository source of truth. Run ledger lifecycle commands autonomously; never delegate them to the user. Never message or steer another user-owned task unless the user explicitly requested cross-task coordination.
 """
 
 
 def copilot_adapter_body() -> str:
-    return """## Repository Context Ledger
+    return f"""## Repository Context Ledger
 
-Read and follow the repository root `AGENTS.md`. Before broad code exploration, run `python .context-ledger/ledger.py context --query "<task>"` and load the matching Context Pack and stable spec. Treat Copilot Memory as a private cache; Git-tracked ledger documents are the shared cross-Agent source of truth. Never message or steer another user-owned task unless the user explicitly requested cross-task coordination."""
+Read and follow the repository root `AGENTS.md`. {context_plan_policy()} {resume_plan_policy('copilot')} Treat Copilot Memory as a private cache; Git-tracked ledger documents are the shared cross-Agent source of truth. Never message or steer another user-owned task unless the user explicitly requested cross-task coordination."""
 
 
 def adapter_states(repo: Path, config: dict) -> dict[str, tuple[Path, str, bool]]:
@@ -1376,12 +1536,77 @@ def session_candidates(state: dict, status: str) -> list[tuple[str, dict]]:
     ]
 
 
+def grant_is_current(grant: dict[str, str]) -> bool:
+    try:
+        expires = dt.datetime.fromisoformat(grant["expires_at"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    current = now()
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=current.tzinfo)
+    return expires >= current
+
+
+def session_access_level(
+    repo: Path,
+    config: dict,
+    session_id: str,
+    record: dict,
+) -> str:
+    owner = str(record.get("owner_principal", ""))
+    if owner:
+        if owner == current_principal(repo):
+            return "owner"
+        for grant in record.get("grants", []):
+            if (
+                isinstance(grant, dict)
+                and grant.get("principal") == current_principal(repo)
+                and grant_is_current(grant)
+            ):
+                return str(grant["mode"])
+        return "foreign"
+    try:
+        draft = resolve_session_draft(repo, config, session_id, record)
+        actor = field_value(planned_read_text(draft), "Actor") if planned_is_file(draft) else ""
+    except (LedgerError, OSError, UnicodeError):
+        actor = ""
+    return "legacy-owner" if actor and actor.casefold() == git_actor(repo).casefold() else "foreign"
+
+
+def owned_session_candidates(
+    repo: Path,
+    config: dict,
+    state: dict,
+    status: str,
+) -> list[tuple[str, dict]]:
+    return [
+        (session_id, record)
+        for session_id, record in session_candidates(state, status)
+        if session_access_level(repo, config, session_id, record) in {"owner", "legacy-owner"}
+    ]
+
+
+def validate_session_epoch(session_id: str, record: dict, expected_epoch: int = 0) -> None:
+    current_epoch = int(record.get("resume_epoch", 1))
+    if expected_epoch and expected_epoch != current_epoch:
+        raise LedgerError(
+            f"Task session {session_id} continuation epoch is {current_epoch}, not {expected_epoch}; "
+            "reload its Resume Capsule before writing."
+        )
+    if record.get("epoch_required") and not expected_epoch:
+        raise LedgerError(
+            f"Task session {session_id} was continued in another Agent window; "
+            f"rerun with --epoch {current_epoch}."
+        )
+
+
 def resolve_task_session(
     repo: Path,
     config: dict,
     session: str = "",
     status: str = "active",
     handoff: str = "",
+    expected_epoch: int = 0,
 ) -> tuple[str, dict, Path]:
     state = load_context_state(repo)
     candidates = session_candidates(state, status)
@@ -1396,15 +1621,26 @@ def resolve_task_session(
         exact = [item for item in candidates if item[0] == requested]
         prefix = [item for item in candidates if item[0].startswith(requested)]
         candidates = exact or prefix
+    matched = candidates
+    candidates = [
+        (session_id, record)
+        for session_id, record in matched
+        if session_access_level(repo, config, session_id, record) in {"owner", "legacy-owner"}
+    ]
+    if matched and not candidates:
+        raise LedgerError("The selected task session is owned by another principal.")
     if not candidates:
         detail = f" '{requested}'" if requested else ""
-        raise LedgerError(f"No {status} task session{detail}.")
+        raise LedgerError(f"No {status} task session owned by the current principal{detail}.")
     if len(candidates) > 1:
         choices = ", ".join(session_id for session_id, _ in candidates)
         raise LedgerError(
             f"Multiple {status} task sessions exist ({choices}); rerun with --session <id>."
         )
     session_id, record = candidates[0]
+    if not record.get("owner_principal"):
+        record = {**record, "owner_principal": current_principal(repo)}
+    validate_session_epoch(session_id, record, expected_epoch)
     target = resolve_session_draft(repo, config, session_id, record)
     if not target.is_file():
         raise LedgerError(f"Task session draft does not exist: {record['draft']}")
@@ -1412,14 +1648,20 @@ def resolve_task_session(
 
 
 def active_handoff(repo: Path, config: dict, session: str = "") -> Path | None:
-    candidates = session_candidates(load_context_state(repo), "active")
+    candidates = owned_session_candidates(repo, config, load_context_state(repo), "active")
     if not candidates:
         return None
     _, _, target = resolve_task_session(repo, config, session=session, status="active")
     return target
 
 
-def start_change(repo: Path, title: str, feature: str = "", language: str = "") -> int:
+def start_change(
+    repo: Path,
+    title: str,
+    feature: str = "",
+    language: str = "",
+    tool: str = "",
+) -> int:
     title = title.strip()
     if not title or len(title) > 160 or "\n" in title or "\r" in title:
         print("Task title must be one line containing 1 to 160 characters.", file=sys.stderr)
@@ -1469,10 +1711,16 @@ def start_change(repo: Path, title: str, feature: str = "", language: str = "") 
         "feature": feature,
         "status": "active",
         "updated_at": stamp.isoformat(timespec="seconds"),
+        "owner_principal": current_principal(repo),
+        "resume_epoch": 1,
+        "epoch_required": False,
+        "continuation_tool": normalize_tool_id(tool),
+        "grants": [],
     }
     remember_feature(state, feature)
     save_context_state(repo, state)
     print(f"Session: {handoff_id}")
+    print("Continuation epoch: 1")
     print(f"Publish target: {rel_posix(publish_path, repo)}")
     return 0
 
@@ -1508,6 +1756,16 @@ def pack_fingerprint_current(repo: Path, entries: list[tuple[str, str]]) -> bool
     return True
 
 
+def pack_header_text(path: Path) -> str:
+    lines: list[str] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.startswith("## "):
+                break
+            lines.append(line)
+    return "".join(lines)
+
+
 def load_live_context_packs(repo: Path, config: dict) -> list[dict[str, object]]:
     ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
     packs_root = ai_root / "context-packs"
@@ -1518,6 +1776,11 @@ def load_live_context_packs(repo: Path, config: dict) -> list[dict[str, object]]
         if path.name.casefold() == "readme.md":
             continue
         try:
+            header = pack_header_text(path)
+            status = (field_value(header, "Status") or "unknown").casefold()
+            superseded_by = field_value(header, "Superseded by")
+            if status != "current" or superseded_by:
+                continue
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError):
             continue
@@ -1534,8 +1797,8 @@ def load_live_context_packs(repo: Path, config: dict) -> list[dict[str, object]]
             "rel": rel_posix(path, repo),
             "feature": feature_slug(field_value(text, "Feature") or path.stem),
             "title": first_heading(path).removesuffix(" context pack"),
-            "status": (field_value(text, "Status") or "unknown").casefold(),
-            "superseded_by": field_value(text, "Superseded by"),
+            "status": status,
+            "superseded_by": superseded_by,
             "purpose": pack_purpose_text(text),
             "tracked": [raw for raw, _ in tracked],
             "specs": specs,
@@ -1594,41 +1857,537 @@ def score_context_pack(pack: dict[str, object], query: str, tokens: list[str]) -
     return score, reasons
 
 
-def context_search(repo: Path, query: str, limit: int) -> int:
+def manifest_change_summaries(
+    repo: Path,
+    config: dict,
+    feature: str,
+    limit: int,
+) -> list[dict[str, str]]:
+    if limit <= 0:
+        return []
+    manifest_path = safe_repo_path(
+        repo,
+        config["docs"]["ai"].rstrip("/") + "/context-manifest.json",
+        "context manifest",
+    )
+    if not manifest_path.is_file():
+        return []
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeError):
+        return []
+    features = manifest.get("features")
+    if not isinstance(features, list):
+        return []
+    entry = next(
+        (
+            item for item in features
+            if isinstance(item, dict) and feature_slug(str(item.get("feature", ""))) == feature
+        ),
+        None,
+    )
+    if not entry or not isinstance(entry.get("recent_changes"), list):
+        return []
+    summaries: list[dict[str, str]] = []
+    for item in entry["recent_changes"]:
+        if not isinstance(item, dict):
+            continue
+        scalar_keys = ("id", "path", "title", "feature", "date", "summary", "status")
+        values = {key: item.get(key) for key in scalar_keys}
+        evidence_paths = item.get("evidence_paths")
+        if not all(isinstance(value, str) and value.strip() for value in values.values()):
+            continue
+        if not isinstance(evidence_paths, list) or not all(
+            isinstance(value, str) and value.strip() for value in evidence_paths
+        ):
+            continue
+        try:
+            path = rel_posix(
+                safe_repo_path(repo, str(values["path"]), "manifest recent change"), repo
+            )
+            normalized_evidence = [
+                rel_posix(safe_repo_path(repo, raw, "manifest change evidence"), repo)
+                for raw in evidence_paths
+            ]
+        except LedgerError:
+            continue
+        summaries.append({
+            "id": str(values["id"]).strip(),
+            "path": path,
+            "title": str(values["title"]).strip(),
+            "feature": feature_slug(str(values["feature"])),
+            "date": str(values["date"]).strip(),
+            "summary": str(values["summary"]).strip(),
+            "evidence_paths": normalized_evidence,
+            "status": str(values["status"]).strip(),
+        })
+        if len(summaries) >= limit:
+            break
+    return summaries
+
+
+def compact_resume_text(raw: str, limit: int) -> str:
+    value = re.sub(r"\s+", " ", raw or "").strip()
+    if len(value) <= limit:
+        return value
+    return value[: max(1, limit - 1)].rstrip() + "…"
+
+
+def resume_query_tokens(query: str) -> list[str]:
+    return [token for token in query_tokens(query) if token not in RESUME_INTENT_TOKENS]
+
+
+def resume_session_view(
+    repo: Path,
+    config: dict,
+    session_id: str,
+    record: dict,
+) -> dict[str, object] | None:
+    try:
+        draft = resolve_session_draft(repo, config, session_id, record)
+        text = draft.read_text(encoding="utf-8")
+    except (LedgerError, OSError, UnicodeError):
+        return None
+    evidence_paths = sorted(
+        path for path in recorded_handoff_evidence_paths(text)
+        if is_implementation_path(config, path)
+    )[:RESUME_MAX_PATHS]
+    if not evidence_paths:
+        dirty = field_value(text, "Dirty paths")
+        evidence_paths = [
+            normalize_git_path(item.strip())
+            for item in dirty.split(",")
+            if item.strip()
+            and item.strip().casefold() != "none"
+            and is_implementation_path(config, normalize_git_path(item.strip()))
+        ][:RESUME_MAX_PATHS]
+    checks = managed_text(text, CHECKS_START, CHECKS_END)
+    check_lines = [line.strip() for line in checks.splitlines() if line.strip()]
+    verification = compact_resume_text(" ".join(check_lines[-6:]), RESUME_VERIFICATION_CHARS)
+    return {
+        "session_id": session_id,
+        "record": record,
+        "draft": draft,
+        "text": text,
+        "title": first_heading(draft),
+        "feature": feature_slug(str(record.get("feature") or field_value(text, "Feature") or first_heading(draft))),
+        "status": str(record.get("status", "")),
+        "updated_at": str(record.get("updated_at", "")),
+        "checkpointed": field_value(text, "Checkpointed"),
+        "summary": compact_resume_text(field_value(text, "Resume summary"), RESUME_SUMMARY_CHARS),
+        "next_step": compact_resume_text(field_value(text, "Next step"), RESUME_NEXT_CHARS),
+        "base_commit": field_value(text, "Base commit"),
+        "branch": field_value(text, "Branch"),
+        "evidence_paths": evidence_paths,
+        "verification": verification,
+        "resume_epoch": int(record.get("resume_epoch", 1)),
+        "continuation_tool": str(record.get("continuation_tool", "unknown")),
+    }
+
+
+def score_resume_session(view: dict[str, object], query: str, tokens: list[str]) -> tuple[int, list[str]]:
+    if not tokens:
+        return 0, []
+    folded = query.casefold()
+    feature = str(view["feature"])
+    title = str(view["title"]).casefold()
+    reasons: list[str] = []
+    score = 0
+    if feature and (feature in folded.replace(" ", "-") or feature.replace("-", " ") in folded):
+        score += 10000
+        reasons.append(f"feature={feature}")
+    if title and title in folded:
+        score += 8000
+        reasons.append("title")
+    paths = [str(item).casefold() for item in view["evidence_paths"]]
+    haystacks = {
+        "title": f"{feature} {title}",
+        "resume": f"{str(view['summary']).casefold()} {str(view['next_step']).casefold()}",
+        "paths": " ".join(paths),
+    }
+    for token in tokens:
+        if token in haystacks["title"]:
+            score += 80 * max(1, len(token))
+        if token in haystacks["resume"]:
+            score += 40 * max(1, len(token))
+        if token in haystacks["paths"]:
+            score += 60 * max(1, len(token))
+    if score:
+        reasons.append("private-checkpoint")
+    return score, reasons
+
+
+def foreign_session_query_match(record: dict, query: str, tokens: list[str]) -> bool:
+    """Detect only coarse feature overlap without reading a foreign private draft."""
+    feature = feature_slug(str(record.get("feature", ""))) if record.get("feature") else ""
+    if not feature or not tokens:
+        return False
+    folded = query.casefold()
+    if feature in folded.replace(" ", "-") or feature.replace("-", " ") in folded:
+        return True
+    feature_tokens = {item for item in feature.split("-") if len(item) >= 3}
+    matched = feature_tokens.intersection(tokens)
+    return bool(matched) and (
+        len(matched) >= min(2, len(feature_tokens))
+        or max(len(item) for item in matched) >= 8
+    )
+
+
+def build_resume_capsule(
+    repo: Path,
+    view: dict[str, object],
+    primary_pack: dict[str, object] | None,
+) -> dict[str, object]:
+    warnings: list[str] = []
+    unknowns: list[str] = []
+    base_commit = str(view["base_commit"])
+    current_commit = git_revision(repo)
+    recorded_branch = str(view["branch"])
+    current_branch = git_branch(repo)
+    if recorded_branch and recorded_branch != current_branch:
+        warnings.append(f"checkpoint branch is {recorded_branch}; current branch is {current_branch}")
+    if base_commit and base_commit != "none" and current_commit != base_commit:
+        warnings.append("repository HEAD moved after the task started; revalidate the recorded scope")
+    if primary_pack is None:
+        warnings.append("no current Context Pack matches the session feature")
+    elif not primary_pack["fingerprints_ok"]:
+        warnings.append("the session Context Pack has stale tracked-file fingerprints")
+    changed: set[str] = set(git_dirty_paths(repo))
+    if base_commit and base_commit != "none" and git_revision(repo, base_commit) != "none":
+        changed.update(git_changed_paths(repo, f"{base_commit}..HEAD"))
+    missing = [path for path in view["evidence_paths"] if path not in changed]
+    if missing:
+        warnings.append("some recorded evidence paths are no longer changed from the session base")
+    if not view["summary"]:
+        unknowns.append("the task has no checkpoint resume summary")
+    if not view["next_step"]:
+        unknowns.append("the task has no concrete next step")
+    access = str(view.get("access", "owner"))
+    if access == "read-only":
+        warnings.append("the current principal has read-only Capsule access and cannot resume this session")
+    elif access in {"transfer", "fork"}:
+        warnings.append(f"the current principal must explicitly accept the {access} grant before writing")
+    unknowns.extend(warnings)
+    mode = "ready" if not unknowns else "guided"
+    capsule: dict[str, object] = {
+        "mode": mode,
+        "session_id": str(view["session_id"]),
+        "status": str(view["status"]),
+        "feature": str(view["feature"]),
+        "title": str(view["title"]),
+        "checkpointed": str(view["checkpointed"]),
+        "summary": str(view["summary"]),
+        "next_step": str(view["next_step"]),
+        "evidence_paths": list(view["evidence_paths"]),
+        "last_verification": str(view["verification"]),
+        "base_commit": base_commit or "none",
+        "current_commit": current_commit,
+        "branch": current_branch,
+        "resume_epoch": int(view["resume_epoch"]),
+        "continuation_tool": str(view["continuation_tool"]),
+        "access": access,
+        "primary_pack": str(primary_pack["rel"]) if primary_pack else "",
+        "warnings": warnings,
+        "unknowns": unknowns,
+        "expand_when": [
+            "a required symbol calls or implements behavior outside the loaded paths",
+            "configuration, persistence, permissions, concurrency, retries, or external APIs affect the behavior",
+            "tests, Git diff, Context Pack, or stable spec reveal an uncovered boundary",
+        ],
+    }
+    capsule["budget"] = {
+        "max_characters": RESUME_CAPSULE_CHARS,
+        "used_characters": 0,
+    }
+
+    def refresh_capsule_size() -> int:
+        size = 0
+        for _ in range(4):
+            size = len(json.dumps(capsule, ensure_ascii=False, sort_keys=True))
+            if capsule["budget"]["used_characters"] == size:
+                return size
+            capsule["budget"]["used_characters"] = size
+        return len(json.dumps(capsule, ensure_ascii=False, sort_keys=True))
+
+    serialized_size = refresh_capsule_size()
+    while serialized_size > RESUME_CAPSULE_CHARS and capsule["evidence_paths"]:
+        capsule["evidence_paths"] = capsule["evidence_paths"][:-1]
+        serialized_size = refresh_capsule_size()
+    if serialized_size > RESUME_CAPSULE_CHARS:
+        capsule["last_verification"] = ""
+        serialized_size = refresh_capsule_size()
+    if serialized_size > RESUME_CAPSULE_CHARS:
+        capsule["summary"] = compact_resume_text(str(capsule["summary"]), RESUME_SUMMARY_CHARS // 2)
+        capsule["next_step"] = compact_resume_text(str(capsule["next_step"]), RESUME_NEXT_CHARS // 2)
+        serialized_size = refresh_capsule_size()
+    if serialized_size > RESUME_CAPSULE_CHARS:
+        capsule["summary"] = ""
+        capsule["next_step"] = ""
+        capsule["warnings"] = ["Resume Capsule exceeded its budget and was reduced; reload the private checkpoint."]
+        capsule["unknowns"] = ["private checkpoint details require explicit follow-up reads"]
+        refresh_capsule_size()
+    return capsule
+
+
+def route_resume_sessions(
+    repo: Path,
+    config: dict,
+    query: str,
+    packs: list[dict[str, object]],
+) -> tuple[dict[str, object], dict[str, object] | None]:
+    state = load_context_state(repo)
+    tokens = resume_query_tokens(query)
+    ranked: list[tuple[int, dict[str, object], list[str]]] = []
+    foreign_overlap = False
+    for session_id, record in state.get("task_sessions", {}).items():
+        if record.get("status") not in {"active", "paused"}:
+            continue
+        access = session_access_level(repo, config, session_id, record)
+        if access == "foreign":
+            if foreign_session_query_match(record, query, tokens):
+                foreign_overlap = True
+            continue
+        view = resume_session_view(repo, config, session_id, record)
+        if view is None:
+            continue
+        score, reasons = score_resume_session(view, query, tokens)
+        if score <= 0:
+            continue
+        view["access"] = access
+        ranked.append((score, view, reasons))
+    ranked.sort(key=lambda item: (-item[0], str(item[1]["session_id"])))
+    if not ranked:
+        return {
+            "mode": "guided" if foreign_overlap else "none",
+            "foreign_overlap": foreign_overlap,
+            "candidates": [],
+            "capsule": None,
+        }, None
+    best_score = ranked[0][0]
+    near = [item for item in ranked if item[0] >= int(best_score * RESUME_NEAR_SCORE_RATIO)]
+    if len(near) > 1:
+        return {
+            "mode": "blocked",
+            "foreign_overlap": foreign_overlap,
+            "candidates": [
+                {
+                    "session_id": str(view["session_id"]),
+                    "feature": str(view["feature"]),
+                    "status": str(view["status"]),
+                    "title": str(view["title"]),
+                    "score": score,
+                }
+                for score, view, _ in near[:3]
+            ],
+            "capsule": None,
+        }, None
+    _, selected, reasons = ranked[0]
+    primary_pack = next(
+        (pack for pack in packs if str(pack["feature"]) == str(selected["feature"])),
+        None,
+    )
+    capsule = build_resume_capsule(repo, selected, primary_pack)
+    return {
+        "mode": str(capsule["mode"]),
+        "foreign_overlap": foreign_overlap,
+        "selection": {"score": best_score, "reasons": reasons},
+        "candidates": [],
+        "capsule": capsule,
+    }, selected
+
+
+def context_search(
+    repo: Path,
+    query: str,
+    limit: int,
+    output_format: str = "text",
+    tool: str = "",
+) -> int:
+    started = time.perf_counter()
     config = load_config(repo)
     tokens = query_tokens(query)
     packs = load_live_context_packs(repo, config)
-    if not packs:
-        print("No Context Packs found. Inspect docs/ai/context-packs.")
-        return 1
+    resume_route, resume_view = route_resume_sessions(repo, config, query, packs)
     ranked: list[tuple[int, dict[str, object], list[str]]] = []
     for pack in packs:
         score, reasons = score_context_pack(pack, query, tokens)
+        if resume_view is not None and str(pack["feature"]) == str(resume_view["feature"]):
+            score = max(score, 100000)
+            reasons = list(dict.fromkeys(["owned-session-feature", *reasons]))
         if score > 0:
             ranked.append((score, pack, reasons))
     ranked.sort(key=lambda item: (-item[0], str(item[1]["rel"])))
-    if not ranked:
-        print("No matching Context Pack. Create one with pack --feature or inspect docs/ai/context-packs.")
-        return 1
-    best_score, primary, reasons = ranked[0]
-    print(f"Primary pack: {primary['rel']}")
-    print(f"Feature: {primary['feature']}")
-    print(f"Title: {primary['title']}")
-    print(f"Status: {primary['status']}")
-    print(f"Why: {', '.join(reasons) or 'token overlap'}")
-    print(f"Score: {best_score}")
-    print(f"Fingerprints: {'current' if primary['fingerprints_ok'] else 'stale'}")
-    print("Stable specs:")
-    specs = [str(item) for item in primary["specs"]]
-    if specs:
-        for spec in specs:
-            print(f"- {spec}")
+    if ranked:
+        best_score, primary, reasons = ranked[0]
+    elif resume_view is not None:
+        best_score, primary, reasons = 0, None, ["private checkpoint without current Pack"]
     else:
-        print("- none")
-    near = [
+        if resume_route["foreign_overlap"]:
+            print("A matching task exists for another principal; only Git-tracked context may be loaded.")
+        if not packs:
+            print("No Context Packs found. Inspect docs/ai/context-packs.")
+        else:
+            print("No matching Context Pack. Create one with pack --feature or inspect docs/ai/context-packs.")
+        return 1
+    context_config = config.get("context", CONTEXT_DEFAULTS)
+    max_files = int(context_config["max_required_files"])
+    max_specs = min(int(context_config["max_linked_specs"]), max(0, max_files - 1))
+    max_characters = int(context_config["max_total_characters"])
+    required_reads: list[tuple[str, str, int]] = []
+    used_characters = 0
+    truncated = False
+    specs: list[str] = []
+    if primary is not None:
+        primary_path = Path(primary["path"])
+        primary_characters = len(primary_path.read_text(encoding="utf-8"))
+        if primary_characters > max_characters:
+            raise LedgerError(
+                f"Primary Context Pack exceeds config.context.max_total_characters: {primary['rel']}"
+            )
+        required_reads.append(("pack", str(primary["rel"]), primary_characters))
+        used_characters = primary_characters
+        specs = [str(item) for item in primary["specs"]]
+        for spec in specs:
+            if len(required_reads) >= max_files or len(required_reads) - 1 >= max_specs:
+                truncated = True
+                break
+            spec_path = repo / normalize_git_path(spec)
+            characters = len(spec_path.read_text(encoding="utf-8")) if spec_path.is_file() else 0
+            if used_characters + characters > max_characters:
+                truncated = True
+                break
+            required_reads.append(("spec", spec, characters))
+            used_characters += characters
+        if len(specs) > len(required_reads) - 1:
+            truncated = True
+    feature = str(primary["feature"]) if primary is not None else str(resume_view["feature"])
+    title = str(primary["title"]) if primary is not None else str(resume_view["title"])
+    status = str(primary["status"]) if primary is not None else "missing-pack"
+    change_summaries = manifest_change_summaries(
+        repo,
+        config,
+        feature,
+        int(context_config["max_change_summaries"]),
+    )
+    near = [] if primary is None else [
         item for item in ranked[1:]
         if item[0] >= int(best_score * CONTEXT_NEAR_SCORE_RATIO)
-    ][: max(0, limit - 1)]
+    ][: min(max(0, limit - 1), int(context_config["show_close_candidates"]))]
+    confidence = (
+        "high" if resume_route["mode"] == "ready" or best_score >= 4000
+        else "medium" if resume_route["mode"] == "guided" or best_score >= 500
+        else "low"
+    )
+    plan = {
+        "schema": "context-plan-v2",
+        "query": query,
+        "request_principal": current_principal(repo),
+        "request_tool": normalize_tool_id(tool),
+        "confidence": confidence,
+        "primary_pack": str(primary["rel"]) if primary is not None else "",
+        "feature": feature,
+        "title": title,
+        "status": status,
+        "selection": {
+            "score": best_score,
+            "reasons": reasons or ["token overlap"],
+            "fingerprints": (
+                "current" if primary is not None and primary["fingerprints_ok"]
+                else "stale" if primary is not None
+                else "missing"
+            ),
+        },
+        "resume": resume_route,
+        "required_reads": [
+            {"kind": kind, "path": path, "characters": characters}
+            for kind, path, characters in required_reads
+        ],
+        "change_summaries": change_summaries,
+        "optional_candidates": [
+            {
+                "path": str(pack["rel"]),
+                "score": score,
+                "reasons": why or ["token overlap"],
+            }
+            for score, pack, why in near
+        ],
+        "budget": {
+            "max_files": max_files,
+            "max_characters": max_characters,
+            "used_files": len(required_reads),
+            "used_characters": used_characters,
+            "truncated": truncated,
+        },
+        "instructions": [
+            "Read required_reads in order as the initial context, not as a maximum code-reading limit.",
+            "Do not recursively read ledger documentation or completed Change bodies.",
+            "Expand into callers, implementations, configuration, persistence, permissions, concurrency, retries, tests, and external boundaries whenever they can affect the requested behavior.",
+            "Treat code and executed verification as stronger evidence than the Resume Capsule, Pack, or spec.",
+            "Do not call the route ready while a behavior-relevant uncertainty remains.",
+        ],
+        "metrics": {
+            "packs_considered": len(packs),
+            "sessions_considered": len(load_context_state(repo).get("task_sessions", {})),
+            "required_files": len(required_reads),
+            "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+        },
+    }
+    if output_format == "json":
+        print(json.dumps(plan, indent=2, ensure_ascii=True))
+        return 0
+    print("Context plan: context-plan-v2")
+    if primary is not None:
+        print(f"Primary pack: {primary['rel']}")
+    else:
+        print("Primary pack: none")
+    print(f"Feature: {feature}")
+    print(f"Title: {title}")
+    print(f"Status: {status}")
+    print(f"Why: {', '.join(reasons) or 'token overlap'}")
+    print(f"Score: {best_score}")
+    print(f"Fingerprints: {plan['selection']['fingerprints']}")
+    print(f"Resume mode: {resume_route['mode']}")
+    capsule = resume_route.get("capsule")
+    if isinstance(capsule, dict):
+        print(f"Resume session: {capsule['session_id']} ({capsule['status']}; epoch={capsule['resume_epoch']})")
+        print(f"Resume summary: {capsule['summary'] or 'none'}")
+        print(f"Next step: {capsule['next_step'] or 'none'}")
+        print(f"Evidence paths: {', '.join(capsule['evidence_paths']) or 'none'}")
+        for warning in capsule["warnings"]:
+            print(f"Resume warning: {warning}")
+    elif resume_route["mode"] == "blocked":
+        print("Resume candidates are ambiguous; select an explicit session:")
+        for candidate in resume_route["candidates"]:
+            print(
+                f"- {candidate['session_id']} [{candidate['feature']}] "
+                f"{candidate['status']} — {candidate['title']}"
+            )
+    elif resume_route["foreign_overlap"]:
+        print("Resume warning: a matching private task belongs to another principal.")
+    print("Required reads:")
+    for kind, path, characters in required_reads:
+        print(f"- {kind}: {path} ({characters} characters)")
+    if not required_reads:
+        print("- none; repair or create the current Context Pack before broad exploration")
+    print("Change summaries:")
+    if change_summaries:
+        for summary in change_summaries:
+            print(
+                f"- {summary['date']} {summary['title']} [{summary['feature']}] — "
+                f"{summary['summary']} — {summary['path']} "
+                f"({summary['status']}; evidence={len(summary['evidence_paths'])})"
+            )
+    else:
+        print("- none")
+    print("Do not load by default:")
+    print("- completed docs/changes bodies")
+    print("- ledger documents outside Required reads")
+    print("Expansion rule: Required reads are a starting route; expand through every behavior-relevant boundary.")
+    print(
+        f"Budget: files {len(required_reads)}/{max_files}; "
+        f"characters {used_characters}/{max_characters}; "
+        f"truncated={'yes' if truncated else 'no'}"
+    )
     if near:
         print("Close candidates:")
         for score, pack, why in near:
@@ -1870,12 +2629,20 @@ def focus_context(repo: Path, feature: str, session: str = "") -> int:
     return 0
 
 
-def pause_change(repo: Path, summary: str, next_step: str, session: str = "") -> int:
+def pause_change(
+    repo: Path,
+    summary: str,
+    next_step: str,
+    session: str = "",
+    epoch: int = 0,
+) -> int:
     if len(summary.strip()) < 10 or len(next_step.strip()) < 5:
         print("Pause requires a substantive --summary and --next step.", file=sys.stderr)
         return 2
     config = load_config(repo)
-    session_id, record, handoff = resolve_task_session(repo, config, session=session)
+    session_id, record, handoff = resolve_task_session(
+        repo, config, session=session, expected_epoch=epoch
+    )
     text = handoff.read_text(encoding="utf-8")
     if field_value(text, "Status").casefold() != "active":
         print("Only an active handoff can be paused.", file=sys.stderr)
@@ -1903,12 +2670,20 @@ def pause_change(repo: Path, summary: str, next_step: str, session: str = "") ->
     return 0
 
 
-def checkpoint_change(repo: Path, summary: str, next_step: str, session: str = "") -> int:
+def checkpoint_change(
+    repo: Path,
+    summary: str,
+    next_step: str,
+    session: str = "",
+    epoch: int = 0,
+) -> int:
     if len(summary.strip()) < 10 or len(next_step.strip()) < 5:
         print("Checkpoint requires a substantive --summary and --next step.", file=sys.stderr)
         return 2
     config = load_config(repo)
-    session_id, record, handoff = resolve_task_session(repo, config, session=session)
+    session_id, record, handoff = resolve_task_session(
+        repo, config, session=session, expected_epoch=epoch
+    )
     text = handoff.read_text(encoding="utf-8")
     if field_value(text, "Status").casefold() != "active":
         print("Only an active handoff can be checkpointed.", file=sys.stderr)
@@ -1931,15 +2706,229 @@ def checkpoint_change(repo: Path, summary: str, next_step: str, session: str = "
     return 0
 
 
-def resume_change(repo: Path, raw_handoff: str, session: str = "") -> int:
+def share_session(
+    repo: Path,
+    session: str,
+    recipient: str,
+    mode: str,
+    expires_hours: int,
+    epoch: int = 0,
+) -> int:
+    if not re.fullmatch(r"p-[0-9a-f]{16}", recipient):
+        raise LedgerError("Share recipient must be a principal ID returned by ledger status.")
+    if recipient == current_principal(repo):
+        raise LedgerError("Share recipient must be a different principal.")
+    if mode not in {"transfer", "fork", "read-only"}:
+        raise LedgerError("Share mode must be transfer, fork, or read-only.")
+    if expires_hours < 1 or expires_hours > 720:
+        raise LedgerError("Share expiry must be from 1 to 720 hours.")
     config = load_config(repo)
     state = load_context_state(repo)
-    session_id, record, handoff = resolve_task_session(
-        repo, config, session=session, status="paused", handoff=raw_handoff
+    session_id, record, _ = resolve_resumable_session(repo, config, session=session)
+    access = str(record.pop("_access", "owner"))
+    if access not in {"owner", "legacy-owner"}:
+        raise LedgerError("Only the task owner can create a session grant.")
+    validate_session_epoch(session_id, record, epoch)
+    if mode == "transfer" and record.get("status") != "paused":
+        raise LedgerError("Pause the task session before granting a transfer.")
+    created = now()
+    grant = {
+        "principal": recipient,
+        "mode": mode,
+        "created_at": created.isoformat(timespec="seconds"),
+        "expires_at": (created + dt.timedelta(hours=expires_hours)).isoformat(timespec="seconds"),
+    }
+    grants = [
+        item for item in record.get("grants", [])
+        if item.get("principal") != recipient
+    ]
+    grants.append(grant)
+    state["task_sessions"][session_id] = {
+        **record,
+        "owner_principal": current_principal(repo),
+        "grants": grants,
+        "updated_at": created.isoformat(timespec="seconds"),
+    }
+    save_context_state(repo, state)
+    print(f"Shared session {session_id} with {recipient} as {mode}")
+    print(f"Grant expires: {grant['expires_at']}")
+    return 0
+
+
+def resolve_resumable_session(
+    repo: Path,
+    config: dict,
+    raw_handoff: str = "",
+    session: str = "",
+    query: str = "",
+) -> tuple[str, dict, Path]:
+    if query.strip():
+        if raw_handoff.strip() or session.strip():
+            raise LedgerError("Use --query, --session, or --handoff when resuming, not a combination.")
+        route, selected = route_resume_sessions(
+            repo, config, query, load_live_context_packs(repo, config)
+        )
+        if route["mode"] == "blocked":
+            choices = ", ".join(str(item["session_id"]) for item in route["candidates"])
+            raise LedgerError(f"Resume query is ambiguous ({choices}); rerun with --session <id>.")
+        if selected is None:
+            if route["foreign_overlap"]:
+                raise LedgerError("A matching task session belongs to another principal.")
+            raise LedgerError("Resume query did not match an active or paused task owned by this principal.")
+        session = str(selected["session_id"])
+    state = load_context_state(repo)
+    candidates = [
+        (session_id, record)
+        for status in ("active", "paused")
+        for session_id, record in session_candidates(state, status)
+    ]
+    requested = session.strip()
+    if raw_handoff.strip():
+        normalized = raw_handoff.strip().replace("\\", "/")
+        candidates = [
+            item for item in candidates
+            if normalized in {item[1].get("draft"), item[1].get("publish_path")}
+        ]
+    elif requested:
+        exact = [item for item in candidates if item[0] == requested]
+        prefix = [item for item in candidates if item[0].startswith(requested)]
+        candidates = exact or prefix
+    else:
+        candidates = [
+            item for item in candidates
+            if session_access_level(repo, config, item[0], item[1])
+            in {"owner", "legacy-owner", "transfer", "fork"}
+        ]
+    if not candidates:
+        raise LedgerError("No resumable task session owned by the current principal.")
+    if len(candidates) > 1:
+        choices = ", ".join(session_id for session_id, _ in candidates)
+        raise LedgerError(f"Multiple resumable task sessions exist ({choices}); rerun with --session <id>.")
+    session_id, record = candidates[0]
+    access = session_access_level(repo, config, session_id, record)
+    if access == "read-only":
+        raise LedgerError("The selected task session grant is read-only and cannot be resumed.")
+    if access not in {"owner", "legacy-owner", "transfer", "fork"}:
+        raise LedgerError("The selected task session is owned by another principal.")
+    record = {**record, "_access": access}
+    if access in {"owner", "legacy-owner", "transfer"}:
+        record["owner_principal"] = current_principal(repo)
+    draft = resolve_session_draft(repo, config, session_id, record)
+    if not draft.is_file():
+        raise LedgerError(f"Task session draft does not exist: {record['draft']}")
+    return session_id, record, draft
+
+
+def fork_granted_session(
+    repo: Path,
+    config: dict,
+    source_session_id: str,
+    source_record: dict,
+    source_draft: Path,
+    tool: str,
+) -> tuple[str, dict, Path]:
+    stamp = now()
+    title = first_heading(source_draft)
+    feature = feature_slug(
+        str(source_record.get("feature"))
+        or field_value(source_draft.read_text(encoding="utf-8"), "Feature")
+        or title
     )
+    handoff_id = unique_handoff_id(repo, stamp)
+    source_text = source_draft.read_text(encoding="utf-8")
+    content = render_template(
+        template_source("handoff-template.md", repo),
+        {
+            "TITLE": title,
+            "FEATURE": feature,
+            "ACTOR": git_actor(repo),
+            "BRANCH": git_branch(repo),
+            "HANDOFF_ID": handoff_id,
+            "SESSION_ID": handoff_id,
+            "LANGUAGE": record_language(config),
+            "DETAIL": config.get("quality", {}).get("detail", "standard"),
+            "STARTED": stamp.isoformat(timespec="seconds"),
+            "BASE_COMMIT": git_revision(repo),
+        },
+    )
+    content = set_field(content, "Parent session", source_session_id, after="Session ID")
+    content = set_field(
+        content,
+        "Resume summary",
+        field_value(source_text, "Resume summary") or "Forked from an explicitly shared task checkpoint.",
+        after="Dirty paths",
+    )
+    content = set_field(
+        content,
+        "Next step",
+        field_value(source_text, "Next step") or "Revalidate the shared scope before editing.",
+        after="Resume summary",
+    )
+    content = set_field(content, "Resumed", stamp.isoformat(timespec="seconds"), after="Paused")
+    publish_folder = safe_repo_path(
+        repo,
+        f"{config['docs']['changes']}/{stamp.strftime('%Y')}/{stamp.strftime('%m')}",
+        "handoff month directory",
+    )
+    stem = f"{handoff_id}-{slugify(title)}"
+    publish_path = publish_folder / f"{stem}.md"
+    draft = task_session_draft_path(repo, handoff_id)
+    draft.parent.mkdir(parents=True, exist_ok=True)
+    with draft.open("x", encoding="utf-8") as handle:
+        handle.write(content.rstrip() + "\n")
+    record = {
+        "draft": session_draft_ref(repo, draft),
+        "publish_path": rel_posix(publish_path, repo),
+        "feature": feature,
+        "status": "active",
+        "updated_at": stamp.isoformat(timespec="seconds"),
+        "owner_principal": current_principal(repo),
+        "resume_epoch": 1,
+        "epoch_required": True,
+        "continuation_tool": normalize_tool_id(tool),
+        "grants": [],
+    }
+    return handoff_id, record, draft
+
+
+def resume_change(
+    repo: Path,
+    raw_handoff: str,
+    session: str = "",
+    query: str = "",
+    tool: str = "",
+) -> int:
+    config = load_config(repo)
+    state = load_context_state(repo)
+    session_id, record, handoff = resolve_resumable_session(
+        repo, config, raw_handoff=raw_handoff, session=session, query=query
+    )
+    access = str(record.pop("_access", "owner"))
+    if access == "fork":
+        source = state["task_sessions"][session_id]
+        source_grants = [
+            grant for grant in source.get("grants", [])
+            if not (
+                grant.get("principal") == current_principal(repo)
+                and grant.get("mode") == "fork"
+            )
+        ]
+        new_id, new_record, new_draft = fork_granted_session(
+            repo, config, session_id, source, handoff, tool
+        )
+        state["task_sessions"][session_id] = {**source, "grants": source_grants}
+        state["task_sessions"][new_id] = new_record
+        remember_feature(state, str(new_record["feature"]))
+        save_context_state(repo, state)
+        print(f"Forked session {session_id} -> {new_id}")
+        print("Continuation epoch: 1")
+        print(f"Continuation tool: {normalize_tool_id(tool)}")
+        print(f"Private draft: {session_draft_ref(repo, new_draft)}")
+        return 0
     text = handoff.read_text(encoding="utf-8")
-    if field_value(text, "Status").casefold() != "paused":
-        print("Only a paused handoff can be resumed.", file=sys.stderr)
+    status = field_value(text, "Status").casefold()
+    if status not in {"active", "paused"}:
+        print("Only an active or paused handoff can be continued.", file=sys.stderr)
         return 2
     feature = feature_slug(field_value(text, "Feature") or first_heading(handoff))
     base_commit = field_value(text, "Base commit")
@@ -1948,15 +2937,26 @@ def resume_change(repo: Path, raw_handoff: str, session: str = "") -> int:
     text = set_field(text, "Status", "active")
     text = set_field(text, "Resumed", now().isoformat(timespec="seconds"), after="Paused")
     atomic_write(handoff, text.rstrip() + "\n")
+    next_epoch = int(record.get("resume_epoch", 1)) + 1
+    remaining_grants = [] if access == "transfer" else list(record.get("grants", []))
     state["task_sessions"][session_id] = {
         **record,
         "feature": feature,
         "status": "active",
         "updated_at": now().isoformat(timespec="seconds"),
+        "owner_principal": current_principal(repo),
+        "resume_epoch": next_epoch,
+        "epoch_required": True,
+        "continuation_tool": normalize_tool_id(tool),
+        "grants": remaining_grants,
     }
     remember_feature(state, feature)
     save_context_state(repo, state)
-    print(f"Resumed session {session_id}")
+    print(f"Continued session {session_id}")
+    print(f"Continuation epoch: {next_epoch}")
+    print(f"Continuation tool: {normalize_tool_id(tool)}")
+    print(f"Resume summary: {field_value(text, 'Resume summary') or 'none'}")
+    print(f"Next step: {field_value(text, 'Next step') or 'none'}")
     if base_commit and base_commit != "none" and current_commit != base_commit:
         print(f"WARNING: repository moved from {base_commit} to {current_commit}; revalidate the resume state.")
     pack = context_pack_path(repo, config, feature)
@@ -2005,18 +3005,40 @@ def context_manifest_path(repo: Path, config: dict) -> Path:
     return ai_root / "context-manifest.json"
 
 
+def completed_change_manifest_entry(
+    repo: Path,
+    change: Path,
+    text: str,
+    feature: str,
+) -> dict[str, object]:
+    completed = field_value(text, "Completed")
+    if re.match(r"^\d{4}-\d{2}-\d{2}", completed):
+        completed_date = completed[:10]
+    else:
+        stamp = re.match(r"^(\d{4})(\d{2})(\d{2})", change.stem)
+        completed_date = "-".join(stamp.groups()) if stamp else "unknown"
+    return {
+        "id": field_value(text, "Handoff ID") or change.stem,
+        "path": rel_posix(change, repo),
+        "title": first_heading(change),
+        "feature": feature,
+        "date": completed_date,
+        "summary": field_value(text, "After") or first_heading(change),
+        "evidence_paths": sorted(recorded_handoff_evidence_paths(text)),
+        "status": field_value(text, "Status") or "unknown",
+    }
+
+
 def context_manifest_data(repo: Path, config: dict) -> dict:
     ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
     packs_root = ai_root / "context-packs"
-    recent_by_feature: dict[str, list[dict[str, str]]] = {}
+    recent_by_feature: dict[str, list[dict[str, object]]] = {}
     for change in all_changes(repo, config):
         text = change.read_text(encoding="utf-8")
         feature = feature_slug(field_value(text, "Feature") or first_heading(change))
-        recent_by_feature.setdefault(feature, []).append({
-            "path": rel_posix(change, repo),
-            "title": first_heading(change),
-            "status": field_value(text, "Status") or "unknown",
-        })
+        recent_by_feature.setdefault(feature, []).append(
+            completed_change_manifest_entry(repo, change, text, feature)
+        )
     features = []
     if packs_root.exists():
         for pack in sorted(packs_root.glob("*.md")):
@@ -2558,9 +3580,12 @@ def finish_change(
     no_spec: bool = False,
     reason: str = "",
     session: str = "",
+    epoch: int = 0,
 ) -> int:
     config = load_config(repo)
-    session_id, record, draft = resolve_task_session(repo, config, session=session)
+    session_id, record, draft = resolve_task_session(
+        repo, config, session=session, expected_epoch=epoch
+    )
     publish_path = validate_handoff_path(
         repo, config, record["publish_path"], "task session publish path"
     )
@@ -2732,6 +3757,28 @@ def recorded_handoff_evidence_paths(text: str) -> set[str]:
     }
 
 
+def relevant_private_handoff_texts(
+    repo: Path,
+    config: dict,
+    implementation_paths: list[str],
+) -> list[str]:
+    implementation = {normalize_git_path(raw) for raw in implementation_paths}
+    relevant: list[str] = []
+    for session_id, record in load_context_state(repo).get("task_sessions", {}).items():
+        if record.get("status") not in {"active", "paused"}:
+            continue
+        try:
+            draft = resolve_session_draft(repo, config, session_id, record)
+        except LedgerError:
+            continue
+        if not draft.is_file():
+            continue
+        text = draft.read_text(encoding="utf-8")
+        if recorded_handoff_evidence_paths(text).intersection(implementation):
+            relevant.append(text)
+    return relevant
+
+
 def ensure_finish_evidence(repo: Path, config: dict, session_id: str, handoff: Path) -> None:
     text = handoff.read_text(encoding="utf-8")
     evidence = managed_text(text, EVIDENCE_START, EVIDENCE_END)
@@ -2794,9 +3841,12 @@ def capture_evidence(
     repo: Path,
     session: str = "",
     raw_paths: list[str] | None = None,
+    epoch: int = 0,
 ) -> int:
     config = load_config(repo)
-    session_id, record, handoff = resolve_task_session(repo, config, session=session)
+    session_id, record, handoff = resolve_task_session(
+        repo, config, session=session, expected_epoch=epoch
+    )
     sessions = load_context_state(repo).get("task_sessions", {})
     if is_git_repo(repo) and len(sessions) > 1 and not raw_paths:
         raise LedgerError(
@@ -3003,6 +4053,7 @@ def record_verification(
     not_run: bool = False,
     reason: str = "",
     session: str = "",
+    epoch: int = 0,
 ) -> int:
     config = load_config(repo)
     if not_run:
@@ -3010,7 +4061,9 @@ def record_verification(
             print("A not-run verification reason must contain at least 20 characters.", file=sys.stderr)
             return 2
         with repo_lock(repo):
-            session_id, record, handoff = resolve_task_session(repo, config, session=session)
+            session_id, record, handoff = resolve_task_session(
+                repo, config, session=session, expected_epoch=epoch
+            )
             text = handoff.read_text(encoding="utf-8")
             checks = managed_text(text, CHECKS_START, CHECKS_END)
             if "No verification recorded yet." in checks:
@@ -3030,7 +4083,9 @@ def record_verification(
         print("Verification timeout must be from 1 to 3600 seconds.", file=sys.stderr)
         return 2
     with repo_lock(repo):
-        session_id, record, handoff = resolve_task_session(repo, config, session=session)
+        session_id, record, handoff = resolve_task_session(
+            repo, config, session=session, expected_epoch=epoch
+        )
         draft_identity = str(handoff.resolve())
     started = time.monotonic()
     try:
@@ -3079,7 +4134,7 @@ def record_verification(
     try:
         with repo_lock(repo):
             latest_id, _, latest_handoff = resolve_task_session(
-                repo, config, session=session_id, status="active"
+                repo, config, session=session_id, status="active", expected_epoch=epoch
             )
             if latest_id != session_id or str(latest_handoff.resolve()) != draft_identity:
                 raise LedgerError("Task session changed while verification was running; result was not recorded.")
@@ -3134,21 +4189,40 @@ def is_generated_index(config: dict, raw: str) -> bool:
     ) or raw == changes_root + "/README.md"
 
 
-def tracked_context_packs(repo: Path, config: dict) -> dict[str, list[str]]:
-    ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
-    packs_root = ai_root / "context-packs"
+def tracked_context_packs(
+    repo: Path,
+    config: dict,
+    packs: list[dict[str, object]] | None = None,
+) -> dict[str, list[str]]:
     tracked: dict[str, list[str]] = {}
-    if not packs_root.exists():
-        return tracked
-    for pack in sorted(packs_root.glob("*.md")):
-        pack_rel = rel_posix(pack, repo)
-        text = pack.read_text(encoding="utf-8")
-        for raw, _ in pack_file_entries(text):
-            tracked.setdefault(normalize_git_path(raw), []).append(pack_rel)
+    for pack in (packs if packs is not None else load_live_context_packs(repo, config)):
+        pack_rel = str(pack["rel"])
+        for raw in pack["tracked"]:
+            tracked.setdefault(normalize_git_path(str(raw)), []).append(pack_rel)
     return tracked
 
 
-def coverage_validation_errors(repo: Path, config: dict, raw_base: str = "") -> list[str]:
+def related_context_documents(
+    changed: set[str],
+    packs: list[dict[str, object]],
+) -> set[str]:
+    related: set[str] = set()
+    for pack in packs:
+        pack_rel = str(pack["rel"])
+        tracked = {normalize_git_path(str(raw)) for raw in pack["tracked"]}
+        specs = {normalize_git_path(str(raw)) for raw in pack["specs"]}
+        if pack_rel in changed or changed.intersection(tracked) or changed.intersection(specs):
+            related.add(pack_rel)
+            related.update(specs)
+    return related
+
+
+def coverage_validation_errors(
+    repo: Path,
+    config: dict,
+    raw_base: str = "",
+    packs_by_path: dict[str, list[str]] | None = None,
+) -> list[str]:
     if not is_git_repo(repo):
         return ["Change coverage requires a Git repository."]
     base = raw_base.strip() or configured_base_ref(repo, config)
@@ -3167,14 +4241,7 @@ def coverage_validation_errors(repo: Path, config: dict, raw_base: str = "") -> 
         if path.startswith(changes_prefix) and path.endswith(".md")
         and not path.endswith("/README.md") and not path.endswith("/index.md")
     )
-    private_handoff_texts: list[str] = []
-    for session_id, record in load_context_state(repo).get("task_sessions", {}).items():
-        try:
-            draft = resolve_session_draft(repo, config, session_id, record)
-        except LedgerError:
-            continue
-        if draft.is_file():
-            private_handoff_texts.append(draft.read_text(encoding="utf-8"))
+    private_handoff_texts = relevant_private_handoff_texts(repo, config, implementation)
     errors: list[str] = []
     if not handoff_paths and not private_handoff_texts:
         errors.append("Behavior-changing paths have no changed record or active private handoff.")
@@ -3213,7 +4280,8 @@ def coverage_validation_errors(repo: Path, config: dict, raw_base: str = "") -> 
     changed_packs = {
         path for path in changed if path.startswith(packs_prefix) and path.endswith(".md")
     }
-    packs_by_path = tracked_context_packs(repo, config)
+    if packs_by_path is None:
+        packs_by_path = tracked_context_packs(repo, config)
     for raw in implementation:
         related = packs_by_path.get(normalize_git_path(raw), [])
         if not related:
@@ -3291,11 +4359,142 @@ def team_check(repo: Path, raw_base: str) -> int:
     return 0
 
 
+def changed_scope_paths(repo: Path, raw_base: str) -> tuple[str, set[str]]:
+    if not is_git_repo(repo):
+        raise LedgerError("Changed-scope check requires a Git repository.")
+    base = raw_base.strip()
+    if not base:
+        raise LedgerError("Changed-scope check requires a base ref.")
+    if git_revision(repo, base) == "none":
+        raise LedgerError(f"Changed-scope base ref does not exist locally: {base}")
+    merge_base = git_output(repo, "merge-base", "HEAD", base) or git_revision(repo, base)
+    changed = git_changed_paths(repo, f"{merge_base}..HEAD")
+    changed.update(git_dirty_paths(repo))
+    return merge_base, changed
+
+
+def check_changed_repo(
+    repo: Path,
+    config: dict,
+    strict: bool,
+    coverage: bool,
+    coverage_base: str,
+    changed_since: str,
+) -> int:
+    merge_base, changed = changed_scope_paths(repo, changed_since)
+    errors: list[str] = []
+    specs_prefix = config["docs"]["specs"].rstrip("/") + "/"
+    changes_prefix = config["docs"]["changes"].rstrip("/") + "/"
+    packs_prefix = config["docs"]["ai"].rstrip("/") + "/context-packs/"
+    current_packs = load_live_context_packs(repo, config)
+    packs_by_path = tracked_context_packs(repo, config, current_packs)
+    semantic_paths = changed.union(related_context_documents(changed, current_packs))
+
+    adapter_sources = {
+        ".context-ledger/ledger.py",
+        "skills/repo-context-ledger/scripts/ledger.py",
+        "skills/repo-context-ledger/SKILL.md",
+        "skills/repo-context-ledger/references/document-model.md",
+    }
+    states = adapter_states(repo, config)
+    validate_all_adapters = bool(changed.intersection(adapter_sources))
+    for name in ADAPTER_NAMES:
+        path, _, current_adapter = states[name]
+        adapter_rel = rel_posix(path, repo)
+        if (
+            config.get("adapters", {}).get(name, True)
+            and (validate_all_adapters or adapter_rel in changed)
+            and not current_adapter
+        ):
+            errors.append(f"Context adapter is missing or drifted: {adapter_rel}")
+
+    manifest_rel = config["docs"]["ai"].rstrip("/") + "/context-manifest.json"
+    manifest_sources_changed = any(
+        raw == manifest_rel
+        or raw.startswith(packs_prefix)
+        or raw.startswith(specs_prefix)
+        or (
+            raw.startswith(changes_prefix)
+            and raw.endswith(".md")
+            and not raw.endswith("/README.md")
+        )
+        for raw in changed
+    )
+    if manifest_sources_changed and should_update_derived(repo, config):
+        errors.extend(context_manifest_errors(repo, config))
+
+    changed_markdown: list[Path] = []
+    for raw in sorted(semantic_paths):
+        path = repo / normalize_git_path(raw)
+        if not path.is_file() or path.suffix.casefold() != ".md":
+            continue
+        changed_markdown.append(path)
+        if not strict:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if raw.startswith(changes_prefix) and not is_change_index(
+            path, safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes")
+        ):
+            if is_evidence_quality(text) and field_value(text, "Status").casefold() == "completed":
+                for error in handoff_validation_errors(
+                    text, repo, config, expected_status="completed"
+                ):
+                    errors.append(f"{raw}: {error}")
+            if is_evidence_quality(text) and field_value(text, "Status").casefold() in {"active", "paused"}:
+                errors.append(f"Unfinished handoff is stored in formal change history: {raw}")
+        elif raw.startswith(specs_prefix) and not raw.endswith("/README.md"):
+            for error in spec_quality_errors(path):
+                errors.append(f"{raw}: {error}")
+        elif raw.startswith(packs_prefix):
+            for error in context_pack_errors(repo, path):
+                errors.append(f"{raw}: {error}")
+
+    for path in changed_markdown:
+        text = path.read_text(encoding="utf-8")
+        raw = rel_posix(path, repo)
+        if text.count(BLOCK_START) != text.count(BLOCK_END):
+            errors.append(f"Unbalanced managed markers: {raw}")
+        if text.count(CHANGES_START) != text.count(CHANGES_END):
+            errors.append(f"Unbalanced related-change markers: {raw}")
+        if text.count(EVIDENCE_START) != text.count(EVIDENCE_END):
+            errors.append(f"Unbalanced evidence markers: {raw}")
+        if text.count(CHECKS_START) != text.count(CHECKS_END):
+            errors.append(f"Unbalanced verification markers: {raw}")
+        for raw_link in local_links(path):
+            link = raw_link.split("#", 1)[0].strip()
+            if not link or re.match(r"^[a-z][a-z0-9+.-]*:", link, re.I):
+                continue
+            target = (path.parent / link).resolve()
+            if not target.exists():
+                errors.append(f"Broken link in {raw}: {raw_link}")
+
+    if coverage:
+        errors.extend(
+            coverage_validation_errors(
+                repo,
+                config,
+                coverage_base or changed_since,
+                packs_by_path=packs_by_path,
+            )
+        )
+
+    print(f"Changed-scope base: {changed_since} ({merge_base})")
+    print(f"Changed paths inspected: {len(changed)}")
+    print(f"Related semantic paths inspected: {len(semantic_paths - changed)}")
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+    print("Changed-scope Repo Context Ledger check passed.")
+    return 0
+
+
 def check_repo(
     repo: Path,
     strict: bool,
     coverage: bool = False,
     coverage_base: str = "",
+    changed_since: str = "",
 ) -> int:
     errors: list[str] = []
     try:
@@ -3303,6 +4502,14 @@ def check_repo(
     except LedgerError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    if changed_since:
+        try:
+            return check_changed_repo(
+                repo, config, strict, coverage, coverage_base, changed_since
+            )
+        except LedgerError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
     specs_root = safe_repo_path(repo, config["docs"]["specs"], "config.docs.specs")
     changes_root = safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes")
     ai_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai")
@@ -3423,17 +4630,48 @@ def show_status(repo: Path) -> int:
     packs_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai") / "context-packs"
     print(f"Repository: {repo}")
     print(f"Actor: {git_actor(repo)}")
+    print(f"Principal: {current_principal(repo)}")
     print(f"Branch: {git_branch(repo)}")
     print(f"Workspace state: {context_state_path(repo)}")
     print(f"Default branch: {config.get('team', {}).get('default_branch', 'main')}")
-    active = session_candidates(state, "active")
-    paused = session_candidates(state, "paused")
+    active = owned_session_candidates(repo, config, state, "active")
+    paused = owned_session_candidates(repo, config, state, "paused")
+    owned_ids = {session_id for session_id, _ in [*active, *paused]}
+    shared = [
+        (session_id, record, access)
+        for session_id, record in state.get("task_sessions", {}).items()
+        if record.get("status") in {"active", "paused"}
+        and (access := session_access_level(repo, config, session_id, record))
+        in {"transfer", "fork", "read-only"}
+    ]
+    shared_ids = {session_id for session_id, _, _ in shared}
+    foreign = [
+        session_id for session_id, record in state.get("task_sessions", {}).items()
+        if record.get("status") in {"active", "paused"}
+        and session_id not in owned_ids
+        and session_id not in shared_ids
+    ]
     print(f"Active task sessions: {len(active)}")
     for session_id, record in active:
-        print(f"- {session_id} [{record.get('feature') or 'unknown'}] -> {record['publish_path']}")
+        print(
+            f"- {session_id} [{record.get('feature') or 'unknown'}] "
+            f"epoch={record.get('resume_epoch', 1)} tool={record.get('continuation_tool', 'unknown')} "
+            f"-> {record['publish_path']}"
+        )
     print(f"Paused task sessions: {len(paused)}")
     for session_id, record in paused:
-        print(f"- {session_id} [{record.get('feature') or 'unknown'}] -> {record['publish_path']}")
+        print(
+            f"- {session_id} [{record.get('feature') or 'unknown'}] "
+            f"epoch={record.get('resume_epoch', 1)} tool={record.get('continuation_tool', 'unknown')} "
+            f"-> {record['publish_path']}"
+        )
+    print(f"Shared task sessions: {len(shared)}")
+    for session_id, record, access in shared:
+        print(
+            f"- {session_id} [{record.get('feature') or 'unknown'}] "
+            f"status={record.get('status')} access={access}"
+        )
+    print(f"Foreign task sessions: {len(foreign)}")
     print(f"Context packs: {len(list(packs_root.glob('*.md'))) if packs_root.exists() else 0}")
     print(f"Stable specs: {len(all_specs(repo, config))}")
     print(f"Recorded changes: {len(all_changes(repo, config))}")
@@ -3456,9 +4694,12 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--title", required=True)
     start.add_argument("--feature", default="", help="Stable feature slug or name")
     start.add_argument("--language", choices=("auto", "en", "zh-CN"), default="")
+    start.add_argument("--tool", default="", help="Calling Agent tool ID for continuation audit")
     context = sub.add_parser("context", help="Find likely stable background documents")
     context.add_argument("--query", required=True)
     context.add_argument("--limit", type=int, default=5)
+    context.add_argument("--format", choices=("text", "json"), default="text")
+    context.add_argument("--tool", default="", help="Calling Agent tool ID for the Context Plan")
     pack = sub.add_parser("pack", help="Create or refresh a feature Context Pack")
     pack.add_argument("--feature", required=True)
     pack.add_argument("--title", default="")
@@ -3472,21 +4713,33 @@ def build_parser() -> argparse.ArgumentParser:
     checkpoint.add_argument("--summary", required=True)
     checkpoint.add_argument("--next", required=True, dest="next_step")
     checkpoint.add_argument("--session", default="", help="Task session ID; required when multiple sessions are active")
+    checkpoint.add_argument("--epoch", type=int, default=0, help="Expected continuation epoch after a cross-Agent resume")
     pause = sub.add_parser("pause", help="Pause the active handoff and preserve resume state")
     pause.add_argument("--summary", required=True)
     pause.add_argument("--next", required=True, dest="next_step")
     pause.add_argument("--session", default="", help="Task session ID; required when multiple sessions are active")
-    resume = sub.add_parser("resume", help="Resume the latest or selected paused handoff")
+    pause.add_argument("--epoch", type=int, default=0, help="Expected continuation epoch after a cross-Agent resume")
+    resume = sub.add_parser("resume", help="Continue an owned active or paused handoff")
     resume.add_argument("--handoff", default="")
-    resume.add_argument("--session", default="", help="Paused task session ID; required when multiple sessions are paused")
+    resume.add_argument("--session", default="", help="Task session ID; required when multiple sessions match")
+    resume.add_argument("--query", default="", help="Keywords used to select one owned active or paused session")
+    resume.add_argument("--tool", default="", help="Calling Agent tool ID for continuation audit")
+    share = sub.add_parser("share", help="Grant another principal bounded private session access")
+    share.add_argument("--session", required=True, help="Owned task session ID")
+    share.add_argument("--to", required=True, dest="recipient", help="Recipient principal ID")
+    share.add_argument("--mode", choices=("transfer", "fork", "read-only"), required=True)
+    share.add_argument("--expires-hours", type=int, default=24)
+    share.add_argument("--epoch", type=int, default=0, help="Expected continuation epoch")
     finish = sub.add_parser("finish", help="Complete the active handoff and link specs")
     finish_group = finish.add_mutually_exclusive_group()
     finish_group.add_argument("--spec", action="append", default=[])
     finish_group.add_argument("--no-spec", action="store_true")
     finish.add_argument("--reason", default="", help="Required explanation when --no-spec is used")
     finish.add_argument("--session", default="", help="Task session ID; required when multiple sessions are active")
+    finish.add_argument("--epoch", type=int, default=0, help="Expected continuation epoch after a cross-Agent resume")
     evidence = sub.add_parser("evidence", help="Refresh an active task session from actual Git changed paths")
     evidence.add_argument("--session", default="", help="Task session ID; required when multiple sessions are active")
+    evidence.add_argument("--epoch", type=int, default=0, help="Expected continuation epoch after a cross-Agent resume")
     evidence.add_argument(
         "--path",
         action="append",
@@ -3498,6 +4751,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--not-run", action="store_true")
     verify.add_argument("--reason", default="")
     verify.add_argument("--session", default="", help="Task session ID; required when multiple sessions are active")
+    verify.add_argument("--epoch", type=int, default=0, help="Expected continuation epoch after a cross-Agent resume")
     verify.add_argument("verification_command", nargs=argparse.REMAINDER)
     sync = sub.add_parser("sync", help="Regenerate indexes and managed README blocks")
     sync.add_argument(
@@ -3513,6 +4767,11 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--strict", action="store_true")
     check.add_argument("--coverage", action="store_true", help="Require Git changes to have handoff, spec, and Context Pack coverage")
     check.add_argument("--base", default="", help="Coverage base ref (default: configured default branch)")
+    check.add_argument(
+        "--changed-since",
+        default="",
+        help="Validate only ledger documents changed since the merge base with this ref",
+    )
     team = sub.add_parser("team-check", help="Detect branch, feature, and generated-file conflicts")
     team.add_argument("--base", default="", help="Base ref (default: configured origin default branch)")
     sub.add_parser("status", help="Show ledger state")
@@ -3524,7 +4783,7 @@ def main(argv: list[str] | None = None) -> int:
         args = build_parser().parse_args(argv)
         repo = resolve_repo(args.repo, explicit=argv_has_explicit_repo(argv))
         mutating = args.command in {
-            "start", "pack", "focus", "checkpoint", "pause", "resume", "finish",
+            "start", "pack", "focus", "checkpoint", "pause", "resume", "share", "finish",
             "evidence", "sync",
         } or (args.command == "init" and not args.dry_run) or (
             args.command in {"manifest", "adapters"} and args.action == "sync"
@@ -3534,7 +4793,7 @@ def main(argv: list[str] | None = None) -> int:
                 if args.command == "init":
                     return init_repo(repo, args.dry_run)
                 if args.command == "start":
-                    return start_change(repo, args.title, args.feature, args.language)
+                    return start_change(repo, args.title, args.feature, args.language, args.tool)
                 if args.command == "pack":
                     return refresh_context_pack(
                         repo, args.feature, args.title, args.file, args.spec, args.language
@@ -3542,22 +4801,33 @@ def main(argv: list[str] | None = None) -> int:
                 if args.command == "focus":
                     return focus_context(repo, args.feature, args.session)
                 if args.command == "checkpoint":
-                    return checkpoint_change(repo, args.summary, args.next_step, args.session)
+                    return checkpoint_change(repo, args.summary, args.next_step, args.session, args.epoch)
                 if args.command == "pause":
-                    return pause_change(repo, args.summary, args.next_step, args.session)
+                    return pause_change(repo, args.summary, args.next_step, args.session, args.epoch)
                 if args.command == "resume":
-                    return resume_change(repo, args.handoff, args.session)
+                    return resume_change(repo, args.handoff, args.session, args.query, args.tool)
+                if args.command == "share":
+                    return share_session(
+                        repo,
+                        args.session,
+                        args.recipient,
+                        args.mode,
+                        args.expires_hours,
+                        args.epoch,
+                    )
                 if args.command == "finish":
-                    return finish_change(repo, args.spec, args.no_spec, args.reason, args.session)
+                    return finish_change(
+                        repo, args.spec, args.no_spec, args.reason, args.session, args.epoch
+                    )
                 if args.command == "evidence":
-                    return capture_evidence(repo, args.session, args.path)
+                    return capture_evidence(repo, args.session, args.path, args.epoch)
                 if args.command == "manifest":
                     return manage_context_manifest(repo, args.action)
                 if args.command == "adapters":
                     return sync_adapters(repo, load_config(repo))
                 return sync_repo(repo, args.derived)
         if args.command == "context":
-            return context_search(repo, args.query, max(1, args.limit))
+            return context_search(repo, args.query, max(1, args.limit), args.format, args.tool)
         if args.command == "init":
             return init_repo(repo, args.dry_run)
         if args.command == "verify":
@@ -3565,10 +4835,11 @@ def main(argv: list[str] | None = None) -> int:
                 print("Use either a command or --not-run, not both.", file=sys.stderr)
                 return 2
             return record_verification(
-                repo, args.verification_command, args.timeout, args.not_run, args.reason, args.session
+                repo, args.verification_command, args.timeout, args.not_run, args.reason,
+                args.session, args.epoch
             )
         if args.command == "check":
-            return check_repo(repo, args.strict, args.coverage, args.base)
+            return check_repo(repo, args.strict, args.coverage, args.base, args.changed_since)
         if args.command == "manifest":
             return manage_context_manifest(repo, args.action)
         if args.command == "adapters":

@@ -1,5 +1,5 @@
 {
-  "schema_version": 7,
+  "schema_version": 8,
   "docs": {
     "ai": "docs/ai",
     "specs": "docs/specs",
@@ -12,6 +12,13 @@
     "claude": true,
     "cursor": true,
     "copilot": true
+  },
+  "context": {
+    "max_required_files": 3,
+    "max_linked_specs": 2,
+    "max_change_summaries": 3,
+    "max_total_characters": 30000,
+    "show_close_candidates": 0
   },
   "coverage": {
     "implementation_globs": [

@@ -18,94 +18,6 @@ Repo Context Ledger 为每个 AI 会话提供一份精简、持久的项目地�
 - 本次修改了什么、为什么修改、如何验证；
 - 哪些项目级和模块级 README 摘要需要同步更新。
 
-## v0.5.8 新增能力
-
-- Context Pack 指纹可在 Windows 与 Unix checkout 之间稳定复用：UTF-8 文本的逻辑内容相同，无论使用 LF 还是 CRLF 都得到相同摘要。
-- Git 属性仍然优先。标记为 `-text`、包含 NUL 或无法按 UTF-8 解码的文件继续逐字节校验，二进制改动不会被换行规范化掩盖。
-- 已有基于 LF 的 `sha256:` 指纹继续兼容；真正的文本内容变化仍会让相关 Pack stale。
-- 持久化的验证命令、成功结果末行、Failure Capsule 和 not-run 原因会把仓库、Codex、临时目录与用户目录替换为 `<REPO_ROOT>`、`<CODEX_HOME>`、`<TEMP_DIR>` 和 `<USER_HOME>`。
-- 脱敏同时识别普通 Windows 路径、正斜杠路径和 JSON 双反斜杠路径；当前可见历史记录中的 5 处本机绝对路径也已纠正，但不重写 Git 历史。
-
-## v0.5.7 新增能力
-
-- `init --dry-run` 与真实 `init` 构建完全相同的初始化计划；它会列出将创建的文件、将更新的受管区块、将删除的生成文件、待执行迁移、识别出的模块和汇总，但不写入仓库文件或私有工作区状态。
-- 预览与执行共用一份内存文件计划，避免“预览说一套，真正初始化写另一套”。
-- dry-run 不获取仓库写锁；即使检查旧版工作区状态迁移，也保持只读。
-- 预览和执行继续遵守相同的保护规则：保留人工文档、成熟 change 历史、自定义文档路径、嵌套 Git 边界和已有 session 草稿。
-
-> 版本说明：v0.5.5 曾为这项工作预留，但没有正式发布；完成后的功能随 v0.5.7 发布，不存在已发布版本或功能缺失。
-
-## v0.5.6 新增能力
-
-- `context --query` 改为 Context Pack 路由器：读取 live Pack 元数据，优先匹配 feature/title/tracked path，降低 superseded 或指纹过期 Pack 的优先级，并返回一个主 Pack、关联 spec 和选择原因。
-- 省略 `--repo` 时从当前目录向上寻找 `.context-ledger/config.json`，遇到嵌套 Git 仓库边界即停止。显式 `--repo` 仍然优先。
-- `verify` 失败只记录脱敏后的 Failure Capsule；成功仍只保留 hash 和最后一行结果，不持久化原始日志。
-- Handoff 的 Code paths 可以写 `file.go::Symbol`，用路径部分与 Git evidence 对齐。
-- 单 session 自动 evidence 会跳过 generated/managed 路径；实现文件过多时拒绝整树吞入。
-- Skill 把最短路径放在前面：只读用 `context`/`focus`，小修复走 `start → verify → finish`，完整 evidence/spec/Pack 流程留给中大改动。
-
-## v0.5.4 新增能力
-
-- 并行 session 的 evidence 改为显式路径集合：存在其他任务 session 时，`evidence --session <id>` 必须重复传入 `--path <path>`，拒绝把整个共享 worktree 的 dirty paths 塞进当前草稿。
-- `finish` 改为 session-scoped gate，只校验所选草稿、其已记录路径、明确 spec 以及相关 Context Pack 指纹。
-- 其他 session 产生的 dirty paths 与 stale Context Pack 不再阻塞当前 session；当前任务自己的 stale Pack 仍然 fail closed。
-- 全仓 `check --strict --coverage` 保留为集成/PR 阶段门禁，不再作为每个 session 完成时的隐式依赖。
-- 生成的 Agent 规则进一步禁止因为外部 dirty、stale Pack 或全仓检查失败而主动联系其他任务。
-
-## v0.5.3 新增能力
-
-- active/paused handoff 改为 worktree Git 元数据中的私有 session draft；`start`、`checkpoint`、`evidence`、`verify` 不再把未完成记录写进 `docs/changes/`。
-- `finish` 预留唯一历史路径，验证草稿后原子发布一份 completed change；仓库检查通过后只删除当前 session 的私有草稿。
-- 发布中断可幂等恢复：重试时识别同一 Session ID 的 completed record，不重复生成历史文件。
-- v0.5.2 已登记的 active/paused 记录迁移到 v7 私有草稿；completed 与旧式历史原文保持不变。
-- Ledger 的并发职责明确限定为账本隔离：不复制、不锁定、不认领、不合并、也不协调源码文件；代码冲突继续交给宿主 Agent 与 Git。
-
-## v0.5.2 新增能力
-
-- 以任务会话替代单一 active handoff 指针：同一 worktree 可以同时保存多个互不覆盖的 active/paused handoff。
-- 所有生命周期命令支持 `--session <id>`；存在多个候选会话时，省略会话 ID 会直接拒绝，不会猜测、暂停或完成别的任务。
-- `verify` 只在绑定目标和写回结果时短暂持锁，外部测试命令运行期间不再占用仓库写锁。
-- 生成的 Agent 指令明确禁止未经用户授权的跨任务消息、委派、引导和中断；共享 worktree 不等于获得协调权限。
-- v2-v5 的 active/paused 状态会迁移到 v6 task session，历史 change 原文不被重写。
-
-## v0.5.1 新增能力
-
-- Coverage 路径分类会区分生产实现、测试、CI、配置、生成文件、Ledger 受管文件以及项目自定义忽略路径。
-- `.context-ledger/config.json` 中的仓库相对 glob 会经过校验并由 `init` 持久化；已有 v5 仓库不配置也能使用默认值。
-- Context Pack 覆盖改为真实关联：每个发生变化的生产路径都必须由某个 Context Pack 跟踪，而且对应 Pack 必须刷新。
-- 修改无关 Context Pack 不再能让 `check --coverage` 通过。
-- Coverage 失败会指出未覆盖的生产路径，以及没有更新的关联 Pack。
-- 根目录翻译版 README 与配置中的模块 README 会被视为受管文档，而不是生产实现。
-
-## v0.5.0 新增能力
-
-- Native Context Bridge：`AGENTS.md`、`CLAUDE.md`、Cursor Rule 与 GitHub Copilot Instructions 都指向同一份 Git 事实源。
-- Context Manifest：`docs/ai/context-manifest.json` 确定性记录功能对应的 Context Pack、稳定 spec、关键代码路径与近期 change。
-- 跨 Agent checkpoint：当前任务无需暂停即可保存已验证进度和下一步，让同一 worktree 中的另一个 Agent 继续工作。
-- Adapter 生命周期：`adapters sync/check/status` 在保留用户原文的同时发现缺失或漂移的 Agent 入口。
-- Git diff 覆盖门禁：`check --coverage` 会报告缺少 handoff 证据、稳定 spec/明确例外或 Context Pack 更新的行为代码。
-- 私有 Memory 边界：Codex、Cursor、Claude、Copilot Memory 只作为各自缓存；只有通过代码验证的事实才能进入共享 Ledger。
-- Schema v5 升级保留已有记录、自定义文档路径、成熟历史目录和 README 人工内容。
-
-## v0.4.1 新增能力
-
-- 成熟仓库兼容：已有的 `YYYY-MM/...` 变更树会统一归到月份根目录，不再在每个日期或功能目录生成索引。
-- 复用并保留已有的 `YYYY-MM/index.md` 月索引；运行时不会改写其中的人工维护内容。
-- 同一月份同时存在旧式与新式目录时，共用一个月份入口，并优先复用已有的人工月索引。
-- 安全清理旧索引：只有运行时能根据当前同级记录逐字重建的 `README.md` 才会被删除；来源不确定或经过人工编辑的文件继续保留。
-- worktree 边界识别：模块扫描在嵌套 Git 仓库和 worktree 处停止，避免重复模块与错误 README 更新。
-- 修正历史计数：月份 `index.md` 作为索引处理，不再被计为普通 change。
-
-## v0.4.0 新增能力
-
-- 证据优先记录：新 handoff、spec 和 Context Pack 使用向后兼容的 `evidence-v1` 质量档案。
-- 真实验证记录：`verify` 亲自执行检查，记录命令、状态、退出码、耗时和输出哈希，但不把完整输出写入仓库。
-- Git 变更证据：`evidence` 读取实际变更路径，避免 AI 凭记忆记录。
-- 语言策略：支持 `auto`、`en` 和 `zh-CN`，源码标识与命令保持原文。
-- 可配置详细程度：支持 `concise`、`standard` 和 `detailed`，Context Pack 具有大小上限。
-- 按用途使用不同形式：handoff 记录 Before/After 证据，spec 记录当前事实，Context Pack 保持最小加载路线。
-- 旧记录安全兼容：除非明确升级，已有记录的语言、形式、文件名和内容都不会变化。
-
 ## 它会维护什么
 
 - `docs/ai/`：供新 AI 会话快速了解整个项目的精简说明。
@@ -212,6 +124,22 @@ python path/to/ledger.py --repo path/to/repository init --dry-run
 
 使用 `auto` 时，Agent 优先遵循项目附近文档的主要语言；如果没有既定习惯，则使用用户的语言。文件路径、函数名、接口字段、命令和错误文本保持源码原文。handoff、稳定 spec 和 Context Pack 会采用不同的 Markdown 结构，因为它们解决的问题不同；升级时不会重新格式化旧文档。
 
+初始上下文读取使用独立的生产安全预算：
+
+```json
+{
+  "context": {
+    "max_required_files": 3,
+    "max_linked_specs": 2,
+    "max_change_summaries": 3,
+    "max_total_characters": 30000,
+    "show_close_candidates": 0
+  }
+}
+```
+
+completed Change 正文不进入初始读取范围。只有经过实际测量确认需要时才应扩大预算，不应靠提高预算掩盖过大的 Pack。
+
 Coverage 路径分类在 `.context-ledger/config.json` 中单独配置：
 
 ```json
@@ -239,18 +167,21 @@ Coverage 路径分类在 `.context-ledger/config.json` 中单独配置：
 
 真正切换到另一项任务时，Agent 会先保存 checkpoint，再暂停当前交接，加载登录功能的 Context Pack，然后开始新任务。之后只需说：
 
-> 继续刚才的提现监控任务。
+> 继续公告抓取限频。
 
-Agent 会恢复交接，检查仓库提交和被跟踪文件是否已经变化，并且只重新加载相关上下文。`checkpoint`、`pause`、`focus`、`pack`、`resume` 都是 Agent 内部维护命令，用户不需要执行。
+新窗口会用关键词路由到同一 principal 自己的一个私有任务，按需生成有界 Resume Capsule，并用新的 epoch 继续原 Ledger session。它先从 Pack、checkpoint、evidence 路径和验证结果获得方向，再按正确性需要继续阅读调用者、实现、配置、存储、权限、并发、重试、测试和外部边界。Capsule 减少的是无方向重复搜索，不是让 Agent 少读必要代码。所有生命周期命令仍由 Agent 自主执行。
+
+其他 principal 默认看不到也不能接管私有 Capsule。同事通过 Git 中已提交的代码、Pack、spec 与 completed Change 了解并继续工作；只有显式且会过期的 read-only、fork 或 transfer 授权才会共享未完成任务。新 clone 或另一台电脑不会自动带走私有 session 状态。
 
 ### 4. 与同事协作
 
-每位开发者或 AI 使用自己的 Git 分支或 worktree。当前任务和暂停栈会自动隔离；handoff、稳定功能说明与 Context Pack 则照常进入 Git，供团队审查和合并。
+每位开发者使用合适的 Git 分支或 worktree。Codex、Cursor、Claude、Copilot 与 Grok 可以共用这个人的 principal，不同开发者则使用不同 principal。active/paused 任务状态保持私有；completed handoff、稳定 spec、Context Pack 与代码继续通过 Git 审查和合并。
 
 创建或更新 PR 前，Agent 应先更新目标基础分支，然后运行：
 
 ```text
 python .context-ledger/ledger.py team-check --base origin/main
+python .context-ledger/ledger.py check --strict --coverage --changed-since origin/main
 ```
 
 如果其他分支修改了同一文件或同一功能，需要先与同事协调并解决重叠。PR 合并后，Agent 会在配置的默认分支上执行一次：
@@ -321,6 +252,112 @@ python -m unittest discover -s tests -v
 ```text
 python <skill-creator>/scripts/quick_validate.py skills/repo-context-ledger
 ```
+
+## v0.5.10 新增能力
+
+- 新开的 Codex、Cursor、Claude、Copilot 或 Grok 窗口可以只用任务关键词，路由到当前 principal 自己的一个 active/paused Ledger session。`context-plan-v2` 会按需从私有状态生成有界 Resume Capsule，不保存完整聊天记录，也不会不断新增 Capsule Markdown 文件。
+- `resume --query "<关键词>" --tool <agent>` 继续原有 Ledger session，不创建替代 session。每次接管都会递增 continuation epoch；后续生命周期写入必须携带 `--epoch <n>`，旧窗口不能静默覆盖新 checkpoint。
+- 私有 session 增加了与 Agent 工具无关的匿名 principal 所有权。其他 principal 默认只能得到“存在范围重叠”的最少信号，不能读取 Capsule，也不能 resume、pause、checkpoint、verify、finish 或使该任务失效。
+- 显式且会过期的授权支持 `read-only`、`fork` 和“先暂停再 `transfer`”。fork 会为接收者创建新的私有子 session，原任务保持不变；transfer 只在接收者接受后才转移所有权。
+- Required reads 只是首轮导航，不是代码调查上限。只要调用者、实现、配置、持久化、权限、并发、重试、测试或外部边界可能影响目标行为，生成的 Agent 规则就要求继续展开阅读和核验。
+- Git 中已完成的 Pack、spec、change 仍按原方式共享；未完成私有状态继续留在 worktree Git metadata，不会自动跟随另一台电脑或新 clone。
+
+## v0.5.9 新增能力
+
+- `context --query` 现在输出有硬预算的 `context-plan-v1`：固定一个主 Pack，只加入文件数/字符数预算内的关联 spec，并明确列出 Required reads。
+- `context --format json` 提供跨 Agent 稳定契约，包括仓库相对路径、选择置信度、预算使用量以及本机耗时/文件数指标。
+- 已完成 Change 保持冷历史。计划可以从 Context Manifest 返回有上限的 ID、标题、功能、日期、摘要与 evidence 路径，但不会把 Change 正文放进 Required reads。
+- 四类生成 Agent 入口都禁止递归读取 `docs/ai`、`docs/specs` 和 `docs/changes`；Agent 必须先读 Required reads、保持已完成 Change 正文为冷数据，并在扩大上下文前说明尚未解决的问题。
+- `check --strict --changed-since <base-ref>` 校验 merge-base delta 及其直接关联的 current Pack/spec；无关旧债务不阻塞当前 PR，但源码变化导致关联 Pack stale 时仍会失败。Coverage 只采信 evidence 与本次实现路径相交的私有 session。
+- 原有全仓 `check --strict [--coverage]` 语义不变，继续用于定时健康审计和受控 Release 集成。
+
+## v0.5.8 新增能力
+
+- Context Pack 指纹可在 Windows 与 Unix checkout 之间稳定复用：UTF-8 文本的逻辑内容相同，无论使用 LF 还是 CRLF 都得到相同摘要。
+- Git 属性仍然优先。标记为 `-text`、包含 NUL 或无法按 UTF-8 解码的文件继续逐字节校验，二进制改动不会被换行规范化掩盖。
+- 已有基于 LF 的 `sha256:` 指纹继续兼容；真正的文本内容变化仍会让相关 Pack stale。
+- 持久化的验证命令、成功结果末行、Failure Capsule 和 not-run 原因会把仓库、Codex、临时目录与用户目录替换为 `<REPO_ROOT>`、`<CODEX_HOME>`、`<TEMP_DIR>` 和 `<USER_HOME>`。
+- 脱敏同时识别普通 Windows 路径、正斜杠路径和 JSON 双反斜杠路径；当前可见历史记录中的 5 处本机绝对路径也已纠正，但不重写 Git 历史。
+
+## v0.5.7 新增能力
+
+- `init --dry-run` 与真实 `init` 构建完全相同的初始化计划；它会列出将创建的文件、将更新的受管区块、将删除的生成文件、待执行迁移、识别出的模块和汇总，但不写入仓库文件或私有工作区状态。
+- 预览与执行共用一份内存文件计划，避免“预览说一套，真正初始化写另一套”。
+- dry-run 不获取仓库写锁；即使检查旧版工作区状态迁移，也保持只读。
+- 预览和执行继续遵守相同的保护规则：保留人工文档、成熟 change 历史、自定义文档路径、嵌套 Git 边界和已有 session 草稿。
+
+> 版本说明：v0.5.5 曾为这项工作预留，但没有正式发布；完成后的功能随 v0.5.7 发布，不存在已发布版本或功能缺失。
+
+## v0.5.6 新增能力
+
+- `context --query` 改为 Context Pack 路由器：只路由 current Pack，排除 superseded/archived Pack，降低指纹过期 Pack 的优先级，并返回一个主 Pack、关联 spec 和选择原因。
+- 省略 `--repo` 时从当前目录向上寻找 `.context-ledger/config.json`，遇到嵌套 Git 仓库边界即停止。显式 `--repo` 仍然优先。
+- `verify` 失败只记录脱敏后的 Failure Capsule；成功仍只保留 hash 和最后一行结果，不持久化原始日志。
+- Handoff 的 Code paths 可以写 `file.go::Symbol`，用路径部分与 Git evidence 对齐。
+- 单 session 自动 evidence 会跳过 generated/managed 路径；实现文件过多时拒绝整树吞入。
+- Skill 把最短路径放在前面：只读用 `context`/`focus`，小修复走 `start → verify → finish`，完整 evidence/spec/Pack 流程留给中大改动。
+
+## v0.5.4 新增能力
+
+- 并行 session 的 evidence 改为显式路径集合：存在其他任务 session 时，`evidence --session <id>` 必须重复传入 `--path <path>`，拒绝把整个共享 worktree 的 dirty paths 塞进当前草稿。
+- `finish` 改为 session-scoped gate，只校验所选草稿、其已记录路径、明确 spec 以及相关 Context Pack 指纹。
+- 其他 session 产生的 dirty paths 与 stale Context Pack 不再阻塞当前 session；当前任务自己的 stale Pack 仍然 fail closed。
+- 全仓 `check --strict --coverage` 保留为集成/PR 阶段门禁，不再作为每个 session 完成时的隐式依赖。
+- 生成的 Agent 规则进一步禁止因为外部 dirty、stale Pack 或全仓检查失败而主动联系其他任务。
+
+## v0.5.3 新增能力
+
+- active/paused handoff 改为 worktree Git 元数据中的私有 session draft；`start`、`checkpoint`、`evidence`、`verify` 不再把未完成记录写进 `docs/changes/`。
+- `finish` 预留唯一历史路径，验证草稿后原子发布一份 completed change；仓库检查通过后只删除当前 session 的私有草稿。
+- 发布中断可幂等恢复：重试时识别同一 Session ID 的 completed record，不重复生成历史文件。
+- v0.5.2 已登记的 active/paused 记录迁移到 v7 私有草稿；completed 与旧式历史原文保持不变。
+- Ledger 的并发职责明确限定为账本隔离：不复制、不锁定、不认领、不合并、也不协调源码文件；代码冲突继续交给宿主 Agent 与 Git。
+
+## v0.5.2 新增能力
+
+- 以任务会话替代单一 active handoff 指针：同一 worktree 可以同时保存多个互不覆盖的 active/paused handoff。
+- 所有生命周期命令支持 `--session <id>`；存在多个候选会话时，省略会话 ID 会直接拒绝，不会猜测、暂停或完成别的任务。
+- `verify` 只在绑定目标和写回结果时短暂持锁，外部测试命令运行期间不再占用仓库写锁。
+- 生成的 Agent 指令明确禁止未经用户授权的跨任务消息、委派、引导和中断；共享 worktree 不等于获得协调权限。
+- v2-v5 的 active/paused 状态会迁移到 v6 task session，历史 change 原文不被重写。
+
+## v0.5.1 新增能力
+
+- Coverage 路径分类会区分生产实现、测试、CI、配置、生成文件、Ledger 受管文件以及项目自定义忽略路径。
+- `.context-ledger/config.json` 中的仓库相对 glob 会经过校验并由 `init` 持久化；已有 v5 仓库不配置也能使用默认值。
+- Context Pack 覆盖改为真实关联：每个发生变化的生产路径都必须由某个 Context Pack 跟踪，而且对应 Pack 必须刷新。
+- 修改无关 Context Pack 不再能让 `check --coverage` 通过。
+- Coverage 失败会指出未覆盖的生产路径，以及没有更新的关联 Pack。
+- 根目录翻译版 README 与配置中的模块 README 会被视为受管文档，而不是生产实现。
+
+## v0.5.0 新增能力
+
+- Native Context Bridge：`AGENTS.md`、`CLAUDE.md`、Cursor Rule 与 GitHub Copilot Instructions 都指向同一份 Git 事实源。
+- Context Manifest：`docs/ai/context-manifest.json` 确定性记录功能对应的 Context Pack、稳定 spec、关键代码路径与近期 change。
+- 跨 Agent checkpoint：当前任务无需暂停即可保存已验证进度和下一步，让同一 worktree 中的另一个 Agent 继续工作。
+- Adapter 生命周期：`adapters sync/check/status` 在保留用户原文的同时发现缺失或漂移的 Agent 入口。
+- Git diff 覆盖门禁：`check --coverage` 会报告缺少 handoff 证据、稳定 spec/明确例外或 Context Pack 更新的行为代码。
+- 私有 Memory 边界：Codex、Cursor、Claude、Copilot Memory 只作为各自缓存；只有通过代码验证的事实才能进入共享 Ledger。
+- Schema v5 升级保留已有记录、自定义文档路径、成熟历史目录和 README 人工内容。
+
+## v0.4.1 新增能力
+
+- 成熟仓库兼容：已有的 `YYYY-MM/...` 变更树会统一归到月份根目录，不再在每个日期或功能目录生成索引。
+- 复用并保留已有的 `YYYY-MM/index.md` 月索引；运行时不会改写其中的人工维护内容。
+- 同一月份同时存在旧式与新式目录时，共用一个月份入口，并优先复用已有的人工月索引。
+- 安全清理旧索引：只有运行时能根据当前同级记录逐字重建的 `README.md` 才会被删除；来源不确定或经过人工编辑的文件继续保留。
+- worktree 边界识别：模块扫描在嵌套 Git 仓库和 worktree 处停止，避免重复模块与错误 README 更新。
+- 修正历史计数：月份 `index.md` 作为索引处理，不再被计为普通 change。
+
+## v0.4.0 新增能力
+
+- 证据优先记录：新 handoff、spec 和 Context Pack 使用向后兼容的 `evidence-v1` 质量档案。
+- 真实验证记录：`verify` 亲自执行检查，记录命令、状态、退出码、耗时和输出哈希，但不把完整输出写入仓库。
+- Git 变更证据：`evidence` 读取实际变更路径，避免 AI 凭记忆记录。
+- 语言策略：支持 `auto`、`en` 和 `zh-CN`，源码标识与命令保持原文。
+- 可配置详细程度：支持 `concise`、`standard` 和 `detailed`，Context Pack 具有大小上限。
+- 按用途使用不同形式：handoff 记录 Before/After 证据，spec 记录当前事实，Context Pack 保持最小加载路线。
+- 旧记录安全兼容：除非明确升级，已有记录的语言、形式、文件名和内容都不会变化。
 
 ## 许可证
 

@@ -5,39 +5,40 @@ Feature: native-context-bridge
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: 5892ff462b3970d3e86555ac79d3cf304571c172
+Source commit: cbdc584220e1f6868be6b20a5125e1b67151cdd3
 Base branch: main
-Base commit: 5892ff462b3970d3e86555ac79d3cf304571c172
-Last refreshed: 2026-08-21T15:03:51+08:00
+Base commit: ba915523eb59aa27ad01f9299dca19b0c5bdf723
+Last refreshed: 2026-08-21T18:00:53+08:00
 
 ## Purpose
 
-Native Context Bridge 将不同编码 Agent 的仓库入口连接到同一份 Git 原生上下文，而不尝试读取各工具的私有 Memory。运行时负责生成适配器、路由最小上下文、保存按 task session 隔离的私有 draft/checkpoint，并只在完成时发布验证记录；同时禁止 Agent 在未经用户授权时主动联系、引导或中断另一个用户任务。
+Native Context Bridge 将不同编码 Agent 的仓库入口连接到同一份 Git 原生上下文，而不尝试读取各工具的私有 Memory。运行时生成有文件数/字符上限的 Context Plan v2，只把一个主 Pack、预算内 spec、冷 Change 元数据和可选的私有 Resume Capsule 交给 Agent。Capsule 按需生成，不保存聊天；Required reads 只是首轮路线，不限制行为相关代码边界的继续核验。
 
 ## Load order
 
-- Read first: `skills/repo-context-ledger/scripts/ledger.py`、`skills/repo-context-ledger/SKILL.md` 与 `docs/specs/native-context-bridge.md`。
-- Read if needed: 修改 CLI 行为或兼容迁移时读取 `tests/test_ledger.py` 和 `skills/repo-context-ledger/references/document-model.md`。
-- Do not load by default: 不加载无关 Agent 的私有会话、加密 Memory 或仓库外缓存。
+- Read first: `docs/specs/native-context-bridge.md`，再读 `skills/repo-context-ledger/scripts/ledger.py` 中的 `context_search`、`route_resume_sessions` 与 `build_resume_capsule`。
+- Read if needed: 修改 Agent 读取政策时读取 `skills/repo-context-ledger/SKILL.md` 和 `references/production-workflow.md`；修改 CLI/迁移时读取相关 `tests/test_ledger.py`。
+- Do not load by default: 不加载 completed Change 正文、无关 Pack/spec、其他 Agent 的私有会话、加密 Memory 或仓库外缓存。
 
 ## Entry points and code map
 
 | Path / symbol | Role |
 | --- | --- |
 | `skills/repo-context-ledger/scripts/ledger.py` / `build_init_plan`, `init_repo` | 用同一份内存文件计划预览或生成仓库内运行时、统一配置和 Agent 适配器。 |
-| `skills/repo-context-ledger/scripts/ledger.py` / `context_search` | 读取 live Pack 并返回一个主 Pack、关联 spec 和选择原因。 |
-| `skills/repo-context-ledger/scripts/ledger.py` / CLI commands | 构建 Manifest、创建 checkpoint，以显式路径记录当前 session evidence，并分别执行 session 完成门禁与全仓集成门禁。 |
-| `skills/repo-context-ledger/SKILL.md` | 规定最短路径：只读 context/focus，小修 start→verify→finish，并行才要求 --path。 |
+| `skills/repo-context-ledger/scripts/ledger.py` / `load_live_context_packs`, `context_search`, `route_resume_sessions` | 排除非 current Pack，选一个主路线，按配置生成有界 Required reads，并为当前 principal 路由私有 session。 |
+| `skills/repo-context-ledger/scripts/ledger.py` / `resume_change`, `share_session` | 在同一 session 上轮换 continuation epoch/tool，并执行显式跨 principal 授权。 |
+| `skills/repo-context-ledger/scripts/ledger.py` / CLI commands | 输出 text/JSON Context Plan v2，构建 Manifest、创建 checkpoint，并分别执行 session、PR delta 与全仓门禁。 |
+| `skills/repo-context-ledger/SKILL.md`, `references/production-workflow.md` | 规定先读 Required reads、按未决问题扩大代码边界、禁止递归加载 Ledger 文档，并区分 PR 增量检查与全仓审计。 |
 
 ## Contracts and boundaries
 
-- Invariants and contracts: Git 内的 spec、change 与 Context Pack 是跨 Agent 共享事实；工具专用入口仅作薄适配器，且只修改受管区块；`init --dry-run` 与真实 `init` 必须使用同一初始化计划，预览不能获取写锁或写入仓库/私有状态；共享 worktree 不构成跨任务协调授权。并行 session 必须显式记录自己拥有的 evidence paths，不能把共享 worktree 的完整 dirty 集合吸收到当前草稿。
-- Failure / recovery: 当前 session 的证据或相关 Pack 不一致时 `finish` 必须失败并保留私有草稿；失败验证只保留有上限的 Failure Capsule，并在命令与输出两侧脱敏常见的等号、冒号、JSON 与空格分隔凭据。其他 session 的 dirty path、stale Pack 或全仓集成检查失败不能触发跨任务消息、暂停或修复。adapter 漂移与全仓 Coverage 由所有任务稳定后的集成检查处理。
-- Non-goals: 不解密、导入或同步 Codex、Cursor、Claude、Copilot 等工具的私有 Memory，也不保存完整聊天记录。
+- Invariants and contracts: Git 内 spec/change/Pack 是跨用户共享事实；私有 Resume Capsule 只给当前 principal 或显式 grant；同 principal 可跨工具继续同一 session；另一 principal 默认只看到 overlap；首轮 Context Plan 只有一个主 Pack 并受预算约束，但 Agent 必须展开所有行为相关代码边界；superseded Pack 和 Change 正文不进入默认路线；共享 worktree 不等于协调授权。
+- Failure / recovery: 多个近似 session 不自动选择，旧 epoch、过期 grant 与未授权写入 fail closed；新 clone 只恢复已提交事实。当前 session 的证据或 Pack 不一致时 `finish` 保留私有草稿；失败验证只保留脱敏 Failure Capsule；其他 session 的 dirty/stale/global-check 不能触发跨任务消息或修复。
+- Non-goals: 不解密、导入或同步各工具私有 Memory，不保存完整聊天，不把 Capsule 当作完整环境，也不通过 Git 同步未完成 session。
 
 ## Verification
 
-运行 `python -m unittest discover -s tests -v` 验证运行时、迁移与桥接行为；运行 Skill Creator 的 `quick_validate.py` 验证 Skill 元数据和目录结构。
+运行 `python -m unittest discover -s tests -p test_ledger.py` 验证 Context Plan v2、Resume Capsule、principal 隔离、授权、100 Pack/1,000 Change 规模边界、四类 Adapter 与迁移；运行 Skill Creator 的 `quick_validate.py` 验证 Skill 元数据和目录结构。
 
 <!-- repo-context-ledger:pack-specs:start -->
 ## Stable context
@@ -48,10 +49,11 @@ Native Context Bridge 将不同编码 Agent 的仓库入口连接到同一份 Gi
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:c35cc09d2be70369bec0255253dc8ad44091af5a04ca0f33bfd329138a3835d2`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:e75be77d0ce3ec5b9e6e2db7f68afef2c3219ecbb4fdd759011f10c40847a66c`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:b3f4ae64697099693ca055a034bed436aa22f4e71dbfe4f446e022c93a2111a5`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:363b19edea013531463079ac65960dd09f8d27bfb6e39c0e3d18ead80adf8a39`
 - `skills/repo-context-ledger/agents/openai.yaml` — `sha256:77d4dcdebd3300bd9b7920fe8c4eaea5116129dc56f29d993ad8f463da7171a7`
 - `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:cfb76dcea9238ffc40384e8118608d3bd89891ef42de622a8aad69478acdf945`
-- `skills/repo-context-ledger/references/document-model.md` — `sha256:9f6858193c4884adc578c887544556b96bcd9da04e6de8ed403aa7696ca2af48`
-- `tests/test_ledger.py` — `sha256:7a7aeea0a0880a31ee5d96801a6d12b88ee5606f67527154cac9a4f16eda45b6`
+- `skills/repo-context-ledger/references/document-model.md` — `sha256:bc3c8357231654d257db976e58ac1839ec230b8cbc5cb2ed1e7658cc6e5f6c40`
+- `skills/repo-context-ledger/references/production-workflow.md` — `sha256:8222b99aeddd5cc7e01649a6c59244b55ccd55b984b676e0998d8db2ec32499f`
+- `tests/test_ledger.py` — `sha256:f0fe43ccafda93e1633f18f20565f05246f9f604811b5b5d0f7700f321d53968`
 <!-- repo-context-ledger:pack-files:end -->
