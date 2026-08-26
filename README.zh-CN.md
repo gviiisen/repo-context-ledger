@@ -2,9 +2,19 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+[![skills.sh](https://skills.sh/b/gviiisen/repo-context-ledger)](https://skills.sh/gviiisen/repo-context-ledger)
+
 Repo Context Ledger 是一个面向 AI 编程的仓库上下文管理与上下文切换 Skill。它在 Codex、Claude、Cursor、GitHub Copilot、Grok 等编码 Agent 之间桥接经过验证的仓库上下文，并在代码新增或修复后同步维护功能说明、变更交接记录以及各级 README 摘要。
 
 它适用于 AI 编程上下文管理、跨窗口续接、跨 Agent 上下文切换与任务交接，不需要在新会话中重新描述全部背景。
+
+如果你正在寻找 AI 上下文管理、Codex 上下文管理、Codex 上下文、Cursor 上下文、Cursor 上下文切换、Claude 上下文管理，或者希望换一个 AI 窗口后继续开发，这个 Skill 会引导新的 Agent 快速找到相关代码、功能边界和经过验证的变更记录。
+
+使用通用的 Agent Skills CLI 即可安装：
+
+```bash
+npx skills@latest add gviiisen/repo-context-ledger --skill repo-context-ledger
+```
 
 用户只需正常描述开发需求，文档生命周期由 AI 自主完成。
 
