@@ -10,6 +10,8 @@
 
 Initialization preserves prose outside managed markers, existing completed Changes, custom documentation roots, mature month layouts, and private session drafts. Feature branches continue to defer shared Manifest, README, and monthly-index regeneration.
 
+v0.7.3 adds an empty `verification.presets` object to normalized configuration. Upgrade does not infer commands from package manifests and never executes a preset. Add reviewed presets only for repeated checks, and keep secrets or machine-specific absolute paths out of Git-tracked configuration.
+
 ## Rollback
 
 Keep the prior Skill installation or release artifact until the upgraded repository passes its checks. Repository file changes are ordinary Git changes and should be reviewed or reverted through Git. Private state is not committed; back it up separately before a state-schema migration when an active task cannot be recreated safely.

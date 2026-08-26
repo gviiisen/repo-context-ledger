@@ -385,6 +385,7 @@ class LedgerFlowTests(unittest.TestCase):
                 },
                 config["context"],
             )
+            self.assertEqual({"presets": {}}, config["verification"])
             self.assertIn(
                 "Never message or steer another user-owned task",
                 (repo / ".cursor/rules/repo-context-ledger.mdc").read_text(encoding="utf-8"),
@@ -987,6 +988,164 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertGreaterEqual(report["elapsed_ms"], 0)
             self.assertGreaterEqual(report["stages"]["lock_hold_ms"], 0)
             self.assertNotIn(str(repo), timing_line)
+
+    def test_verification_preset_executes_argv_in_configured_working_directory(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            worker = repo / "worker"
+            worker.mkdir()
+            script = worker / "check.py"
+            script.write_text(
+                "import pathlib, sys\n"
+                "print(f'preset-ok:{pathlib.Path.cwd().name}:{sys.argv[1]}')\n",
+                encoding="utf-8",
+            )
+            config_path = repo / ".context-ledger/config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["verification"]["presets"]["worker-unit"] = {
+                "argv": [sys.executable, "check.py", "two words"],
+                "cwd": "worker",
+                "timeout": 45,
+                "sensitive": False,
+                "platforms": [LEDGER_MODULE.verification_platform()],
+            }
+            config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+            started = self.run_ledger(repo, "start", "--title", "Run preset")
+            session = session_from_result(started)
+
+            result = self.run_ledger(repo, "verify", "--session", session, "--preset", "worker-unit")
+
+            self.assertIn("preset-ok:worker:two words", result.stdout)
+            draft = private_draft(repo, started).read_text(encoding="utf-8")
+            self.assertIn("- Preset: `worker-unit`", draft)
+            self.assertIn("- Working directory: `worker`", draft)
+            self.assertIn("check.py \"two words\"", draft)
+
+    def test_sensitive_verification_preset_never_displays_or_persists_command_output(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            config_path = repo / ".context-ledger/config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["verification"]["presets"]["private-check"] = {
+                "argv": [sys.executable, "-c", "print('SUPERSECRET-PRESET-OUTPUT')"],
+                "cwd": ".",
+                "timeout": 30,
+                "sensitive": True,
+                "platforms": [LEDGER_MODULE.verification_platform()],
+            }
+            config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+            started = self.run_ledger(repo, "start", "--title", "Run sensitive preset")
+
+            result = self.run_ledger(
+                repo, "verify", "--session", session_from_result(started),
+                "--preset", "private-check",
+            )
+
+            self.assertNotIn("SUPERSECRET", result.stdout + result.stderr)
+            draft = private_draft(repo, started).read_text(encoding="utf-8")
+            self.assertNotIn("SUPERSECRET", draft)
+            self.assertIn("- Command: `<sensitive verification>`", draft)
+            self.assertIn("- Preset: `private-check`", draft)
+
+    def test_verification_presets_reject_shell_strings_and_repository_escape(self):
+        invalid_presets = {
+            "powershell-command": {
+                "argv": ["powershell.exe", "-Command", "Write-Output nested"],
+                "message": "must use PowerShell -File",
+            },
+            "cmd-command": {
+                "argv": ["cmd.exe", "/c", "echo nested"],
+                "message": "cannot use cmd.exe",
+            },
+            "shell-command": {
+                "argv": ["bash", "-c", "echo nested"],
+                "message": "cannot use a shell -c string",
+            },
+            "escaped-cwd": {
+                "argv": [sys.executable, "check.py"],
+                "cwd": "../outside",
+                "message": "must stay inside the repository",
+            },
+        }
+        for name, case in invalid_presets.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as raw:
+                repo = Path(raw)
+                self.run_ledger(repo, "init")
+                config_path = repo / ".context-ledger/config.json"
+                config = json.loads(config_path.read_text(encoding="utf-8"))
+                preset = {
+                    "argv": case["argv"],
+                    "cwd": case.get("cwd", "."),
+                    "timeout": 30,
+                    "sensitive": False,
+                    "platforms": [LEDGER_MODULE.verification_platform()],
+                }
+                config["verification"]["presets"][name] = preset
+                config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+
+                result = self.run_ledger(repo, "status", expected=2)
+
+                self.assertIn(case["message"], result.stderr)
+
+    def test_verification_preset_accepts_powershell_file_and_normalizes_defaults(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            config_path = repo / ".context-ledger/config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["verification"]["presets"]["windows-file"] = {
+                "argv": [
+                    "powershell.exe", "-NoProfile", "-File", "scripts/check.ps1"
+                ],
+                "platforms": ["windows"],
+            }
+            config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+
+            normalized = LEDGER_MODULE.load_config(repo)["verification"]["presets"]["windows-file"]
+
+            self.assertEqual(".", normalized["cwd"])
+            self.assertEqual(300, normalized["timeout"])
+            self.assertFalse(normalized["sensitive"])
+            self.assertEqual(["windows"], normalized["platforms"])
+
+    def test_verification_preset_selection_fails_closed(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            marker = repo / "should-not-run.txt"
+            other_platform = "darwin" if LEDGER_MODULE.verification_platform() != "darwin" else "windows"
+            config_path = repo / ".context-ledger/config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["verification"]["presets"]["wrong-platform"] = {
+                "argv": [
+                    sys.executable, "-c",
+                    f"from pathlib import Path; Path({str(marker)!r}).write_text('ran')",
+                ],
+                "cwd": ".",
+                "timeout": 30,
+                "sensitive": False,
+                "platforms": [other_platform],
+            }
+            config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+            started = self.run_ledger(repo, "start", "--title", "Reject unsafe selection")
+            session = session_from_result(started)
+
+            missing = self.run_ledger(
+                repo, "verify", "--session", session, "--preset", "missing", expected=2
+            )
+            self.assertIn("Available: wrong-platform", missing.stderr)
+            conflict = self.run_ledger(
+                repo, "verify", "--session", session, "--preset", "wrong-platform",
+                "--", sys.executable, "-c", "print('conflict')", expected=2,
+            )
+            self.assertIn("either --preset or a command", conflict.stderr)
+            unsupported = self.run_ledger(
+                repo, "verify", "--session", session, "--preset", "wrong-platform", expected=2
+            )
+            self.assertIn("is not enabled on", unsupported.stderr)
+            self.assertFalse(marker.exists())
 
     def test_finish_validates_unlocked_and_rejects_a_changed_draft(self):
         with tempfile.TemporaryDirectory() as raw:

@@ -188,6 +188,30 @@ Coverage classification is configured separately in `.context-ledger/config.json
 
 The runtime applies ignored, generated, test, CI, and configuration rules before the implementation fallback. Projects can replace the defaults with repository-specific globs. A changed production path only passes Context Pack coverage when that exact path is tracked by a changed Pack; updating an unrelated Pack is not accepted.
 
+Project maintainers can also define reviewed verification presets in `.context-ledger/config.json`. The Agent selects a name; the runtime executes the stored argument array directly, so it does not need to improvise PowerShell quoting or rebuild a long command from prose:
+
+```json
+{
+  "verification": {
+    "presets": {
+      "unit": {
+        "argv": ["python", "-m", "unittest", "discover", "-s", "tests", "-v"],
+        "cwd": ".",
+        "timeout": 300,
+        "sensitive": false,
+        "platforms": ["windows", "linux", "darwin"]
+      },
+      "windows-smoke": {
+        "argv": ["powershell.exe", "-NoProfile", "-File", "scripts/smoke.ps1"],
+        "platforms": ["windows"]
+      }
+    }
+  }
+}
+```
+
+Run one explicitly with `python .context-ledger/ledger.py verify --preset unit`. Presets never run during `init`, routing, or `finish`; they cannot carry environment variables or secrets. Shell strings such as PowerShell `-Command`, `cmd.exe`, and `bash -c` are rejected. See [verification-presets.md](skills/repo-context-ledger/references/verification-presets.md) for the complete contract.
+
 ### 3. Continue in another agent or switch tasks naturally
 
 When another agent or window will continue the same active task, the current agent records a checkpoint containing completed work, Git-derived changed paths, and the next concrete action. The task remains active; users do not run a checkpoint command themselves.
@@ -292,6 +316,13 @@ python scripts/build_runtime.py --check
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
+
+## What's new in v0.7.3
+
+- Repository-owned verification presets replace improvised command strings with reviewed `argv`, working-directory, timeout, sensitivity, and platform metadata.
+- `verify --preset <name>` executes the selected argument array directly with `shell=False` and records the preset name plus repository-relative working directory as evidence.
+- Unsafe shell-string wrappers are rejected: PowerShell presets must use `-File`; `-Command`, encoded commands, `cmd.exe`, and shell `-c` forms cannot enter the configuration.
+- Presets are explicit only. Initialization, context routing, and finish never run them automatically, and presets cannot embed environment variables or secrets. Existing direct `verify -- <program> <args...>` usage remains compatible.
 
 ## What's new in v0.7.2
 

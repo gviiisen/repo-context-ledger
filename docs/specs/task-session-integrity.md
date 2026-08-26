@@ -23,7 +23,7 @@ Repo Context Ledger isolates lifecycle state, unfinished handoff content, eviden
 | `skills/repo-context-ledger/scripts/ledger.py::resolve_task_session` | Resolves an owned explicit session or fails closed when multiple candidates exist. |
 | `skills/repo-context-ledger/scripts/ledger.py::capture_evidence` | Requires explicit changed paths when foreign sessions exist and records only the selected task's evidence. |
 | `skills/repo-context-ledger/scripts/ledger.py::task_session_finish_errors` | Validates the selected session without treating foreign worktree dirt or unrelated stale Packs as blockers. |
-| `skills/repo-context-ledger/scripts/ledger.py::record_verification` | Binds and records a verification under short write locks while executing the command unlocked. |
+| `skills/repo-context-ledger/scripts/ledger.py::record_verification` | Binds and records direct or reviewed-preset verification under short write locks while executing the resolved argv unlocked. |
 | `skills/repo-context-ledger/scripts/ledger.py::finish_change`, `finish_input_signature` | Prepares evidence and validation outside the write lock, then revalidates a bounded input signature before the short atomic publication step. |
 | `skills/repo-context-ledger/scripts/ledger.py::redact_local_paths` | Replaces repository, Codex, temporary, and user-home roots before verification evidence enters a private draft or completed record. |
 | `skills/repo-context-ledger/scripts/ledger.py::redact_record_local_paths` | Re-sanitizes the managed checks block at the atomic finish/recovery boundary. |
@@ -32,7 +32,7 @@ Repo Context Ledger isolates lifecycle state, unfinished handoff content, eviden
 
 ## Data flow and contracts
 
-- Input: Lifecycle commands receive the repository, task keywords or an optional `--session`, the calling `--tool`, an expected `--epoch` after continuation, and command-specific evidence or verification arguments. Explicit sharing also receives a recipient principal, mode, and expiry.
+- Input: Lifecycle commands receive the repository, task keywords or an optional `--session`, the calling `--tool`, an expected `--epoch` after continuation, and command-specific evidence or verification arguments. Verification may select a reviewed repository preset, which resolves to direct argv before execution. Explicit sharing also receives a recipient principal, mode, and expiry.
 - Flow: `context` scores only active/paused sessions available to the current principal, emits at most one bounded Capsule, and reports foreign overlap without private fields. `resume` keeps the selected session, increments its epoch, and changes its continuation tool. Owner writes validate that epoch. Read-only grants cannot resume; fork grants create a new recipient-owned draft; paused transfer grants change ownership when accepted. With parallel sessions, evidence accepts only explicit changed paths. Independent verification commands may run concurrently: each command executes unlocked and briefly waits to append its result. `finish` snapshots the selected session, renders evidence and validates specs and Pack fingerprints outside the lock, then rechecks the session, draft digest, and bounded input signature under a short lock before atomic publication. Stable links and derived context are regenerated after publication without extending the critical section.
 - Persistence / dependencies: Git repositories store the task-session map, drafts, principal hash, continuation metadata, and grants under worktree Git metadata; non-Git directories use `.context-ledger/sessions/`. Resume Capsules are generated on demand rather than persisted as Markdown. Completed handoffs remain Git-tracked Markdown.
 - Output: `context-bundle-v1` returns an initial Resume Capsule with summary, next step, Pack-scoped implementation evidence paths, omitted legacy-path count, verification, Git position, Pack, warnings, tool, and epoch. Active commands name the selected session and publication target. Verification results use stable local-root placeholders. `--timings` emits one private, non-persisted JSON timing summary to stderr without repository paths. `finish` outputs one completed change path, or preserves the draft and returns an error.
@@ -53,6 +53,7 @@ Run `python -m unittest discover -s tests -p test_ledger.py` to cover v8 migrati
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Add safe verification presets](../changes/2026/08/20260827065951-gviiisen-6daa4a6c38-add-safe-verification-presets.md)
 - [Accelerate small-task closeout](../changes/2026/08/20260827060627-gviiisen-2e52131353-accelerate-small-task-closeout.md)
 - [Add cross-Agent session resume ownership](../changes/2026/08/20260821171622-gviiisen-67c0a5a3f9-add-cross-agent-session-resume-ownership.md)
 - [Make fingerprints portable and redact local paths](../changes/2026/08/20260821144634-gviiisen-60f90c607e-make-fingerprints-portable-and-redact-local-path.md)

@@ -1046,6 +1046,164 @@ def normalize_coverage_globs(raw_coverage: object) -> dict[str, list[str]]:
     return normalized
 
 
+def verification_platform() -> str:
+    if sys.platform.startswith("win"):
+        return "windows"
+    if sys.platform == "darwin":
+        return "darwin"
+    return "linux"
+
+
+def normalize_verification_cwd(repo: Path, raw: object, preset: str) -> str:
+    if not isinstance(raw, str) or not raw.strip():
+        raise LedgerError(f"config.verification.presets.{preset}.cwd must be a relative directory.")
+    supplied = Path(raw.strip())
+    if supplied.is_absolute():
+        raise LedgerError(
+            f"config.verification.presets.{preset}.cwd must stay inside the repository."
+        )
+    target = (repo / supplied).resolve()
+    try:
+        relative = target.relative_to(repo.resolve())
+    except ValueError as exc:
+        raise LedgerError(
+            f"config.verification.presets.{preset}.cwd must stay inside the repository."
+        ) from exc
+    return relative.as_posix() if relative.parts else "."
+
+
+def reject_shell_string_preset(name: str, argv: list[str]) -> None:
+    executable = Path(argv[0]).name.casefold()
+    flags = {item.casefold() for item in argv[1:]}
+    if executable in {"powershell", "powershell.exe", "pwsh", "pwsh.exe"}:
+        if flags.intersection({"-command", "-c", "-encodedcommand", "-enc"}) or "-file" not in flags:
+            raise LedgerError(
+                f"Verification preset {name} must use PowerShell -File with a checked-in script; "
+                "-Command and encoded command strings are not allowed."
+            )
+    if executable in {"cmd", "cmd.exe"}:
+        raise LedgerError(
+            f"Verification preset {name} cannot use cmd.exe; use a direct executable or a "
+            "PowerShell -File/Python script."
+        )
+    if executable in {"sh", "bash", "zsh", "dash"} and "-c" in flags:
+        raise LedgerError(
+            f"Verification preset {name} cannot use a shell -c string; pass a script path instead."
+        )
+
+
+def normalize_verification_config(repo: Path, raw_verification: object) -> dict[str, object]:
+    if raw_verification is None:
+        raw_verification = {}
+    if not isinstance(raw_verification, dict):
+        raise LedgerError("config.verification must be an object.")
+    unknown = set(raw_verification).difference({"presets"})
+    if unknown:
+        raise LedgerError(f"Unknown verification setting: {sorted(unknown)[0]}")
+    raw_presets = raw_verification.get("presets", {})
+    if not isinstance(raw_presets, dict):
+        raise LedgerError("config.verification.presets must be an object.")
+    if len(raw_presets) > 128:
+        raise LedgerError("config.verification.presets cannot contain more than 128 presets.")
+    presets: dict[str, dict[str, object]] = {}
+    for name in sorted(raw_presets):
+        if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", name):
+            raise LedgerError(
+                "Verification preset names must use 1-64 lowercase letters, digits, dots, "
+                "underscores, or hyphens."
+            )
+        raw = raw_presets[name]
+        if not isinstance(raw, dict):
+            raise LedgerError(f"config.verification.presets.{name} must be an object.")
+        unknown_keys = set(raw).difference(VERIFICATION_PRESET_KEYS)
+        if unknown_keys:
+            raise LedgerError(
+                f"Unknown verification preset setting for {name}: {sorted(unknown_keys)[0]}"
+            )
+        argv = raw.get("argv")
+        if not isinstance(argv, list) or not argv or len(argv) > 128:
+            raise LedgerError(
+                f"config.verification.presets.{name}.argv must contain 1-128 arguments."
+            )
+        normalized_argv: list[str] = []
+        for index, item in enumerate(argv):
+            if not isinstance(item, str) or "\x00" in item or "\r" in item or "\n" in item:
+                raise LedgerError(
+                    f"config.verification.presets.{name}.argv[{index}] must be one string "
+                    "without NUL or newline characters."
+                )
+            if len(item) > 4096:
+                raise LedgerError(
+                    f"config.verification.presets.{name}.argv[{index}] exceeds 4096 characters."
+                )
+            normalized_argv.append(item)
+        if not normalized_argv[0].strip():
+            raise LedgerError(
+                f"config.verification.presets.{name}.argv[0] must name an executable."
+            )
+        reject_shell_string_preset(name, normalized_argv)
+        timeout = raw.get("timeout", DEFAULT_VERIFICATION_TIMEOUT)
+        if not isinstance(timeout, int) or isinstance(timeout, bool) or not 1 <= timeout <= 3600:
+            raise LedgerError(
+                f"config.verification.presets.{name}.timeout must be an integer from 1 to 3600."
+            )
+        sensitive = raw.get("sensitive", False)
+        if not isinstance(sensitive, bool):
+            raise LedgerError(f"config.verification.presets.{name}.sensitive must be true or false.")
+        raw_platforms = raw.get("platforms", list(VERIFICATION_PLATFORMS))
+        if not isinstance(raw_platforms, list) or not raw_platforms:
+            raise LedgerError(
+                f"config.verification.presets.{name}.platforms must be a non-empty list."
+            )
+        platforms: list[str] = []
+        for index, platform in enumerate(raw_platforms):
+            if platform not in VERIFICATION_PLATFORMS:
+                raise LedgerError(
+                    f"config.verification.presets.{name}.platforms[{index}] must be "
+                    "windows, linux, or darwin."
+                )
+            if platform not in platforms:
+                platforms.append(platform)
+        presets[name] = {
+            "argv": normalized_argv,
+            "cwd": normalize_verification_cwd(repo, raw.get("cwd", "."), name),
+            "timeout": timeout,
+            "sensitive": sensitive,
+            "platforms": platforms,
+        }
+    return {"presets": presets}
+
+
+def resolve_verification_preset(
+    repo: Path, config: dict, name: str
+) -> tuple[list[str], Path, int, bool]:
+    presets = config.get("verification", {}).get("presets", {})
+    preset = presets.get(name)
+    if not isinstance(preset, dict):
+        available = ", ".join(sorted(presets)) or "none configured"
+        raise LedgerError(f"Unknown verification preset: {name}. Available: {available}.")
+    current_platform = verification_platform()
+    if current_platform not in preset["platforms"]:
+        allowed = ", ".join(preset["platforms"])
+        raise LedgerError(
+            f"Verification preset {name} is not enabled on {current_platform}; allowed: {allowed}."
+        )
+    raw_cwd = preset["cwd"]
+    working_directory = repo.resolve() if raw_cwd == "." else safe_repo_path(
+        repo, raw_cwd, f"verification preset {name} cwd"
+    )
+    if not working_directory.is_dir():
+        raise LedgerError(
+            f"Verification preset {name} working directory does not exist: {raw_cwd}"
+        )
+    return (
+        list(preset["argv"]),
+        working_directory,
+        int(preset["timeout"]),
+        bool(preset["sensitive"]),
+    )
+
+
 def validate_config(repo: Path, config: dict) -> dict:
     if not isinstance(config, dict):
         raise LedgerError("Ledger configuration must be a JSON object.")
@@ -1161,6 +1319,7 @@ def validate_config(repo: Path, config: dict) -> dict:
             )
         context[key] = value
     coverage = normalize_coverage_globs(config.get("coverage"))
+    verification = normalize_verification_config(repo, config.get("verification"))
     return {
         "schema_version": VERSION,
         "docs": normalized_docs,
@@ -1169,6 +1328,7 @@ def validate_config(repo: Path, config: dict) -> dict:
         "adapters": adapters,
         "context": context,
         "coverage": coverage,
+        "verification": verification,
         "team": {
             "enabled": team_enabled,
             "default_branch": default_branch,
@@ -1257,7 +1417,7 @@ def managed_rules(config: dict) -> str:
     specs = config["docs"]["specs"]
     return f"""## Repository context ledger
 
-Choose the shortest applicable path. Read-only work uses `context` only when routing is needed and never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config>`. A single-session small fix with an already known code path uses `status` → `start` → implement → independent parallel `verify` commands → `finish`; skip context/focus and a separate evidence command unless the task expands or becomes uncertain. Ordinary behavior changes use the lifecycle below.
+Choose the shortest applicable path. Read-only work uses `context` only when routing is needed and never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config>`. A single-session small fix with an already known code path uses `status` → `start` → implement → independent parallel `verify` commands → `finish`; prefer an exact reviewed `verify --preset <name>` when configured, and otherwise pass direct executable arguments; skip context/focus and a separate evidence command unless the task expands or becomes uncertain. Ordinary behavior changes use the lifecycle below.
 
 For every feature, bug fix, refactor, interface change, or other ordinary behavior-changing code task:
 
@@ -1265,7 +1425,7 @@ For every feature, bug fix, refactor, interface change, or other ordinary behavi
 2. Resolve `quality.language`; when it is `auto`, follow nearby docs or the user's language. Keep paths, symbols, commands, and error text untranslated.
 3. For medium/large or uncertain work, {context_plan_policy()} Focus the selected feature Context Pack before broad code exploration. If no Pack exists, create and fill one. Skip routing only for a genuinely small fix whose code path and behavior boundary are already established.
 4. {resume_plan_policy()} Run `checkpoint --session <id> --summary "..." --next "..."` before handing active work to another Agent. Pause only this task's session; never pause, resume, or finish another task's session.
-5. After code is stable, run independent checks concurrently through separate `python .context-ledger/ledger.py verify -- <command>` processes. While they run, refresh the Pack and spec when those edits do not share mutable test resources. Wait for every verification to record before `finish`; never hand-edit the private draft while verification appends to it. Keep checks serial when they share a database, port, generated directory, or mutable fixture. Use `verify --not-run --reason \"...\"` only when verification is genuinely unavailable.
+5. After code is stable, run independent checks concurrently. Prefer a reviewed `.context-ledger/config.json` verification preset that exactly matches the claimed check: `python .context-ledger/ledger.py verify --preset <name>`. Presets are explicit argv arrays and are never auto-run. Otherwise use `verify -- <direct executable and arguments>`; do not nest PowerShell or shell command strings. While checks run, refresh the Pack and spec when those edits do not share mutable test resources. Wait for every verification to record before `finish`; never hand-edit the private draft while verification appends to it. Keep checks serial when they share a database, port, generated directory, or mutable fixture. Use `verify --not-run --reason \"...\"` only when verification is genuinely unavailable.
 6. Let `finish` capture evidence for a single-session small fix. Run explicit `evidence --path` only when another session exists or automatic collection is too broad; never capture foreign dirty paths.
 7. Update `{specs}/` and refresh affected Context Packs when current behavior, contracts, boundaries, code navigation, or tracked production paths change.
 8. Finish with `finish --spec <affected-spec>`, or use `--no-spec --reason \"...\"` only when no stable behavior exists.
@@ -1431,6 +1591,7 @@ def build_init_plan(repo: Path) -> tuple[InitPlan, dict, list[dict[str, str]], b
             "readme_managed_blocks": True,
             "adapters": previous.get("adapters") or {name: True for name in ADAPTER_NAMES},
             "coverage": previous.get("coverage") or COVERAGE_GLOB_DEFAULTS,
+            "verification": previous.get("verification") or {"presets": {}},
             "team": previous.get("team") or {
                 "enabled": is_git_repo(repo),
                 "default_branch": detect_default_branch(repo),
@@ -5336,6 +5497,8 @@ def record_verification(
     session: str = "",
     epoch: int = 0,
     sensitive: bool = False,
+    preset: str = "",
+    working_directory: Path | None = None,
 ) -> int:
     config = load_config(repo)
     if not_run:
@@ -5373,7 +5536,7 @@ def record_verification(
     try:
         result = subprocess.run(
             command,
-            cwd=repo,
+            cwd=working_directory or repo,
             text=True,
             capture_output=True,
             encoding="utf-8",
@@ -5410,9 +5573,15 @@ def record_verification(
         )
     )
     recorded = now().isoformat(timespec="seconds")
+    preset_line = f"  - Preset: `{preset}`\n" if preset else ""
+    cwd_path = (working_directory or repo).resolve()
+    cwd_label = "." if cwd_path == repo.resolve() else rel_posix(cwd_path, repo)
+    cwd_line = f"  - Working directory: `{cwd_label}`\n" if preset else ""
     entry = (
         f"- Command: `{display_command}`\n"
         f"  - Status: {status}\n"
+        f"{preset_line}"
+        f"{cwd_line}"
         f"  - Exit code: {exit_code}\n"
         f"  - Duration: {duration:.2f}s\n"
         f"  - Recorded: {recorded}\n"
@@ -6202,7 +6371,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Changed repository path owned by this task; repeat for multiple paths",
     )
     verify = sub.add_parser("verify", help="Run and record an actual verification command")
-    verify.add_argument("--timeout", type=int, default=300)
+    verify.add_argument("--timeout", type=int, default=None)
     verify.add_argument("--not-run", action="store_true")
     verify.add_argument("--reason", default="")
     verify.add_argument("--session", default="", help="Task session ID; required when multiple sessions are active")
@@ -6211,6 +6380,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--sensitive",
         action="store_true",
         help="Execute the check without displaying or persisting its command arguments or output",
+    )
+    verify.add_argument(
+        "--preset",
+        default="",
+        help="Execute a reviewed argv-array preset from config.verification.presets",
     )
     verify.add_argument("verification_command", nargs=argparse.REMAINDER)
     sync = sub.add_parser("sync", help="Regenerate indexes and managed README blocks")
@@ -6417,12 +6591,26 @@ def run_main(argv: list[str] | None = None) -> int:
         if args.command == "init":
             return init_repo(repo, args.dry_run)
         if args.command == "verify":
-            if args.not_run and args.verification_command:
-                print("Use either a command or --not-run, not both.", file=sys.stderr)
+            command = [item for item in args.verification_command if item != "--"]
+            if args.not_run and (command or args.preset):
+                print("Use either a command/preset or --not-run, not both.", file=sys.stderr)
                 return 2
+            if args.preset and command:
+                print("Use either --preset or a command after --, not both.", file=sys.stderr)
+                return 2
+            timeout = args.timeout if args.timeout is not None else DEFAULT_VERIFICATION_TIMEOUT
+            sensitive = args.sensitive
+            working_directory = repo
+            if args.preset:
+                command, working_directory, preset_timeout, preset_sensitive = (
+                    resolve_verification_preset(repo, load_config(repo), args.preset)
+                )
+                if args.timeout is None:
+                    timeout = preset_timeout
+                sensitive = sensitive or preset_sensitive
             return record_verification(
-                repo, args.verification_command, args.timeout, args.not_run, args.reason,
-                args.session, args.epoch, args.sensitive
+                repo, command, timeout, args.not_run, args.reason,
+                args.session, args.epoch, sensitive, args.preset, working_directory
             )
         if args.command == "check":
             if args.format == "json":

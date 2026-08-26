@@ -46,6 +46,8 @@ For a small single-session fix, avoid a separate `evidence` command; `finish` ca
 
 Use `--timings` before the command when diagnosing lifecycle overhead. It emits one `private-command-timings-v1` JSON object to stderr and never persists machine paths or timing data in Git. `finish` validates outside the write lock, rechecks a bounded input signature under the lock, publishes atomically, and regenerates derived indexes afterward. A draft, evidence file, Pack, spec, or publication target that changes during preparation causes `finish` to fail closed and preserve the session.
 
+For repeated project checks, prefer reviewed `verification.presets` over shell strings assembled by each Agent. Presets store executable arguments as JSON arrays, may constrain the repository-relative working directory and platform, and are executed only after an explicit `verify --preset <name>`. Keep one-off commands direct. See [verification-presets.md](verification-presets.md) for the schema and safe Windows/Linux examples.
+
 Before a pull request, use a merge-base delta:
 
 ```text

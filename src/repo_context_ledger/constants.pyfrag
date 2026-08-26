@@ -1,5 +1,5 @@
 VERSION = 8
-TOOL_VERSION = "0.7.2"
+TOOL_VERSION = "0.7.3"
 MANIFEST_VERSION = 1
 ROUTER_CACHE_SCHEMA = 1
 CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
@@ -76,6 +76,9 @@ CONTEXT_DEFAULTS = {
     "max_total_characters": 30000,
     "show_close_candidates": 0,
 }
+DEFAULT_VERIFICATION_TIMEOUT = 300
+VERIFICATION_PLATFORMS = ("windows", "linux", "darwin")
+VERIFICATION_PRESET_KEYS = ("argv", "cwd", "timeout", "sensitive", "platforms")
 RESUME_NEAR_SCORE_RATIO = 0.85
 RESUME_SUMMARY_CHARS = 600
 RESUME_NEXT_CHARS = 320

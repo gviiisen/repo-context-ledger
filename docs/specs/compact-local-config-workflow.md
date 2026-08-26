@@ -15,7 +15,7 @@ Repo Context Ledger provides a compact lifecycle for small, tracked configuratio
 | Path / symbol | Responsibility |
 | --- | --- |
 | `src/repo_context_ledger/runtime.py.tmpl::start_change` | Records the task kind and reserves a private draft plus atomic publication target. |
-| `src/repo_context_ledger/runtime.py.tmpl::record_verification` | Runs direct executable arguments outside the write lock and enforces sensitive evidence persistence. |
+| `src/repo_context_ledger/runtime.py.tmpl::record_verification` | Runs direct executable arguments, including a resolved reviewed preset, outside the write lock and enforces sensitive evidence persistence. |
 | `src/repo_context_ledger/runtime.py.tmpl::complete_local_config_draft` | Generates the bounded worktree-local handoff from the user-visible result and scoped Git paths. |
 | `src/repo_context_ledger/runtime.py.tmpl::finish_change` | Renders evidence in memory, validates outside the write lock, and rechecks a bounded input signature before short atomic publication. |
 | `src/repo_context_ledger/runtime.py.tmpl::doctor_legacy_workflow_findings` | Warns when unmanaged legacy active-handoff instructions compete with private sessions. |
@@ -23,7 +23,7 @@ Repo Context Ledger provides a compact lifecycle for small, tracked configuratio
 
 ## Data flow and contracts
 
-- Input: `start --kind local-config` receives a title and feature. `verify --sensitive` receives a direct executable and arguments. `finish` requires one or more repository-relative `--path` values; it accepts no free-form result text.
+- Input: `start --kind local-config` receives a title and feature. `verify --sensitive` receives direct executable arguments, or `verify --preset <name>` selects a reviewed preset whose `sensitive` setting cannot be weakened. `finish` requires one or more repository-relative `--path` values; it accepts no free-form result text.
 - Flow: The task remains a private session while configuration is edited and checked. Sensitive verification executes normally but replaces its persisted command with `<sensitive verification>`, suppresses captured output from the console and record, and stores only status, exit code, duration, and time. `finish` rejects paths not classified as `config`, requires the final recorded check to be a passing sensitive verification, validates each explicit path against Git dirt, renders a fixed-value-free semantic record in memory, applies the stable-spec exception, and performs long validation outside the lock. A short final lock rechecks the session, draft digest, and bounded input signature before atomic publication; derived summaries follow after the lock.
 - Persistence / dependencies: Unfinished state remains below worktree Git metadata. The completed sanitized Change is Git-tracked because it records an operation and its evidence, but `Scope: worktree-local` prevents it from representing local values as portable repository truth. Configuration values never enter Ledger Markdown.
 - Output: A successful compact finish produces one completed Change with no TODO placeholders, an explicit worktree-local scope, evidence paths, a sanitized verification entry, and `Specs: none`. A failed check or finish leaves the private draft available for correction.
@@ -44,6 +44,7 @@ Run `python -m unittest discover -s tests -p test_ledger.py -k local_config` for
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Add safe verification presets](../changes/2026/08/20260827065951-gviiisen-6daa4a6c38-add-safe-verification-presets.md)
 - [Accelerate small-task closeout](../changes/2026/08/20260827060627-gviiisen-2e52131353-accelerate-small-task-closeout.md)
 - [Close compact workflow review gaps](../changes/2026/08/20260827031910-gviiisen-bb7acfb439-close-compact-workflow-review-gaps.md)
 - [Reduce Ledger overhead for local configuration changes](../changes/2026/08/20260827025332-gviiisen-90a3dd7099-reduce-ledger-overhead-for-local-configuration-c.md)

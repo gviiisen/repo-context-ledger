@@ -188,6 +188,30 @@ Coverage 路径分类在 `.context-ledger/config.json` 中单独配置：
 
 运行时会先应用忽略、生成文件、测试、CI 与配置规则，最后才使用生产实现兜底规则。项目可以用自己的 glob 替换默认值。发生变化的生产路径只有被某个已更新 Context Pack 精确跟踪时才算覆盖；修改无关 Pack 不会被接受。
 
+项目维护者还可以在 `.context-ledger/config.json` 中定义审核过的验证预设。Agent 只选择预设名称，运行时直接执行保存好的参数数组，不再临时拼 PowerShell 引号，也不用从说明文字里重建长命令：
+
+```json
+{
+  "verification": {
+    "presets": {
+      "unit": {
+        "argv": ["python", "-m", "unittest", "discover", "-s", "tests", "-v"],
+        "cwd": ".",
+        "timeout": 300,
+        "sensitive": false,
+        "platforms": ["windows", "linux", "darwin"]
+      },
+      "windows-smoke": {
+        "argv": ["powershell.exe", "-NoProfile", "-File", "scripts/smoke.ps1"],
+        "platforms": ["windows"]
+      }
+    }
+  }
+}
+```
+
+需要执行时显式运行 `python .context-ledger/ledger.py verify --preset unit`。预设不会在 `init`、上下文路由或 `finish` 时自动运行，也不能携带环境变量或密钥。PowerShell `-Command`、`cmd.exe`、`bash -c` 等 shell 字符串形式会被拒绝。完整约束见 [verification-presets.md](skills/repo-context-ledger/references/verification-presets.md)。
+
 ### 3. 在另一个 Agent 中继续，或者自然切换任务
 
 如果只是换到另一个 Agent 或窗口继续同一个任务，当前 Agent 会先保存 checkpoint，包括已完成工作、Git 变更路径和下一步；任务仍保持 active，用户不用执行任何 checkpoint 命令。
@@ -292,6 +316,13 @@ python scripts/build_runtime.py --check
 ```
 
 源码与生成物边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## v0.7.3 新增能力
+
+- 仓库可以保存经过审核的验证预设，用结构化 `argv`、工作目录、超时、敏感标记和平台信息代替 Agent 临时拼接命令字符串。
+- `verify --preset <name>` 使用 `shell=False` 直接执行参数数组，并把预设名称和仓库相对工作目录写入验证证据。
+- 配置层会拒绝危险的 shell 字符串包装：PowerShell 预设必须使用 `-File`，不能使用 `-Command`、编码命令、`cmd.exe` 或 shell `-c`。
+- 预设只能显式执行；初始化、上下文路由和 finish 都不会自动运行，预设也不能内嵌环境变量或密钥。原有 `verify -- <program> <args...>` 直接参数形式继续兼容。
 
 ## v0.7.2 新增能力
 

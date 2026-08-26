@@ -5,10 +5,10 @@ Feature: context-routing-performance
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: b7e4eb53249faa64881e37401a764093faf476b7
+Source commit: e9589ed8c0474590bc6266d9d92424ac1b5050cb
 Base branch: main
 Base commit: b7e4eb53249faa64881e37401a764093faf476b7
-Last refreshed: 2026-08-27T06:50:46+08:00
+Last refreshed: 2026-08-27T07:16:03+08:00
 
 ## Purpose
 
@@ -50,8 +50,8 @@ Last refreshed: 2026-08-27T06:50:46+08:00
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:0833437a2238a3fc15cc39d3723d0ddb3642968842d3f905f39699dc6921053a`
-- `tests/test_ledger.py` — `sha256:bc43609d285a1e06069eddfef53660379678122eed0f10c59e6ec6011446f65d`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:187328722f04f19285b4e95115a6bda0b565ab554419156797307229a911045c`
+- `tests/test_ledger.py` — `sha256:bb1837198bb1324bea43b4f974991d59041780970efe5251a20085a83fd4a03a`
 - `benchmarks/context_router_benchmark.py` — `sha256:78762f66163af15cb0ee502e4944c2c20bc4035503d0517c026074042be96935`
 - `benchmarks/README.md` — `sha256:9244091fc1202a9c40c54f2fb7f81d7e708dacd3d619f8e68e70f70ee633088a`
 <!-- repo-context-ledger:pack-files:end -->
