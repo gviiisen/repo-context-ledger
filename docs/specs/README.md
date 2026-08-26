@@ -11,4 +11,5 @@
 - [Pack Health and Doctor](pack-health-doctor.md) — current
 - [Runtime Architecture](runtime-architecture.md) — current
 - [Task session integrity](task-session-integrity.md) — current
+- [Verification presets](verification-presets.md) — current
 <!-- repo-context-ledger:end -->
