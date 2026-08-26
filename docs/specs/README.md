@@ -3,6 +3,7 @@
 <!-- repo-context-ledger:start -->
 ## Index
 
+- [Compact local configuration workflow](compact-local-config-workflow.md) — current
 - [Context Routing Performance](context-routing-performance.md) — current
 - [Contract Stability](contract-stability.md) — current
 - [Coverage Integrity](coverage-integrity.md) — current
