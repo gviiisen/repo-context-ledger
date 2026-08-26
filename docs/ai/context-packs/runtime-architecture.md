@@ -5,10 +5,10 @@ Feature: runtime-architecture
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: dd283c73130ec672e183fe8018c4b19217efdf52
+Source commit: 645a736f8220153a77d8cb041d6317eb85d10b9d
 Base branch: main
 Base commit: dd283c73130ec672e183fe8018c4b19217efdf52
-Last refreshed: 2026-08-27T03:10:05+08:00
+Last refreshed: 2026-08-27T03:18:48+08:00
 
 ## Purpose
 
@@ -54,13 +54,13 @@ Routes runtime changes to one editable template, ordered low-coupling fragments,
 
 - `.gitattributes` — `sha256:74b3190f5e5511242a0f8cca97184bafadf3ae5a151d95fe9f1d45cb5944dc29`
 - `src/repo_context_ledger/__init__.py` — `sha256:afeadce023c709f93c003327e9b023da4b14aaf59e275418e47de6978ce42615`
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:40c2eb4a9416c016389a7ac2103a7e13dd0ee1071f4a4942d3b9a06854a5d179`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:9f28b035993bed81e544a97df92606b97f64ad2582d36eb20f75a2d646ab38c4`
 - `src/repo_context_ledger/constants.pyfrag` — `sha256:fd4513a88e9c6f4fffe0fb2830aa3d244896f84d4b9f0244b8eac583580aa013`
 - `src/repo_context_ledger/errors.pyfrag` — `sha256:7cd76293bd376f12cf7e13ba747159820667919afcc720098e7958ee05bb9717`
 - `src/repo_context_ledger/models.pyfrag` — `sha256:b059542121c00e2177408be18fc1252d4d3f32a5ae4438b2634eb3da49f874d4`
 - `src/repo_context_ledger/contracts.pyfrag` — `sha256:7c16c987fa157b6333528f6f6d42bb5aa72718ba28dc7186c3832fb5c59ca860`
 - `scripts/build_runtime.py` — `sha256:23b564a2d6517b80f2266f0f6304bbf122839c691486873302de858c9f68446c`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:5ee5cb22543f6503690ed2ec029d26b08fd01112e4f55fc98f4daa90bb7ecc8f`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:86474076e7bc9a017add5f7bc2876ff5673ea1f070ed3e9db92e798dba9e5335`
 - `tests/test_runtime_build.py` — `sha256:ee511cd95d12f8a4cac676b8786421c274c6c494075df784de715877440b4096`
 - `ARCHITECTURE.md` — `sha256:5e954ee761bb5a08772e492692bf61f62fabcb8fe30698b121517b9397df71d3`
 - `.github/workflows/test.yml` — `sha256:8d268c040a7c68c86a738aee36d01e5a34d102723bbf722e3665ee982d195ade`

@@ -31,7 +31,7 @@ Reduce the bookkeeping cost observed when an Agent changes one tracked, worktree
 
 Before: Every behavior-affecting configuration edit followed the ordinary context, focus, evidence, manual handoff, spec-exception, and finish sequence. Sensitive verification could redact recognized credential labels, but arbitrary local configuration values in command output were still visible to the Agent and could complicate safe record keeping.
 
-After: `start --kind local-config`, `verify --sensitive`, and `finish --path ... --summary ...` provide a bounded worktree-local path. Finish captures only explicit Git-changed paths, generates the semantic handoff with `Scope: worktree-local`, applies the stable-spec exception, and preserves a failed draft for correction; sensitive verification stores only status, exit code, duration, and time.
+After: `start --kind local-config`, `verify --sensitive`, and `finish --path ...` provide a bounded worktree-local path. Finish accepts only explicit Git-changed configuration paths, requires the final check to be sensitive and passing, generates a fixed-value-free semantic handoff with `Scope: worktree-local`, applies the stable-spec exception, and preserves a failed draft for correction.
 
 ## Code paths
 
@@ -39,7 +39,7 @@ After: `start --kind local-config`, `verify --sensitive`, and `finish --path ...
 | --- | --- | --- |
 | `src/repo_context_ledger/runtime.py.tmpl::start_change` | Creates private sessions and renders their initial metadata. | Added the backward-compatible `change` / `local-config` task kind and scope metadata. |
 | `src/repo_context_ledger/runtime.py.tmpl::record_verification` | Executes checks outside the write lock and writes managed verification evidence. | Added `--sensitive`, which suppresses command arguments and captured output while preserving status metadata. |
-| `src/repo_context_ledger/runtime.py.tmpl::complete_local_config_draft`, `finish_change` | Captures scoped evidence, validates handoffs, and publishes completed Changes. | Added `finish --path` evidence capture and deterministic semantic completion for local configuration sessions. |
+| `src/repo_context_ledger/runtime.py.tmpl::complete_local_config_draft`, `finish_change` | Captures scoped evidence, validates handoffs, and publishes completed Changes. | Added configuration-only `finish --path` evidence capture, final sensitive-pass enforcement, and deterministic value-free semantic completion. |
 | `src/repo_context_ledger/runtime.py.tmpl::doctor_legacy_workflow_findings` | Produces read-only repository health findings. | Added a warning for unmanaged legacy active-handoff instructions that coexist with private sessions. |
 | `skills/repo-context-ledger/SKILL.md`, `AGENTS.md` | Routes Agents through the appropriate lifecycle. | Added the compact path, direct-executable guidance, explicit language selection, and the boundary that ordinary behavior changes retain full gates. |
 | `tests/test_ledger.py`, `tests/test_doctor.py` | Exercise public CLI and Doctor behavior. | Added secret non-disclosure, failed-check recovery, precise summary error, automatic finish, adapter-policy, and legacy-conflict regressions. |

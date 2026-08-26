@@ -23,16 +23,16 @@ Repo Context Ledger provides a compact lifecycle for small, tracked configuratio
 
 ## Data flow and contracts
 
-- Input: `start --kind local-config` receives a title and feature. `verify --sensitive` receives a direct executable and arguments. `finish` receives repeated repository-relative `--path` values and a substantive `--summary`.
-- Flow: The task remains a private session while configuration is edited and checked. Sensitive verification executes normally but replaces its persisted command with `<sensitive verification>`, suppresses captured output from the console and record, and stores only status, exit code, duration, and time. `finish` validates each explicit path against Git dirt, renders the semantic record, applies the stable-spec exception, and publishes atomically.
+- Input: `start --kind local-config` receives a title and feature. `verify --sensitive` receives a direct executable and arguments. `finish` requires one or more repository-relative `--path` values; it accepts no free-form result text.
+- Flow: The task remains a private session while configuration is edited and checked. Sensitive verification executes normally but replaces its persisted command with `<sensitive verification>`, suppresses captured output from the console and record, and stores only status, exit code, duration, and time. `finish` rejects paths not classified as `config`, requires the final recorded check to be a passing sensitive verification, validates each explicit path against Git dirt, renders a fixed-value-free semantic record, applies the stable-spec exception, and publishes atomically.
 - Persistence / dependencies: Unfinished state remains below worktree Git metadata. The completed sanitized Change is Git-tracked because it records an operation and its evidence, but `Scope: worktree-local` prevents it from representing local values as portable repository truth. Configuration values never enter Ledger Markdown.
 - Output: A successful compact finish produces one completed Change with no TODO placeholders, an explicit worktree-local scope, evidence paths, a sanitized verification entry, and `Specs: none`. A failed check or finish leaves the private draft available for correction.
 
 ## Boundaries and failure modes
 
-- Invariants: Sensitive command arguments and captured output are neither displayed nor persisted; explicit evidence paths must be real Git changes; another task session is never paused, contacted, or absorbed; ordinary behavior changes retain the full lifecycle.
+- Invariants: Sensitive command arguments and captured output are neither displayed nor persisted; explicit evidence paths must be real Git configuration changes; the latest verification must pass; another task session is never paused, contacted, or absorbed; ordinary behavior changes reject compact finish evidence and retain the full lifecycle.
 - Permissions / concurrency: The existing principal, session ID, epoch, and short-lock rules remain authoritative. `finish --path` selects documentation evidence only and does not claim, lock, copy, or merge source files.
-- Failure / recovery: An invalid path, missing summary, failed verification, stale epoch, or handoff validation error returns a precise nonzero result and preserves the private draft. Doctor warnings are read-only and never delete legacy prose automatically.
+- Failure / recovery: A missing or non-config path, a non-sensitive or failed final verification, a stale epoch, or a handoff validation error returns a precise nonzero result and preserves the private draft. Doctor warnings are read-only and never delete legacy prose automatically.
 - Non-goals: This workflow does not store secrets, synchronize machine configuration through Git, replace service-specific validation, hide real failed checks, or classify a source-code behavior change as local configuration merely to bypass documentation.
 
 ## Verification
@@ -44,5 +44,6 @@ Run `python -m unittest discover -s tests -p test_ledger.py -k local_config` for
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Close compact workflow review gaps](../changes/2026/08/20260827031910-gviiisen-bb7acfb439-close-compact-workflow-review-gaps.md)
 - [Reduce Ledger overhead for local configuration changes](../changes/2026/08/20260827025332-gviiisen-90a3dd7099-reduce-ledger-overhead-for-local-configuration-c.md)
 <!-- repo-context-ledger:changes:end -->

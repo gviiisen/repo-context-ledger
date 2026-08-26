@@ -1316,7 +1316,7 @@ def managed_rules(config: dict) -> str:
     specs = config["docs"]["specs"]
     return f"""## Repository context ledger
 
-Choose the shortest applicable path. Read-only work uses `context` only when routing is needed and never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config> --summary "<observable result>"`. Do not run context or focus, a separate evidence command, or manually edit the handoff for that compact path. Ordinary behavior changes use the lifecycle below.
+Choose the shortest applicable path. Read-only work uses `context` only when routing is needed and never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config>`. Do not run context or focus, a separate evidence command, or manually edit the handoff for that compact path. Ordinary behavior changes use the lifecycle below.
 
 For every feature, bug fix, refactor, interface change, or other ordinary behavior-changing code task:
 
@@ -4569,9 +4569,10 @@ def evidence_handoff_errors(repo: Path, config: dict, text: str) -> list[str]:
         if len(labeled_value(boundaries, label)) < 12:
             errors.append(f"Handoff Boundaries and risks requires a substantive {label}: value.")
     checks = managed_text(text, CHECKS_START, CHECKS_END)
-    has_passed = "- Status: passed" in checks
-    if "- Status: failed" in checks and not has_passed:
-        errors.append("Handoff has a failed verification with no later passed verification.")
+    statuses = re.findall(r"(?m)^\s+- Status: (passed|failed)\s*$", checks)
+    has_passed = "passed" in statuses
+    if statuses and statuses[-1] == "failed":
+        errors.append("Handoff latest verification failed; run a later passing verification.")
     if not has_passed and "- Not run —" not in checks:
         errors.append("Handoff requires a passed ledger verify record or a substantive not-run exception.")
     docs = section_body(text, "## Documentation updates")
@@ -4690,13 +4691,7 @@ def replace_section_body(text: str, heading: str, body: str) -> str:
     )
 
 
-def complete_local_config_draft(text: str, summary: str) -> str:
-    summary = summary.strip()
-    if len(summary) < 20:
-        raise LedgerError(
-            "Local configuration finish requires --summary with at least 20 characters "
-            "describing the observable result."
-        )
+def complete_local_config_draft(text: str) -> str:
     paths = sorted(recorded_handoff_evidence_paths(text))
     if not paths:
         raise LedgerError("Local configuration finish requires at least one changed --path.")
@@ -4717,7 +4712,8 @@ def complete_local_config_draft(text: str, summary: str) -> str:
         "## Changed behavior",
         "Before: The requested worktree-local setting had not yet been applied and verified "
         "for this checkout.\n\n"
-        f"After: {summary}",
+        "After: The requested worktree-local configuration was applied and the final "
+        "sensitive verification passed.",
     )
     text = replace_section_body(
         text,
@@ -4760,7 +4756,6 @@ def finish_change(
     session: str = "",
     epoch: int = 0,
     raw_paths: list[str] | None = None,
-    summary: str = "",
 ) -> int:
     config = load_config(repo)
     session_id, record, draft = resolve_task_session(
@@ -4769,14 +4764,46 @@ def finish_change(
     publish_path = validate_handoff_path(
         repo, config, record["publish_path"], "task session publish path"
     )
+    local_config = record.get("kind", "change") == "local-config"
+    if local_config and not raw_paths:
+        print("Local configuration finish requires at least one changed --path.", file=sys.stderr)
+        return 2
+    if not local_config and raw_paths:
+        print("finish --path is reserved for sessions started with --kind local-config.", file=sys.stderr)
+        return 2
+    if local_config:
+        invalid_kinds = [
+            normalize_git_path(raw)
+            for raw in raw_paths or []
+            if coverage_path_kind(config, normalize_git_path(raw)) != "config"
+        ]
+        if invalid_kinds:
+            for raw in invalid_kinds:
+                print(f"Local configuration path is not classified as config: {raw}", file=sys.stderr)
+            return 2
     if raw_paths:
         refresh_handoff_evidence(repo, draft, raw_paths)
     else:
         ensure_finish_evidence(repo, config, session_id, draft)
     text = draft.read_text(encoding="utf-8")
-    if record.get("kind", "change") == "local-config":
+    if local_config:
+        checks = managed_text(text, CHECKS_START, CHECKS_END)
+        sensitive_results = re.findall(
+            r"(?m)^- Command: `<sensitive verification>`\s*$\n\s+- Status: (passed|failed)\s*$",
+            checks,
+        )
+        all_statuses = re.findall(r"(?m)^\s+- Status: (passed|failed)\s*$", checks)
+        if not sensitive_results or not all_statuses or all_statuses[-1] != "passed" \
+                or sensitive_results[-1] != "passed" \
+                or not checks.rstrip().endswith("intentionally not persisted"):
+            print(
+                "Local configuration finish requires the final verification to be a passing "
+                "verify --sensitive command.",
+                file=sys.stderr,
+            )
+            return 2
         try:
-            text = complete_local_config_draft(text, summary)
+            text = complete_local_config_draft(text)
         except LedgerError as exc:
             print(str(exc), file=sys.stderr)
             return 2
@@ -6101,11 +6128,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Changed repository path owned by this task; repeat for multiple paths",
     )
-    finish.add_argument(
-        "--summary",
-        default="",
-        help="Observable result used to complete a local-config record",
-    )
     evidence = sub.add_parser("evidence", help="Refresh an active task session from actual Git changed paths")
     evidence.add_argument("--session", default="", help="Task session ID; required when multiple sessions are active")
     evidence.add_argument("--epoch", type=int, default=0, help="Expected continuation epoch after a cross-Agent resume")
@@ -6311,7 +6333,6 @@ def main(argv: list[str] | None = None) -> int:
                         args.session,
                         args.epoch,
                         args.path,
-                        args.summary,
                     )
                 if args.command == "evidence":
                     return capture_evidence(repo, args.session, args.path, args.epoch)
