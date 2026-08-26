@@ -3,6 +3,8 @@
 <!-- repo-context-ledger:start -->
 ## Changes in 2026-08
 
+- [Close compact workflow review gaps](20260827031910-gviiisen-bb7acfb439-close-compact-workflow-review-gaps.md) — completed
+- [Reduce Ledger overhead for local configuration changes](20260827025332-gviiisen-90a3dd7099-reduce-ledger-overhead-for-local-configuration-c.md) — completed
 - [Classify Git attributes as repository configuration](20260822003911-gviiisen-e688fa6347-classify-git-attributes-as-repository-configurat.md) — completed
 - [Pin standalone runtime checkout line endings](20260822003651-gviiisen-9d9c476d8a-pin-standalone-runtime-checkout-line-endings.md) — completed
 - [Harden raw JSON command detection](20260822002738-gviiisen-9d24fbee4b-harden-raw-json-command-detection.md) — completed

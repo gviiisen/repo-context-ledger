@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "tool_version": "0.7.0",
+  "tool_version": "0.7.1",
   "default_branch": "main",
   "project_context": "docs/ai/project-context.md",
   "docs": {
@@ -10,12 +10,96 @@
   },
   "features": [
     {
+      "feature": "compact-local-config-workflow",
+      "title": "Compact Local Configuration Workflow",
+      "context_pack": "docs/ai/context-packs/compact-local-config-workflow.md",
+      "status": "current",
+      "source_commit": "645a736f8220153a77d8cb041d6317eb85d10b9d",
+      "last_refreshed": "2026-08-27T03:24:07+08:00",
+      "stable_specs": [
+        "docs/specs/compact-local-config-workflow.md"
+      ],
+      "tracked_files": [
+        "src/repo_context_ledger/runtime.py.tmpl",
+        "src/repo_context_ledger/constants.pyfrag",
+        "skills/repo-context-ledger/scripts/ledger.py",
+        "skills/repo-context-ledger/SKILL.md",
+        "skills/repo-context-ledger/assets/handoff-template.md",
+        "tests/test_ledger.py",
+        "tests/test_doctor.py"
+      ],
+      "recent_changes": [
+        {
+          "id": "20260827031910-gviiisen-bb7acfb439",
+          "path": "docs/changes/2026/08/20260827031910-gviiisen-bb7acfb439-close-compact-workflow-review-gaps.md",
+          "title": "Close compact workflow review gaps",
+          "feature": "compact-local-config-workflow",
+          "date": "2026-08-27",
+          "summary": "Compact finish requires repeated explicit paths classified as `config`, rejects the option for ordinary sessions, and requires the final recorded check to be a passing `<sensitive verification>`. The generated After statement is fixed and value-free; the general gate now blocks whenever the latest executed verification failed.",
+          "evidence_paths": [
+            ".context-ledger/ledger.py",
+            "AGENTS.md",
+            "README.md",
+            "README.zh-CN.md",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/changes/2026/08/20260827025332-gviiisen-90a3dd7099-reduce-ledger-overhead-for-local-configuration-c.md",
+            "docs/specs/compact-local-config-workflow.md",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/test_ledger.py"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "20260827025332-gviiisen-90a3dd7099",
+          "path": "docs/changes/2026/08/20260827025332-gviiisen-90a3dd7099-reduce-ledger-overhead-for-local-configuration-c.md",
+          "title": "Reduce Ledger overhead for local configuration changes",
+          "feature": "compact-local-config-workflow",
+          "date": "2026-08-27",
+          "summary": "`start --kind local-config`, `verify --sensitive`, and `finish --path ...` provide a bounded worktree-local path. Finish accepts only explicit Git-changed configuration paths, requires the final check to be sensitive and passing, generates a fixed-value-free semantic handoff with `Scope: worktree-local`, applies the stable-spec exception, and preserves a failed draft for correction.",
+          "evidence_paths": [
+            ".context-ledger/ledger.py",
+            ".context-ledger/templates/handoff-template.md",
+            "AGENTS.md",
+            "README.md",
+            "README.zh-CN.md",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/specs/compact-local-config-workflow.md",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/assets/handoff-template.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/constants.pyfrag",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/test_doctor.py",
+            "tests/test_ledger.py",
+            "tests/test_runtime_build.py"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
       "feature": "context-routing-performance",
       "title": "Context Routing Performance",
       "context_pack": "docs/ai/context-packs/context-routing-performance.md",
       "status": "current",
-      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
-      "last_refreshed": "2026-08-22T00:41:05+08:00",
+      "source_commit": "645a736f8220153a77d8cb041d6317eb85d10b9d",
+      "last_refreshed": "2026-08-27T03:25:20+08:00",
       "stable_specs": [
         "docs/specs/context-routing-performance.md"
       ],
@@ -65,8 +149,8 @@
       "title": "Contract Stability",
       "context_pack": "docs/ai/context-packs/contract-stability.md",
       "status": "current",
-      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
-      "last_refreshed": "2026-08-22T00:41:03+08:00",
+      "source_commit": "645a736f8220153a77d8cb041d6317eb85d10b9d",
+      "last_refreshed": "2026-08-27T03:18:49+08:00",
       "stable_specs": [
         "docs/specs/contract-stability.md"
       ],
@@ -205,8 +289,8 @@
       "title": "Coverage Integrity",
       "context_pack": "docs/ai/context-packs/coverage-integrity.md",
       "status": "current",
-      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
-      "last_refreshed": "2026-08-22T00:41:06+08:00",
+      "source_commit": "645a736f8220153a77d8cb041d6317eb85d10b9d",
+      "last_refreshed": "2026-08-27T03:25:21+08:00",
       "stable_specs": [
         "docs/specs/coverage-integrity.md"
       ],
@@ -354,8 +438,8 @@
       "title": "Native Context Bridge",
       "context_pack": "docs/ai/context-packs/native-context-bridge.md",
       "status": "current",
-      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
-      "last_refreshed": "2026-08-22T00:41:06+08:00",
+      "source_commit": "645a736f8220153a77d8cb041d6317eb85d10b9d",
+      "last_refreshed": "2026-08-27T03:25:21+08:00",
       "stable_specs": [
         "docs/specs/native-context-bridge.md"
       ],
@@ -470,8 +554,8 @@
       "title": "Pack Health and Doctor",
       "context_pack": "docs/ai/context-packs/pack-health-doctor.md",
       "status": "current",
-      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
-      "last_refreshed": "2026-08-22T00:41:03+08:00",
+      "source_commit": "645a736f8220153a77d8cb041d6317eb85d10b9d",
+      "last_refreshed": "2026-08-27T03:18:51+08:00",
       "stable_specs": [
         "docs/specs/pack-health-doctor.md"
       ],
@@ -512,8 +596,8 @@
       "title": "Runtime Architecture",
       "context_pack": "docs/ai/context-packs/runtime-architecture.md",
       "status": "current",
-      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
-      "last_refreshed": "2026-08-22T00:41:05+08:00",
+      "source_commit": "645a736f8220153a77d8cb041d6317eb85d10b9d",
+      "last_refreshed": "2026-08-27T03:18:48+08:00",
       "stable_specs": [
         "docs/specs/runtime-architecture.md"
       ],
@@ -582,8 +666,8 @@
       "title": "Task Session Integrity",
       "context_pack": "docs/ai/context-packs/task-session-integrity.md",
       "status": "current",
-      "source_commit": "978493f3a7bd73354eb164a0ad6d07df8a68b9fc",
-      "last_refreshed": "2026-08-22T00:41:07+08:00",
+      "source_commit": "645a736f8220153a77d8cb041d6317eb85d10b9d",
+      "last_refreshed": "2026-08-27T03:24:08+08:00",
       "stable_specs": [
         "docs/specs/task-session-integrity.md"
       ],
