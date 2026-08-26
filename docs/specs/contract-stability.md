@@ -4,7 +4,7 @@ Status: current
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Last reviewed: 2026-08-22
+Last reviewed: 2026-08-27
 
 ## Purpose and behavior
 
@@ -24,7 +24,7 @@ Contract Stability keeps automation and initialized repositories safe across min
 
 ## Data flow and contracts
 
-- Input: existing CLI arguments, current repository/configuration/state, an explicit `--format json` request, golden contract fixtures, and fully synthetic routing cases.
+- Input: existing CLI arguments, current repository/configuration/state, an explicit `--format json` request, golden contract fixtures, and fully synthetic routing cases. Optional additive configuration such as `verification.presets` must preserve repositories that omit it and existing direct `verify -- <argv>` callers.
 - Flow: status builds a dedicated structured report; check captures its existing text operation in memory and separates ordinary messages from errors; expected failures remain inside their requested JSON schema with stable error codes; tests compare required fields and evaluate a labeled synthetic Pack corpus.
 - Persistence / dependencies: JSON projections write no new state. Golden and routing fixtures are Git-tracked test inputs with no production paths, names, sessions, commits, or logs. Runtime support remains Python 3.10+ standard library only.
 - Output: `status-v1` contains repository branch/default, principal, privacy-bounded owned/shared/foreign session data, and inventory. `check-v1` contains command, success flag, unchanged exit code, stable error code, messages, and errors. `context-bundle-v1` and `doctor-v1` retain their schemas while publishing stable required fields for success and expected failure.
@@ -43,6 +43,7 @@ Run `python -m unittest discover -s tests -p test_contract_stability.py` and `py
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Add safe verification presets](../changes/2026/08/20260827065951-gviiisen-6daa4a6c38-add-safe-verification-presets.md)
 - [Harden raw JSON command detection](../changes/2026/08/20260822002738-gviiisen-9d24fbee4b-harden-raw-json-command-detection.md)
 - [Complete outer JSON error boundary](../changes/2026/08/20260822001817-gviiisen-3767cb15f0-complete-outer-json-error-boundary.md)
 - [Close contract and privacy review gaps](../changes/2026/08/20260821235319-gviiisen-450163105c-close-contract-and-privacy-review-gaps.md)

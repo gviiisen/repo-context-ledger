@@ -30,4 +30,6 @@ Expected JSON failures remain inside the requested schema and use stable machine
 
 `.context-ledger/config.json` and private task state currently use schema v8. `init --dry-run` must preview the same migration plan as real `init`. Git-tracked Packs, specs, and completed Changes remain readable across minor releases. Private active/paused state remains local to the clone/worktree and is not a portable Git contract.
 
+`config.verification.presets` is an optional v8 field added in v0.7.3. Presets are explicit executable argument arrays with bounded metadata; they never execute during initialization, routing, checking, or finishing. Existing direct `verify -- <command>` calls remain compatible.
+
 The initialized `.context-ledger/ledger.py` is a standalone artifact. Its version should match the installed Skill runtime after `init`; the repository does not require a Python package installation or API key.

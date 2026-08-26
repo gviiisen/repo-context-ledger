@@ -69,6 +69,69 @@
     ],
     "ignore_globs": []
   },
+  "verification": {
+    "presets": {
+      "runtime-build-check": {
+        "argv": [
+          "python",
+          "scripts/build_runtime.py",
+          "--check"
+        ],
+        "cwd": ".",
+        "timeout": 120,
+        "sensitive": false,
+        "platforms": [
+          "windows",
+          "linux",
+          "darwin"
+        ]
+      },
+      "unit-full": {
+        "argv": [
+          "python",
+          "-B",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests",
+          "-v"
+        ],
+        "cwd": ".",
+        "timeout": 1200,
+        "sensitive": false,
+        "platforms": [
+          "windows",
+          "linux",
+          "darwin"
+        ]
+      },
+      "verification-presets-focused": {
+        "argv": [
+          "python",
+          "-B",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests",
+          "-p",
+          "test_ledger.py",
+          "-k",
+          "verification_preset",
+          "-v"
+        ],
+        "cwd": ".",
+        "timeout": 120,
+        "sensitive": false,
+        "platforms": [
+          "windows",
+          "linux",
+          "darwin"
+        ]
+      }
+    }
+  },
   "team": {
     "enabled": true,
     "default_branch": "main",

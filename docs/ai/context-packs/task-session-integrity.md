@@ -5,10 +5,10 @@ Feature: task-session-integrity
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 645a736f8220153a77d8cb041d6317eb85d10b9d
+Source commit: e9589ed8c0474590bc6266d9d92424ac1b5050cb
 Base branch: main
-Base commit: dd283c73130ec672e183fe8018c4b19217efdf52
-Last refreshed: 2026-08-27T03:24:08+08:00
+Base commit: b7e4eb53249faa64881e37401a764093faf476b7
+Last refreshed: 2026-08-27T07:16:08+08:00
 
 ## Purpose
 
@@ -33,21 +33,21 @@ Routes fresh Agent windows to the private draft state model, principal ownership
 | `skills/repo-context-ledger/scripts/ledger.py::resolve_task_session` | Enforces owned explicit targeting when more than one session matches. |
 | `skills/repo-context-ledger/scripts/ledger.py::capture_evidence` | Refuses whole-worktree evidence capture when foreign sessions exist. |
 | `skills/repo-context-ledger/scripts/ledger.py::task_session_finish_errors` | Checks only the selected task's evidence, specs, and relevant Pack fingerprints. |
-| `skills/repo-context-ledger/scripts/ledger.py::finish_change` | Atomically publishes one completed record and cleans only its private draft. |
-| `skills/repo-context-ledger/scripts/ledger.py::record_verification` | Defines the two short lock phases around an unlocked command. |
+| `skills/repo-context-ledger/scripts/ledger.py::finish_change`, `finish_input_signature` | Prepares and validates outside the lock, then compare-and-swaps bounded inputs before short atomic publication. |
+| `skills/repo-context-ledger/scripts/ledger.py::record_verification` | Defines the two short lock phases around an unlocked command and bounded waits between concurrent verification writers. |
 | `skills/repo-context-ledger/scripts/ledger.py::redact_local_paths` | Replaces known repository, Codex, temporary, and user-home roots before verification evidence is persisted. |
 | `skills/repo-context-ledger/scripts/ledger.py::redact_record_local_paths` | Re-sanitizes legacy private checks and interrupted-publication records at `finish`. |
 | `skills/repo-context-ledger/scripts/ledger.py::managed_rules` | Generates the prohibition on unsolicited cross-task steering. |
 
 ## Contracts and boundaries
 
-- Invariants and contracts: Each unfinished draft has one principal owner and remains outside formal history; keyword routing considers only available active/paused sessions; ambiguous matches fail; Resume Capsule data is bounded and private; resume rotates an epoch/tool on the same session; foreign principals receive only an overlap signal; fork preserves the source and transfer requires a paused source; parallel evidence remains explicit; finish publishes at most once; verification runs unlocked; persisted checks redact credentials and machine roots.
-- Failure / recovery: Invalid drafts, stale epochs, expired grants, and unauthorized mutations fail closed without changing the source task. Another clone can continue only from Git-tracked context. `finish` sanitizes legacy checks; interrupted publication retries by Session ID without duplicating history; legacy unfinished records bind conservatively without rewriting completed history.
+- Invariants and contracts: Each unfinished draft has one principal owner and remains outside formal history; keyword routing considers only available active/paused sessions; ambiguous matches fail; Resume Capsule data is bounded and private; resume rotates an epoch/tool on the same session; foreign principals receive only an overlap signal; fork preserves the source and transfer requires a paused source; parallel evidence remains explicit; finish publishes at most once; verification runs unlocked; transient short writers wait for a bounded interval; finish validation does not hold the repository lock; persisted checks redact credentials and machine roots; `--timings` remains private and path-free.
+- Failure / recovery: Invalid drafts, stale epochs, expired grants, unauthorized mutations, persistent lock contention, and bounded inputs changed during finish preparation fail closed without changing the source task. Another clone can continue only from Git-tracked context. `finish` sanitizes legacy checks; interrupted publication retries by Session ID without duplicating history; a post-publication derived-sync failure is repaired by a later sync; legacy unfinished records bind conservatively without rewriting completed history.
 - Non-goals: A Capsule does not prove full code-boundary understanding. Sessions do not persist chats, provide filesystem security, synchronize private state through Git, copy or merge source code, or authorize messages to another task.
 
 ## Verification
 
-Run `python -m unittest discover -s tests -p test_ledger.py` for v8 migration, same-principal cross-Agent resume, epochs, foreign Capsule isolation, expiring grants, private draft publication, adapter policy, lock scope, and verification redaction. Run `python skills/repo-context-ledger/scripts/ledger.py --repo . check --strict` for structural validation.
+Run `python -m unittest discover -s tests -p test_ledger.py` for v8 migration, same-principal cross-Agent resume, epochs, foreign Capsule isolation, expiring grants, private draft publication, parallel verification, bounded waits, finish compare-and-swap behavior, interrupted recovery, timing privacy, adapter policy, lock scope, and verification redaction. Run `python skills/repo-context-ledger/scripts/ledger.py --repo . check --strict` for structural validation. Run `python benchmarks/closeout_workflow_benchmark.py` for the synthetic serial/overlapped comparison.
 
 <!-- repo-context-ledger:pack-specs:start -->
 ## Stable context
@@ -58,8 +58,11 @@ Run `python -m unittest discover -s tests -p test_ledger.py` for v8 migration, s
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:86474076e7bc9a017add5f7bc2876ff5673ea1f070ed3e9db92e798dba9e5335`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:e11f507cc45f9656a678735dd173e538aa630ec8cc76c4f7cf0278048ed45ca7`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:187328722f04f19285b4e95115a6bda0b565ab554419156797307229a911045c`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:819c709ed64de35af4cf57efc4967ccb68554d340ffc4aac673222fb5763b6d2`
+- `skills/repo-context-ledger/references/production-workflow.md` — `sha256:6dc2c1cc8f3483e2c977e0e58483559d93411247d69fe3623d047e4486279003`
 - `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:dd1e26e29993ac93d5f52de315df130b270982125b4037dc01c17d9cb63f9a52`
-- `tests/test_ledger.py` — `sha256:f0e658499374846c84e107a55a30d150d49ffaf60bf788e9be2fb8a952b81bad`
+- `tests/test_ledger.py` — `sha256:bb1837198bb1324bea43b4f974991d59041780970efe5251a20085a83fd4a03a`
+- `benchmarks/closeout_workflow_benchmark.py` — `sha256:33fb3dc82c2acd29e5bab6d3870046868a5d79858c2ac7641bb0a8102c089d6c`
+- `benchmarks/README.md` — `sha256:9244091fc1202a9c40c54f2fb7f81d7e708dacd3d619f8e68e70f70ee633088a`
 <!-- repo-context-ledger:pack-files:end -->

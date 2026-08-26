@@ -4,7 +4,7 @@ Status: current
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Last reviewed: 2026-08-22
+Last reviewed: 2026-08-27
 
 ## Purpose and behavior
 
@@ -29,7 +29,7 @@ Runtime Architecture provides one editable source and a deterministic path to th
 - Input: UTF-8 template and ordered fragment text plus either the two default repository outputs or explicit test outputs.
 - Flow: the builder normalizes CRLF/CR to LF, requires one marker for each ordered fragment, injects constants then errors then models, terminates with one newline, compares or atomically writes each complete byte sequence, and reports repository-relative default paths.
 - Persistence / dependencies: the builder uses only Python 3.10+ standard library. Temporary files stay beside their target and are replaced atomically. Generated artifacts import no source package and keep all runtime dependencies embedded.
-- Output: `.context-ledger/ledger.py` and `skills/repo-context-ledger/scripts/ledger.py` are byte-identical standalone Python reporting version 0.7.0. `--check` returns 0 when current and 2 on drift or build-source failure without writing.
+- Output: `.context-ledger/ledger.py` and `skills/repo-context-ledger/scripts/ledger.py` are byte-identical standalone Python reporting the current release version from `constants.pyfrag`. `--check` returns 0 when current and 2 on drift or build-source failure without writing.
 
 ## Boundaries and failure modes
 
@@ -45,6 +45,7 @@ Run `python -m unittest discover -s tests -p test_runtime_build.py`, `python scr
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Accelerate small-task closeout](../changes/2026/08/20260827060627-gviiisen-2e52131353-accelerate-small-task-closeout.md)
 - [Pin standalone runtime checkout line endings](../changes/2026/08/20260822003651-gviiisen-9d9c476d8a-pin-standalone-runtime-checkout-line-endings.md)
 - [Build deterministic standalone runtime architecture](../changes/2026/08/20260821233623-gviiisen-a1d83814d8-build-deterministic-standalone-runtime-architect.md)
 <!-- repo-context-ledger:changes:end -->

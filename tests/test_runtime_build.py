@@ -43,7 +43,7 @@ class RuntimeBuildTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(0, version.returncode, version.stderr)
-            self.assertIn("repo-context-ledger 0.7.1", version.stdout)
+            self.assertIn("repo-context-ledger 0.7.3", version.stdout)
 
     def test_check_detects_output_drift_without_rewriting_it(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -57,7 +57,7 @@ class RuntimeBuildTests(unittest.TestCase):
 
     def test_ordered_low_coupling_fragments_are_embedded_without_markers(self):
         generated = CANONICAL.read_text(encoding="utf-8")
-        self.assertIn('TOOL_VERSION = "0.7.1"', generated)
+        self.assertIn('TOOL_VERSION = "0.7.3"', generated)
         self.assertIn("class LedgerError", generated)
         self.assertIn("class CommandResult", generated)
         self.assertLess(generated.index("class LedgerError"), generated.index("class CommandResult"))
