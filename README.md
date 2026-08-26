@@ -1,8 +1,10 @@
-# Repo Context Ledger — AI Coding Context Management
+# Repo Context Ledger — Cross-Agent Context Relay
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![skills.sh](https://skills.sh/b/gviiisen/repo-context-ledger)](https://skills.sh/gviiisen/repo-context-ledger)
+
+> Let Codex, Cursor, and Claude continue the same repository work across windows.
 
 Repo Context Ledger is an open repository context management and context switching Agent Skill for AI coding. It bridges verified context across Codex, Claude, Cursor, GitHub Copilot, Grok, and other coding agents while keeping feature documentation, change handoffs, and README summaries synchronized.
 
