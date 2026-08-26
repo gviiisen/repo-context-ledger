@@ -4,7 +4,7 @@
 
 [![skills.sh](https://skills.sh/b/gviiisen/repo-context-ledger)](https://skills.sh/gviiisen/repo-context-ledger)
 
-> 让 Codex、Cursor、Claude 换窗口后接着开发。
+> 从 Codex 换到 Cursor 或 Claude，只说功能关键词，就能沿着正确代码和功能边界继续开发。
 
 Repo Context Ledger 是一个面向 AI 编程的仓库上下文管理与上下文切换 Skill。它在 Codex、Claude、Cursor、GitHub Copilot、Grok 等编码 Agent 之间桥接经过验证的仓库上下文，并在代码新增或修复后同步维护功能说明、变更交接记录以及各级 README 摘要。
 
