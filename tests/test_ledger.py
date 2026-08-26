@@ -1541,6 +1541,177 @@ class LedgerFlowTests(unittest.TestCase):
             strict = self.run_ledger(repo, "check", "--strict", expected=2)
             self.assertIn("requires a substantive Before", strict.stderr)
 
+    def test_local_config_workflow_finishes_without_persisting_sensitive_values(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            config_path = repo / "service.config.json"
+            config_path.write_text('{"mode":"before"}\n', encoding="utf-8")
+            self.run_git(repo, "add", "service.config.json")
+            self.run_git(repo, "commit", "-m", "Add local configuration fixture")
+
+            started = self.run_ledger(
+                repo,
+                "start",
+                "--title",
+                "Switch local service mode",
+                "--feature",
+                "service-local-config",
+                "--kind",
+                "local-config",
+                "--language",
+                "en",
+            )
+            config_path.write_text('{"mode":"private-mode-value"}\n', encoding="utf-8")
+            self.run_ledger(
+                repo, "verify", "--", sys.executable, "-c", "print('ordinary check passed')"
+            )
+            blocked = self.run_ledger(
+                repo, "finish", "--path", "service.config.json", expected=2
+            )
+            self.assertIn("final verification to be a passing verify --sensitive", blocked.stderr)
+            failed = self.run_ledger(
+                repo,
+                "verify",
+                "--sensitive",
+                "--",
+                sys.executable,
+                "-c",
+                "print('private-mode-value'); raise SystemExit(3)",
+                expected=1,
+            )
+            self.assertNotIn("private-mode-value", failed.stdout + failed.stderr)
+            verified = self.run_ledger(
+                repo,
+                "verify",
+                "--sensitive",
+                "--",
+                sys.executable,
+                "-c",
+                "print('private-mode-value')",
+            )
+            self.assertNotIn("private-mode-value", verified.stdout + verified.stderr)
+            draft = private_draft(repo, started)
+            published = publish_target(repo, started)
+            self.assertNotIn("private-mode-value", draft.read_text(encoding="utf-8"))
+
+            blocked = self.run_ledger(
+                repo,
+                "finish",
+                expected=2,
+            )
+            self.assertIn("Local configuration finish requires at least one changed --path", blocked.stderr)
+            self.assertTrue(draft.exists())
+
+            last_failed = self.run_ledger(
+                repo,
+                "verify",
+                "--sensitive",
+                "--",
+                sys.executable,
+                "-c",
+                "raise SystemExit(4)",
+                expected=1,
+            )
+            self.assertNotIn("private-mode-value", last_failed.stdout + last_failed.stderr)
+            blocked = self.run_ledger(
+                repo,
+                "finish",
+                "--path",
+                "service.config.json",
+                expected=2,
+            )
+            self.assertIn("final verification to be a passing verify --sensitive", blocked.stderr)
+            self.run_ledger(
+                repo,
+                "verify",
+                "--sensitive",
+                "--",
+                sys.executable,
+                "-c",
+                "print('private-mode-value')",
+            )
+
+            finished = self.run_ledger(
+                repo,
+                "finish",
+                "--path",
+                "service.config.json",
+            )
+            self.assertIn("Completed", finished.stdout)
+            text = published.read_text(encoding="utf-8")
+            self.assertEqual("worktree-local", field_from_file(published, "Scope"))
+            self.assertEqual("none", field_from_file(published, "Specs"))
+            self.assertIn("`service.config.json`", text)
+            self.assertIn("- Command: `<sensitive verification>`", text)
+            self.assertIn("Output evidence: intentionally not persisted", text)
+            self.assertNotIn("TODO:", text)
+            self.assertNotIn("private-mode-value", text)
+
+    def test_local_config_rejects_source_paths_and_ordinary_finish_rejects_compact_evidence(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            source = repo / "src/service.py"
+            source.write_text("VALUE = 2\n", encoding="utf-8")
+            started = self.run_ledger(
+                repo,
+                "start",
+                "--title",
+                "Misclassified source change",
+                "--kind",
+                "local-config",
+                "--language",
+                "en",
+            )
+            self.run_ledger(
+                repo, "verify", "--sensitive", "--", sys.executable, "-c", "print('ok')"
+            )
+            rejected = self.run_ledger(
+                repo, "finish", "--path", "src/service.py", expected=2
+            )
+            self.assertIn("is not classified as config", rejected.stderr)
+            self.run_ledger(
+                repo,
+                "pause",
+                "--session",
+                session_from_result(started),
+                "--summary",
+                "Confirmed that the source path cannot use the compact configuration workflow.",
+                "--next",
+                "Continue only through the ordinary behavior-change workflow.",
+            )
+
+            ordinary = self.run_ledger(
+                repo,
+                "start",
+                "--title",
+                "Ordinary source change",
+                "--language",
+                "en",
+            )
+            rejected = self.run_ledger(
+                repo,
+                "finish",
+                "--session",
+                session_from_result(ordinary),
+                "--path",
+                "src/service.py",
+                expected=2,
+            )
+            self.assertIn("reserved for sessions started with --kind local-config", rejected.stderr)
+
+    def test_generated_agent_rules_route_local_config_through_the_compact_path(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            rules = (repo / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn("start --kind local-config", rules)
+            self.assertIn("verify --sensitive", rules)
+            self.assertIn("finish --path", rules)
+            self.assertNotIn("finish --path <changed-config> --summary", rules)
+            self.assertIn("Do not run context or focus", rules)
+
     def test_failed_verification_blocks_quality_handoff_until_a_check_passes(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
@@ -1561,7 +1732,7 @@ class LedgerFlowTests(unittest.TestCase):
                 "This fixture intentionally has no durable product specification.",
                 expected=2,
             )
-            self.assertIn("failed verification", blocked.stderr)
+            self.assertIn("latest verification failed", blocked.stderr)
             self.run_ledger(repo, "verify", "--", sys.executable, "-c", "print('passed')")
             self.run_ledger(
                 repo,
