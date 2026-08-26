@@ -22,7 +22,7 @@ from pathlib import Path
 
 
 VERSION = 8
-TOOL_VERSION = "0.7.0"
+TOOL_VERSION = "0.7.1"
 MANIFEST_VERSION = 1
 ROUTER_CACHE_SCHEMA = 1
 CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
@@ -777,6 +777,7 @@ def normalized_session_record(session_id: str, raw: object) -> dict[str, object]
     resume_epoch = raw.get("resume_epoch", 1)
     epoch_required = raw.get("epoch_required", False)
     continuation_tool = raw.get("continuation_tool", "unknown")
+    kind = raw.get("kind", "change")
     raw_grants = raw.get("grants", [])
     if not isinstance(draft, str) or not draft:
         raise LedgerError(f"context-state task session {session_id} requires a draft path.")
@@ -796,6 +797,8 @@ def normalized_session_record(session_id: str, raw: object) -> dict[str, object]
         raise LedgerError(f"context-state task session {session_id} epoch_required must be a boolean.")
     if not isinstance(continuation_tool, str):
         raise LedgerError(f"context-state task session {session_id} continuation_tool must be a string.")
+    if kind not in {"change", "local-config"}:
+        raise LedgerError(f"context-state task session {session_id} kind is invalid.")
     if not isinstance(raw_grants, list):
         raise LedgerError(f"context-state task session {session_id} grants must be a list.")
     grants: list[dict[str, str]] = []
@@ -828,6 +831,7 @@ def normalized_session_record(session_id: str, raw: object) -> dict[str, object]
         "resume_epoch": resume_epoch,
         "epoch_required": epoch_required,
         "continuation_tool": continuation_tool or "unknown",
+        "kind": kind,
         "grants": grants,
     }
 
@@ -1312,7 +1316,9 @@ def managed_rules(config: dict) -> str:
     specs = config["docs"]["specs"]
     return f"""## Repository context ledger
 
-For every feature, bug fix, refactor, interface change, or other behavior-changing code task:
+Choose the shortest applicable path. Read-only work uses `context` only when routing is needed and never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config> --summary "<observable result>"`. Do not run context or focus, a separate evidence command, or manually edit the handoff for that compact path. Ordinary behavior changes use the lifecycle below.
+
+For every feature, bug fix, refactor, interface change, or other ordinary behavior-changing code task:
 
 1. Before editing code, run `status`, then start or reuse only this task's private draft session. Keep the returned session ID and pass `--session <id>` whenever multiple sessions exist.
 2. Resolve `quality.language`; when it is `auto`, follow nearby docs or the user's language. Keep paths, symbols, commands, and error text untranslated.
@@ -1768,12 +1774,16 @@ def start_change(
     feature: str = "",
     language: str = "",
     tool: str = "",
+    kind: str = "change",
 ) -> int:
     title = title.strip()
     if not title or len(title) > 160 or "\n" in title or "\r" in title:
         print("Task title must be one line containing 1 to 160 characters.", file=sys.stderr)
         return 2
     config = load_config(repo)
+    if kind not in {"change", "local-config"}:
+        print("Task kind must be change or local-config.", file=sys.stderr)
+        return 2
     feature = feature_slug(feature or title)
     stamp = now()
     handoff_id = unique_handoff_id(repo, stamp)
@@ -1793,6 +1803,7 @@ def start_change(
             "SESSION_ID": handoff_id,
             "LANGUAGE": record_language(config, language),
             "DETAIL": config.get("quality", {}).get("detail", "standard"),
+            "SCOPE": "worktree-local" if kind == "local-config" else "repository",
             "STARTED": stamp.isoformat(timespec="seconds"),
             "BASE_COMMIT": git_revision(repo),
         },
@@ -1822,6 +1833,7 @@ def start_change(
         "resume_epoch": 1,
         "epoch_required": False,
         "continuation_tool": normalize_tool_id(tool),
+        "kind": kind,
         "grants": [],
     }
     remember_feature(state, feature)
@@ -3521,6 +3533,44 @@ def doctor_state_findings(repo: Path, config: dict, max_items: int) -> list[dict
     )]
 
 
+def doctor_legacy_workflow_findings(repo: Path, max_items: int) -> list[dict[str, object]]:
+    legacy_patterns = (
+        "docs/changes/.active-handoff",
+        ".active-handoff",
+        "docs/ai/handoff-template.md",
+    )
+    conflicts: list[str] = []
+    for raw in ("AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"):
+        path = repo / raw
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        unmanaged = re.sub(
+            re.escape(RULE_START) + r".*?" + re.escape(RULE_END),
+            "",
+            text,
+            flags=re.DOTALL,
+        ).casefold()
+        if any(pattern.casefold() in unmanaged for pattern in legacy_patterns):
+            conflicts.append(raw)
+    if not conflicts:
+        return []
+    return [doctor_finding(
+        "LEGACY_WORKFLOW_CONFLICT",
+        "warning",
+        "adapters",
+        "Legacy active-handoff instructions coexist with the private task-session workflow.",
+        items=conflicts,
+        max_items=max_items,
+        actions=[
+            "Remove only the obsolete unmanaged workflow prose after confirming it is no longer used."
+        ],
+    )]
+
+
 def doctor_repo(repo: Path, output_format: str = "text", max_items: int = 20) -> int:
     """Run bounded, deterministic, read-only repository health diagnostics."""
     if not 1 <= max_items <= 100:
@@ -3601,6 +3651,7 @@ def doctor_repo(repo: Path, output_format: str = "text", max_items: int = 20) ->
                     "Shared derived files remain deferred on this feature branch."
                 ))
         findings.extend(doctor_state_findings(repo, config, max_items))
+        findings.extend(doctor_legacy_workflow_findings(repo, max_items))
         findings.extend(doctor_pack_findings(repo, config, max_items))
         findings.extend(doctor_link_findings(repo, config, max_items))
 
@@ -4628,6 +4679,79 @@ def redact_record_local_paths(text: str, repo: Path) -> str:
     return replace_managed_text(text, CHECKS_START, CHECKS_END, redacted)
 
 
+def replace_section_body(text: str, heading: str, body: str) -> str:
+    pattern = re.compile(rf"(?ms)^({re.escape(heading)}\s*$\n).*?(?=^##\s|\Z)")
+    if not pattern.search(text):
+        raise LedgerError(f"Missing handoff section: {heading}")
+    return pattern.sub(
+        lambda match: match.group(1) + "\n" + body.rstrip() + "\n\n",
+        text,
+        count=1,
+    )
+
+
+def complete_local_config_draft(text: str, summary: str) -> str:
+    summary = summary.strip()
+    if len(summary) < 20:
+        raise LedgerError(
+            "Local configuration finish requires --summary with at least 20 characters "
+            "describing the observable result."
+        )
+    paths = sorted(recorded_handoff_evidence_paths(text))
+    if not paths:
+        raise LedgerError("Local configuration finish requires at least one changed --path.")
+    rows = "\n".join(
+        f"| `{raw}` | Supplies worktree-local runtime configuration. | "
+        "Updated the requested setting; configuration values are intentionally omitted. |"
+        for raw in paths
+    )
+    text = set_field(text, "Scope", "worktree-local", after="Detail")
+    text = replace_section_body(
+        text,
+        "## Intent",
+        "Apply the requested worktree-local configuration change and verify its observable "
+        "effect without persisting configuration values in Ledger records.",
+    )
+    text = replace_section_body(
+        text,
+        "## Changed behavior",
+        "Before: The requested worktree-local setting had not yet been applied and verified "
+        "for this checkout.\n\n"
+        f"After: {summary}",
+    )
+    text = replace_section_body(
+        text,
+        "## Code paths",
+        "| Path / symbol | Responsibility | Actual change |\n"
+        "| --- | --- | --- |\n"
+        + rows,
+    )
+    text = replace_section_body(
+        text,
+        "## Boundaries and risks",
+        "- Invariant: Configuration values, sensitive command arguments, and sensitive output "
+        "must not enter the private draft or completed Change.\n"
+        "- Failure / recovery: A failed check keeps the sanitized private draft active so the "
+        "setting can be corrected and verified again.\n"
+        "- Not changed: Shared repository contracts, source behavior, and configuration values "
+        "for other worktrees are not described as changed.",
+    )
+    text = replace_section_body(
+        text,
+        "## Documentation updates",
+        "Updated: None — Worktree-local configuration does not define shared product behavior.\n\n"
+        "Reason: The completed record preserves sanitized operational evidence without turning "
+        "machine-local values into repository documentation.",
+    )
+    text = re.sub(
+        r"(?ms)^## Open questions\s*$\n.*?(?=^<!-- repo-context-ledger:evidence:start -->)",
+        "## Open questions\n\nNone.\n\n",
+        text,
+        count=1,
+    )
+    return text
+
+
 def finish_change(
     repo: Path,
     raw_specs: list[str],
@@ -4635,6 +4759,8 @@ def finish_change(
     reason: str = "",
     session: str = "",
     epoch: int = 0,
+    raw_paths: list[str] | None = None,
+    summary: str = "",
 ) -> int:
     config = load_config(repo)
     session_id, record, draft = resolve_task_session(
@@ -4643,8 +4769,24 @@ def finish_change(
     publish_path = validate_handoff_path(
         repo, config, record["publish_path"], "task session publish path"
     )
-    ensure_finish_evidence(repo, config, session_id, draft)
+    if raw_paths:
+        refresh_handoff_evidence(repo, draft, raw_paths)
+    else:
+        ensure_finish_evidence(repo, config, session_id, draft)
     text = draft.read_text(encoding="utf-8")
+    if record.get("kind", "change") == "local-config":
+        try:
+            text = complete_local_config_draft(text, summary)
+        except LedgerError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        if not raw_specs and not no_spec:
+            no_spec = True
+            reason = (
+                "This record describes worktree-local configuration evidence, not a stable "
+                "shared product contract."
+            )
+        atomic_write(draft, text.rstrip() + "\n")
     redacted_text = redact_record_local_paths(text, repo)
     if redacted_text != text:
         atomic_write(draft, redacted_text.rstrip() + "\n")
@@ -5108,6 +5250,7 @@ def record_verification(
     reason: str = "",
     session: str = "",
     epoch: int = 0,
+    sensitive: bool = False,
 ) -> int:
     config = load_config(repo)
     if not_run:
@@ -5171,10 +5314,14 @@ def record_verification(
         status = "failed"
     duration = time.monotonic() - started
     extras = secret_values_from_command(command)
-    display_command = redact_secret_text(
-        subprocess.list2cmdline(redacted_command(command)).replace("`", "'"),
-        extras,
-        repo,
+    display_command = (
+        "<sensitive verification>"
+        if sensitive
+        else redact_secret_text(
+            subprocess.list2cmdline(redacted_command(command)).replace("`", "'"),
+            extras,
+            repo,
+        )
     )
     recorded = now().isoformat(timespec="seconds")
     entry = (
@@ -5183,7 +5330,8 @@ def record_verification(
         f"  - Exit code: {exit_code}\n"
         f"  - Duration: {duration:.2f}s\n"
         f"  - Recorded: {recorded}\n"
-        f"  - Output evidence: {verification_output_summary(stdout, stderr, status, extras, repo)}"
+        f"  - Output evidence: "
+        f"{'intentionally not persisted' if sensitive else verification_output_summary(stdout, stderr, status, extras, repo)}"
     )
     try:
         with repo_lock(repo):
@@ -5203,11 +5351,15 @@ def record_verification(
         print(f"ERROR: {exc}", file=sys.stderr)
         print("Verification command finished, but its result was not written.", file=sys.stderr)
         return 2
-    if stdout:
+    if stdout and not sensitive:
         print(stdout, end="" if stdout.endswith("\n") else "\n")
-    if stderr:
+    if stderr and not sensitive:
         print(stderr, file=sys.stderr, end="" if stderr.endswith("\n") else "\n")
-    print(f"Recorded {status} verification for session {session_id} -> {record['publish_path']}")
+    qualifier = " sensitive" if sensitive else ""
+    print(
+        f"Recorded{qualifier} {status} verification for session {session_id} "
+        f"-> {record['publish_path']}"
+    )
     return 0 if exit_code == 0 else 1
 
 
@@ -5890,6 +6042,12 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--feature", default="", help="Stable feature slug or name")
     start.add_argument("--language", choices=("auto", "en", "zh-CN"), default="")
     start.add_argument("--tool", default="", help="Calling Agent tool ID for continuation audit")
+    start.add_argument(
+        "--kind",
+        choices=("change", "local-config"),
+        default="change",
+        help="Use local-config for a compact, sanitized worktree-local configuration record",
+    )
     context = sub.add_parser("context", help="Find likely stable background documents")
     context.add_argument("--query", required=True)
     context.add_argument("--limit", type=int, default=5)
@@ -5937,6 +6095,17 @@ def build_parser() -> argparse.ArgumentParser:
     finish.add_argument("--reason", default="", help="Required explanation when --no-spec is used")
     finish.add_argument("--session", default="", help="Task session ID; required when multiple sessions are active")
     finish.add_argument("--epoch", type=int, default=0, help="Expected continuation epoch after a cross-Agent resume")
+    finish.add_argument(
+        "--path",
+        action="append",
+        default=[],
+        help="Changed repository path owned by this task; repeat for multiple paths",
+    )
+    finish.add_argument(
+        "--summary",
+        default="",
+        help="Observable result used to complete a local-config record",
+    )
     evidence = sub.add_parser("evidence", help="Refresh an active task session from actual Git changed paths")
     evidence.add_argument("--session", default="", help="Task session ID; required when multiple sessions are active")
     evidence.add_argument("--epoch", type=int, default=0, help="Expected continuation epoch after a cross-Agent resume")
@@ -5952,6 +6121,11 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--reason", default="")
     verify.add_argument("--session", default="", help="Task session ID; required when multiple sessions are active")
     verify.add_argument("--epoch", type=int, default=0, help="Expected continuation epoch after a cross-Agent resume")
+    verify.add_argument(
+        "--sensitive",
+        action="store_true",
+        help="Execute the check without displaying or persisting its command arguments or output",
+    )
     verify.add_argument("verification_command", nargs=argparse.REMAINDER)
     sync = sub.add_parser("sync", help="Regenerate indexes and managed README blocks")
     sync.add_argument(
@@ -6104,7 +6278,9 @@ def main(argv: list[str] | None = None) -> int:
                 if args.command == "init":
                     return init_repo(repo, args.dry_run)
                 if args.command == "start":
-                    return start_change(repo, args.title, args.feature, args.language, args.tool)
+                    return start_change(
+                        repo, args.title, args.feature, args.language, args.tool, args.kind
+                    )
                 if args.command == "pack":
                     return refresh_context_pack(
                         repo, args.feature, args.title, args.file, args.spec, args.language
@@ -6128,7 +6304,14 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 if args.command == "finish":
                     return finish_change(
-                        repo, args.spec, args.no_spec, args.reason, args.session, args.epoch
+                        repo,
+                        args.spec,
+                        args.no_spec,
+                        args.reason,
+                        args.session,
+                        args.epoch,
+                        args.path,
+                        args.summary,
                     )
                 if args.command == "evidence":
                     return capture_evidence(repo, args.session, args.path, args.epoch)
@@ -6154,7 +6337,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
             return record_verification(
                 repo, args.verification_command, args.timeout, args.not_run, args.reason,
-                args.session, args.epoch
+                args.session, args.epoch, args.sensitive
             )
         if args.command == "check":
             if args.format == "json":

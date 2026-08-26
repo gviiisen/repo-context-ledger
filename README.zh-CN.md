@@ -279,6 +279,14 @@ python scripts/build_runtime.py --check
 
 源码与生成物边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
+## v0.7.1 新增能力
+
+- 小型、受 Git 跟踪且仅影响本机/worktree 的配置改动改走紧凑流程：`start --kind local-config`、`verify --sensitive`、`finish --path ... --summary ...`。
+- 紧凑 finish 会收集当前任务的明确 Git 路径、自动生成语义 handoff、标记 `Scope: worktree-local` 并自动应用 stable spec 例外；不再要求手改 Markdown 或单独运行 `evidence`。
+- 敏感验证仍真实执行命令，但命令参数和捕获输出既不显示也不持久化；记录只保留状态、退出码、耗时和时间。
+- 生成的 Agent 规则会在这条窄路径上跳过 `context`/`focus`，要求直接传可执行程序参数而不是嵌套 PowerShell 引号；普通行为改动仍保留完整生命周期。
+- `doctor` 会提示未受管的 `.active-handoff` 或旧 handoff-template 指令与私有任务 session 并存，但绝不会自动删除旧说明。
+
 ## v0.7.0 新增能力
 
 - 新增一条确定性构建链，由 `src/repo_context_ledger/runtime.py.tmpl` 与有序构建片段统一生成两份 standalone runtime。

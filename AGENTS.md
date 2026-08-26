@@ -3,7 +3,9 @@
 <!-- repo-context-ledger:rules:start -->
 ## Repository context ledger
 
-For every feature, bug fix, refactor, interface change, or other behavior-changing code task:
+Choose the shortest applicable path. Read-only work uses `context` only when routing is needed and never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config> --summary "<observable result>"`. Do not run context or focus, a separate evidence command, or manually edit the handoff for that compact path. Ordinary behavior changes use the lifecycle below.
+
+For every feature, bug fix, refactor, interface change, or other ordinary behavior-changing code task:
 
 1. Before editing code, run `status`, then start or reuse only this task's private draft session. Keep the returned session ID and pass `--session <id>` whenever multiple sessions exist.
 2. Resolve `quality.language`; when it is `auto`, follow nearby docs or the user's language. Keep paths, symbols, commands, and error text untranslated.

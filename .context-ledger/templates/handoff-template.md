@@ -5,6 +5,7 @@ Feature: {{FEATURE}}
 Quality profile: evidence-v1
 Language: {{LANGUAGE}}
 Detail: {{DETAIL}}
+Scope: {{SCOPE}}
 Handoff ID: {{HANDOFF_ID}}
 Session ID: {{SESSION_ID}}
 Actor: {{ACTOR}}

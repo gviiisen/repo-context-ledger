@@ -261,6 +261,24 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("CONFIG_INVALID", {item["code"] for item in report["findings"]})
             self.assertNotIn(str(repo), invalid.stdout)
 
+    def test_doctor_warns_when_legacy_active_handoff_instructions_remain(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_repo(repo)
+            agents = repo / "AGENTS.md"
+            agents.write_text(
+                agents.read_text(encoding="utf-8")
+                + "\n## Legacy workflow\n\nWrite docs/changes/.active-handoff before editing.\n",
+                encoding="utf-8",
+            )
+            report = json.loads(self.run_ledger(repo, "doctor", "--format", "json").stdout)
+            finding = next(
+                item for item in report["findings"]
+                if item["code"] == "LEGACY_WORKFLOW_CONFLICT"
+            )
+            self.assertEqual("warning", finding["severity"])
+            self.assertEqual(["AGENTS.md"], finding["details"]["items"])
+
 
 if __name__ == "__main__":
     unittest.main()

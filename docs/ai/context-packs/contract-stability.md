@@ -5,10 +5,10 @@ Feature: contract-stability
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 978493f3a7bd73354eb164a0ad6d07df8a68b9fc
+Source commit: dd283c73130ec672e183fe8018c4b19217efdf52
 Base branch: main
-Base commit: b5086a53c21962593ada4a0b96903faf10a7e54c
-Last refreshed: 2026-08-22T00:41:03+08:00
+Base commit: dd283c73130ec672e183fe8018c4b19217efdf52
+Last refreshed: 2026-08-27T03:10:06+08:00
 
 ## Purpose
 
@@ -50,11 +50,11 @@ Routes compatibility work to the public CLI schemas, golden fixtures, routing co
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:c557ad7e71f5224441b6d87a0f2275110aebce776e8b5e9880c8f622ca7c721d`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:fd4513a88e9c6f4fffe0fb2830aa3d244896f84d4b9f0244b8eac583580aa013`
 - `src/repo_context_ledger/errors.pyfrag` — `sha256:7cd76293bd376f12cf7e13ba747159820667919afcc720098e7958ee05bb9717`
 - `src/repo_context_ledger/models.pyfrag` — `sha256:b059542121c00e2177408be18fc1252d4d3f32a5ae4438b2634eb3da49f874d4`
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:749a0e9e21aaeb2aa30458d4e6362093f378cd686fbe15eb388fab38e2bf4095`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:78e661a3e3191382b3de4fc92116ebb96bddca6e1e13bbdae390c4bbfd0317fe`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:40c2eb4a9416c016389a7ac2103a7e13dd0ee1071f4a4942d3b9a06854a5d179`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:5ee5cb22543f6503690ed2ec029d26b08fd01112e4f55fc98f4daa90bb7ecc8f`
 - `tests/test_baseline_contract.py` — `sha256:9b5385a16b70793062744809f8d70e28cbe468b130bc98a4629bd93af6789baa`
 - `tests/golden/v0.6.0-contract.json` — `sha256:2035883115255bdb5d7108427699dfbf2dac39261426e84fa6e46ddda32784c0`
 - `tests/golden/v0.6.0-status-text.txt` — `sha256:063e99bc6187672743bef6a8fdc444c2f26118008ba700927830d08a958a3a50`

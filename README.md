@@ -279,6 +279,14 @@ python scripts/build_runtime.py --check
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
 
+## What's new in v0.7.1
+
+- Small tracked machine/worktree configuration changes now use a compact lifecycle: `start --kind local-config`, `verify --sensitive`, and `finish --path ... --summary ...`.
+- Compact finish captures task-scoped Git evidence, generates the semantic handoff, marks it `Scope: worktree-local`, and applies the stable-spec exception without manual Markdown editing or a separate `evidence` command.
+- Sensitive verification executes the real command but displays and persists neither its arguments nor captured output. The record retains only status, exit code, duration, and timestamp.
+- Generated Agent rules skip `context`/`focus` for this narrow path, require direct executable arguments instead of nested PowerShell quoting, and keep the full lifecycle for ordinary behavior changes.
+- `doctor` warns when unmanaged `.active-handoff` or legacy handoff-template instructions coexist with the private task-session workflow; it never deletes that prose automatically.
+
 ## What's new in v0.7.0
 
 - One deterministic build now generates both standalone runtime copies from `src/repo_context_ledger/runtime.py.tmpl` and ordered build-time fragments.
