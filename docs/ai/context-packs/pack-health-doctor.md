@@ -5,10 +5,10 @@ Feature: pack-health-doctor
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 645a736f8220153a77d8cb041d6317eb85d10b9d
+Source commit: b7e4eb53249faa64881e37401a764093faf476b7
 Base branch: main
-Base commit: dd283c73130ec672e183fe8018c4b19217efdf52
-Last refreshed: 2026-08-27T03:18:51+08:00
+Base commit: b7e4eb53249faa64881e37401a764093faf476b7
+Last refreshed: 2026-08-27T06:50:50+08:00
 
 ## Purpose
 
@@ -47,7 +47,7 @@ Routes repository health work to the deterministic Doctor report instead of forc
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:9f28b035993bed81e544a97df92606b97f64ad2582d36eb20f75a2d646ab38c4`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:86474076e7bc9a017add5f7bc2876ff5673ea1f070ed3e9db92e798dba9e5335`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:21d8a74e996f3f358eead9c2238df5dda7b101aedd2e2f7cbaf1a72057b93bcf`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:0833437a2238a3fc15cc39d3723d0ddb3642968842d3f905f39699dc6921053a`
 - `tests/test_doctor.py` — `sha256:84526dcc76e8bc08fcc4888763426729c8e73db4c6c70242abeecd763fcad8bd`
 <!-- repo-context-ledger:pack-files:end -->

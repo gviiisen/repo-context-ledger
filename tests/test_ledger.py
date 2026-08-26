@@ -10,7 +10,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 
@@ -882,35 +882,28 @@ class LedgerFlowTests(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 with mock.patch.object(
                     LEDGER_MODULE,
-                    "task_session_finish_errors",
-                    side_effect=[[], ["Injected post-publication failure."]],
+                    "save_context_state",
+                    side_effect=OSError("Injected state persistence interruption."),
                 ):
-                    self.assertEqual(
-                        2,
+                    with self.assertRaises(OSError):
                         LEDGER_MODULE.finish_change(
                             repo, [], True,
                             "This recovery fixture has no durable product specification to maintain.",
                             session_id,
-                        ),
-                    )
+                        )
             self.assertTrue(target.is_file())
             self.assertTrue(draft.is_file())
             self.assertIn(session_id, LEDGER_MODULE.load_context_state(repo)["task_sessions"])
 
             with redirect_stdout(io.StringIO()):
-                with mock.patch.object(
-                    LEDGER_MODULE,
-                    "task_session_finish_errors",
-                    side_effect=[[], []],
-                ):
-                    self.assertEqual(
-                        0,
-                        LEDGER_MODULE.finish_change(
-                            repo, [], True,
-                            "This recovery fixture has no durable product specification to maintain.",
-                            session_id,
-                        ),
-                    )
+                self.assertEqual(
+                    0,
+                    LEDGER_MODULE.finish_change(
+                        repo, [], True,
+                        "This recovery fixture has no durable product specification to maintain.",
+                        session_id,
+                    ),
+                )
             self.assertTrue(target.is_file())
             self.assertFalse(draft.exists())
             self.assertNotIn(session_id, LEDGER_MODULE.load_context_state(repo)["task_sessions"])
@@ -949,6 +942,95 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertIn("slow check passed", stdout)
             self.assertIn("Status: passed", first_handoff.read_text(encoding="utf-8"))
             self.assertNotIn("Status: passed", second_handoff.read_text(encoding="utf-8"))
+
+    def test_parallel_verifications_wait_for_short_lock_and_record_both(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            started = self.run_ledger(repo, "start", "--title", "Parallel verification")
+            session = session_from_result(started)
+            command = [
+                sys.executable, str(LEDGER), "--repo", str(repo), "verify",
+                "--timeout", "10", "--session", session, "--",
+                sys.executable, "-c", "import time; time.sleep(0.1); print('parallel check passed')",
+            ]
+            processes = [
+                subprocess.Popen(
+                    command,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    encoding="utf-8",
+                )
+                for _ in range(2)
+            ]
+            results = [process.communicate(timeout=10) for process in processes]
+            for process, (stdout, stderr) in zip(processes, results):
+                self.assertEqual(0, process.returncode, stdout + stderr)
+            text = private_draft(repo, started).read_text(encoding="utf-8")
+            self.assertEqual(2, text.count("Status: passed"))
+
+    def test_private_timings_report_lock_scope_without_repository_paths(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            result = self.run_ledger(
+                repo, "--timings", "start", "--title", "Measure private timings"
+            )
+            timing_line = next(
+                line for line in result.stderr.splitlines()
+                if line.startswith("repo-context-ledger-timings: ")
+            )
+            report = json.loads(timing_line.split(": ", 1)[1])
+            self.assertEqual("private-command-timings-v1", report["schema"])
+            self.assertEqual("start", report["command"])
+            self.assertGreaterEqual(report["elapsed_ms"], 0)
+            self.assertGreaterEqual(report["stages"]["lock_hold_ms"], 0)
+            self.assertNotIn(str(repo), timing_line)
+
+    def test_finish_validates_unlocked_and_rejects_a_changed_draft(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            self.run_ledger(repo, "init")
+            started = self.run_ledger(
+                repo, "start", "--title", "CAS protected finish", "--language", "en"
+            )
+            session = session_from_result(started)
+            draft = private_draft(repo, started)
+            target = publish_target(repo, started)
+            self.fill_handoff(draft, "src/service.py", "docs/specs/service.md")
+            self.run_ledger(
+                repo, "verify", "--session", session, "--",
+                sys.executable, "-c", "print('initial check passed')",
+            )
+
+            def mutate_during_validation(*_args):
+                with LEDGER_MODULE.repo_lock(repo):
+                    draft.write_text(
+                        draft.read_text(encoding="utf-8") + "\nConcurrent verification marker.\n",
+                        encoding="utf-8",
+                    )
+                return []
+
+            output = io.StringIO()
+            errors = io.StringIO()
+            with redirect_stdout(output), redirect_stderr(errors):
+                with mock.patch.object(
+                    LEDGER_MODULE,
+                    "task_session_finish_errors",
+                    side_effect=mutate_during_validation,
+                ):
+                    code = LEDGER_MODULE.finish_change(
+                        repo,
+                        [],
+                        True,
+                        "This synthetic fixture has no durable product specification.",
+                        session,
+                    )
+            self.assertEqual(2, code)
+            self.assertIn("Finish inputs changed during validation", errors.getvalue())
+            self.assertFalse(target.exists())
+            self.assertIn(session, LEDGER_MODULE.load_context_state(repo)["task_sessions"])
 
     def test_context_pack_focus_and_staleness_detection(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -1710,7 +1792,7 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertIn("verify --sensitive", rules)
             self.assertIn("finish --path", rules)
             self.assertNotIn("finish --path <changed-config> --summary", rules)
-            self.assertIn("Do not run context or focus", rules)
+            self.assertIn("skip context/focus and a separate evidence command", rules)
 
     def test_failed_verification_blocks_quality_handoff_until_a_check_passes(self):
         with tempfile.TemporaryDirectory() as raw:

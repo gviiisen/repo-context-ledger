@@ -293,6 +293,14 @@ python scripts/build_runtime.py --check
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
 
+## What's new in v0.7.2
+
+- Small fixes with an already known code path use the short lifecycle: start, implement, run independent checks concurrently, and finish. They skip broad context routing and a separate evidence command unless the task becomes uncertain or another session requires explicit paths.
+- Independent `verify` processes execute concurrently and briefly wait for one another only while appending their private results. Checks that share a database, port, generated directory, or mutable fixture remain serial.
+- `finish` now prepares evidence and performs validation outside the repository write lock. A short final compare-and-swap step rechecks the session, private draft, specs, Packs, and publication target before atomic publication; derived indexes are regenerated afterward.
+- The optional global `--timings` flag prints private per-command stage timings to stderr. Timing data is not persisted and contains no repository paths.
+- A reproducible synthetic closeout benchmark compares the old serial choreography with the shorter overlapped workflow. In the recorded three-run fixture, median end-to-end time fell from 3.56 seconds to 2.31 seconds while the median finish lock hold stayed around 20 milliseconds; results vary by machine and checks.
+
 ## What's new in v0.7.1
 
 - Small tracked machine/worktree configuration changes now use a compact lifecycle: `start --kind local-config`, `verify --sensitive`, and `finish --path ...`.

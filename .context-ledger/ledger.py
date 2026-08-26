@@ -22,7 +22,7 @@ from pathlib import Path
 
 
 VERSION = 8
-TOOL_VERSION = "0.7.1"
+TOOL_VERSION = "0.7.2"
 MANIFEST_VERSION = 1
 ROUTER_CACHE_SCHEMA = 1
 CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
@@ -149,6 +149,51 @@ class CommandResult:
             "messages": self.messages,
             "errors": self.errors,
         }
+
+
+_COMMAND_TIMINGS: dict[str, object] | None = None
+_CONTEXT_STATE_PATH_CACHE: dict[str, Path] = {}
+WRITE_LOCK_WAIT_SECONDS = 2.0
+
+
+def begin_command_timings(command: str, enabled: bool) -> None:
+    global _COMMAND_TIMINGS
+    _COMMAND_TIMINGS = {
+        "enabled": enabled,
+        "command": command,
+        "started": time.perf_counter(),
+        "stages": {},
+    }
+
+
+def add_command_timing(name: str, elapsed_ms: float) -> None:
+    if not _COMMAND_TIMINGS or not _COMMAND_TIMINGS["enabled"]:
+        return
+    stages = _COMMAND_TIMINGS["stages"]
+    assert isinstance(stages, dict)
+    stages[name] = round(float(stages.get(name, 0.0)) + elapsed_ms, 3)
+
+
+def emit_command_timings() -> None:
+    global _COMMAND_TIMINGS
+    current = _COMMAND_TIMINGS
+    _COMMAND_TIMINGS = None
+    if not current or not current["enabled"]:
+        return
+    started = current["started"]
+    assert isinstance(started, float)
+    report = {
+        "schema": "private-command-timings-v1",
+        "tool_version": TOOL_VERSION,
+        "command": current["command"],
+        "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+        "stages": current["stages"],
+    }
+    print(
+        "repo-context-ledger-timings: "
+        + json.dumps(report, ensure_ascii=False, sort_keys=True),
+        file=sys.stderr,
+    )
 
 
 class InitFileChange:
@@ -413,22 +458,33 @@ def atomic_write(path: Path, content: str, kind: str = "file") -> None:
 
 
 @contextmanager
-def repo_lock(repo: Path):
+def repo_lock(repo: Path, wait_seconds: float = 0.0):
     lock_dir = safe_repo_path(repo, ".context-ledger", "ledger runtime directory")
     lock_dir.mkdir(parents=True, exist_ok=True)
     lock_path = lock_dir / ".write.lock"
-    try:
-        descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError as exc:
-        raise LedgerError(
-            "Another Repo Context Ledger write is active. Wait for it to finish; "
-            "remove .context-ledger/.write.lock only if the prior process crashed."
-        ) from exc
+    wait_started = time.perf_counter()
+    deadline = wait_started + max(0.0, wait_seconds)
+    while True:
+        try:
+            descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError as exc:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                add_command_timing("lock_wait_ms", (time.perf_counter() - wait_started) * 1000)
+                raise LedgerError(
+                    "Another Repo Context Ledger write is active. Wait for it to finish; "
+                    "remove .context-ledger/.write.lock only if the prior process crashed."
+                ) from exc
+            time.sleep(min(0.025, remaining))
+    add_command_timing("lock_wait_ms", (time.perf_counter() - wait_started) * 1000)
+    hold_started = time.perf_counter()
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(f"pid={os.getpid()} started={now().isoformat(timespec='seconds')}\n")
         yield
     finally:
+        add_command_timing("lock_hold_ms", (time.perf_counter() - hold_started) * 1000)
         try:
             lock_path.unlink()
         except FileNotFoundError:
@@ -738,6 +794,10 @@ def legacy_context_state_path(repo: Path) -> Path:
 
 
 def context_state_path(repo: Path) -> Path:
+    cache_key = str(repo.resolve()).casefold()
+    cached = _CONTEXT_STATE_PATH_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     if is_git_repo(repo):
         branch = git_branch(repo)
         state_key = f"{slugify(branch)[:32]}-{hashlib.sha1(branch.encode('utf-8')).hexdigest()[:8]}"
@@ -749,8 +809,12 @@ def context_state_path(repo: Path) -> Path:
         )
         if raw:
             path = Path(raw)
-            return path.resolve() if path.is_absolute() else (repo / path).resolve()
-    return legacy_context_state_path(repo)
+            resolved = path.resolve() if path.is_absolute() else (repo / path).resolve()
+            _CONTEXT_STATE_PATH_CACHE[cache_key] = resolved
+            return resolved
+    resolved = legacy_context_state_path(repo)
+    _CONTEXT_STATE_PATH_CACHE[cache_key] = resolved
+    return resolved
 
 
 def default_context_state() -> dict:
@@ -1316,17 +1380,17 @@ def managed_rules(config: dict) -> str:
     specs = config["docs"]["specs"]
     return f"""## Repository context ledger
 
-Choose the shortest applicable path. Read-only work uses `context` only when routing is needed and never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config>`. Do not run context or focus, a separate evidence command, or manually edit the handoff for that compact path. Ordinary behavior changes use the lifecycle below.
+Choose the shortest applicable path. Read-only work uses `context` only when routing is needed and never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config>`. A single-session small fix with an already known code path uses `status` → `start` → implement → independent parallel `verify` commands → `finish`; skip context/focus and a separate evidence command unless the task expands or becomes uncertain. Ordinary behavior changes use the lifecycle below.
 
 For every feature, bug fix, refactor, interface change, or other ordinary behavior-changing code task:
 
 1. Before editing code, run `status`, then start or reuse only this task's private draft session. Keep the returned session ID and pass `--session <id>` whenever multiple sessions exist.
 2. Resolve `quality.language`; when it is `auto`, follow nearby docs or the user's language. Keep paths, symbols, commands, and error text untranslated.
-3. {context_plan_policy()} Focus the selected feature Context Pack before broad code exploration. If no Pack exists, create and fill one.
+3. For medium/large or uncertain work, {context_plan_policy()} Focus the selected feature Context Pack before broad code exploration. If no Pack exists, create and fill one. Skip routing only for a genuinely small fix whose code path and behavior boundary are already established.
 4. {resume_plan_policy()} Run `checkpoint --session <id> --summary "..." --next "..."` before handing active work to another Agent. Pause only this task's session; never pause, resume, or finish another task's session.
-5. Run every claimed check through `python .context-ledger/ledger.py verify -- <command>`. Use `verify --not-run --reason \"...\"` only when verification is genuinely unavailable.
-6. Run `evidence`, read `.context-ledger/writing-quality.md`, and fill the private draft from actual changed paths. When another session exists, pass repeated `--path <path>` values for only this task; never capture foreign dirty paths. Refresh affected Context Packs with `pack --file ...`.
-7. Update `{specs}/` when current behavior, contracts, boundaries, or code navigation changes.
+5. After code is stable, run independent checks concurrently through separate `python .context-ledger/ledger.py verify -- <command>` processes. While they run, refresh the Pack and spec when those edits do not share mutable test resources. Wait for every verification to record before `finish`; never hand-edit the private draft while verification appends to it. Keep checks serial when they share a database, port, generated directory, or mutable fixture. Use `verify --not-run --reason \"...\"` only when verification is genuinely unavailable.
+6. Let `finish` capture evidence for a single-session small fix. Run explicit `evidence --path` only when another session exists or automatic collection is too broad; never capture foreign dirty paths.
+7. Update `{specs}/` and refresh affected Context Packs when current behavior, contracts, boundaries, code navigation, or tracked production paths change.
 8. Finish with `finish --spec <affected-spec>`, or use `--no-spec --reason \"...\"` only when no stable behavior exists.
 9. Let `finish` enforce this session's evidence, specs, and relevant Context Pack fingerprints. Run repository-wide `check --strict --coverage` only at integration or PR time, when foreign sessions are not actively changing the shared worktree.
 10. Before opening or updating a pull request, update the base ref and run `team-check --base origin/{config.get('team', {}).get('default_branch', 'main')}`.
@@ -4748,6 +4812,57 @@ def complete_local_config_draft(text: str) -> str:
     return text
 
 
+def finish_input_signature(
+    repo: Path,
+    config: dict,
+    handoff_text: str,
+    specs: list[Path],
+    publish_path: Path,
+) -> str:
+    """Hash every bounded input whose change would invalidate a prepared finish."""
+    paths = {publish_path, *specs}
+    paths.update(
+        safe_repo_path(repo, raw, "finish evidence path")
+        for raw in recorded_handoff_evidence_paths(handoff_text)
+    )
+    packs_root = safe_repo_path(repo, config["docs"]["ai"], "config.docs.ai") / "context-packs"
+    if packs_root.is_dir():
+        paths.update(path for path in packs_root.glob("*.md") if path.name.casefold() != "readme.md")
+    digest = hashlib.sha256()
+    for path in sorted(paths, key=lambda item: str(item.resolve()).casefold()):
+        try:
+            label = rel_posix(path, repo)
+        except ValueError:
+            label = str(path.resolve())
+        digest.update(label.encode("utf-8", errors="replace"))
+        try:
+            digest.update(path.read_bytes())
+        except OSError:
+            digest.update(b"<missing>")
+    return digest.hexdigest()
+
+
+def revalidate_finish_session(
+    repo: Path,
+    config: dict,
+    session_id: str,
+    expected: dict,
+    epoch: int,
+) -> tuple[dict, Path]:
+    state = load_context_state(repo)
+    latest = state.get("task_sessions", {}).get(session_id)
+    if not isinstance(latest, dict) or latest.get("status") != "active":
+        raise LedgerError(f"Task session is no longer active: {session_id}")
+    validate_session_epoch(session_id, latest, epoch)
+    stable_fields = ("draft", "publish_path", "owner_principal", "resume_epoch", "kind")
+    if any(latest.get(field) != expected.get(field) for field in stable_fields):
+        raise LedgerError(f"Task session changed while finish was preparing: {session_id}")
+    draft = resolve_session_draft(repo, config, session_id, latest)
+    if not draft.is_file():
+        raise LedgerError(f"Task session draft does not exist: {latest['draft']}")
+    return latest, draft
+
+
 def finish_change(
     repo: Path,
     raw_specs: list[str],
@@ -4765,6 +4880,13 @@ def finish_change(
         repo, config, record["publish_path"], "task session publish path"
     )
     local_config = record.get("kind", "change") == "local-config"
+    with repo_lock(repo, WRITE_LOCK_WAIT_SECONDS):
+        record, draft = revalidate_finish_session(
+            repo, config, session_id, record, epoch
+        )
+        text = draft.read_text(encoding="utf-8")
+        source_draft_digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+
     if local_config and not raw_paths:
         print("Local configuration finish requires at least one changed --path.", file=sys.stderr)
         return 2
@@ -4781,11 +4903,21 @@ def finish_change(
             for raw in invalid_kinds:
                 print(f"Local configuration path is not classified as config: {raw}", file=sys.stderr)
             return 2
+
+    evidence_started = time.perf_counter()
+    evidence = managed_text(text, EVIDENCE_START, EVIDENCE_END)
     if raw_paths:
-        refresh_handoff_evidence(repo, draft, raw_paths)
-    else:
-        ensure_finish_evidence(repo, config, session_id, draft)
-    text = draft.read_text(encoding="utf-8")
+        text, _ = render_handoff_evidence(repo, config, text, raw_paths)
+    elif not evidence or "Evidence has not been captured yet" in evidence:
+        sessions = load_context_state(repo).get("task_sessions", {})
+        if is_git_repo(repo) and len(sessions) > 1:
+            raise LedgerError(
+                f"Session {session_id} has no scoped evidence; run evidence --session {session_id} "
+                "with --path for only this task."
+            )
+        text, _ = render_handoff_evidence(repo, config, text)
+    add_command_timing("evidence_ms", (time.perf_counter() - evidence_started) * 1000)
+
     if local_config:
         checks = managed_text(text, CHECKS_START, CHECKS_END)
         sensitive_results = re.findall(
@@ -4813,11 +4945,14 @@ def finish_change(
                 "This record describes worktree-local configuration evidence, not a stable "
                 "shared product contract."
             )
-        atomic_write(draft, text.rstrip() + "\n")
+    specs = [normalize_spec(repo, config, raw) for raw in raw_specs]
+    prepared_signature = finish_input_signature(
+        repo, config, text, specs, publish_path
+    )
+
+    validation_started = time.perf_counter()
     redacted_text = redact_record_local_paths(text, repo)
-    if redacted_text != text:
-        atomic_write(draft, redacted_text.rstrip() + "\n")
-        text = redacted_text
+    text = redacted_text
     errors = handoff_validation_errors(text, repo, config)
     if raw_specs and no_spec:
         errors.append("Use either --spec or --no-spec, not both.")
@@ -4829,7 +4964,6 @@ def finish_change(
         for error in errors:
             print(error, file=sys.stderr)
         return 2
-    specs = [normalize_spec(repo, config, raw) for raw in raw_specs]
     for spec in specs:
         errors.extend(f"{rel_posix(spec, repo)}: {error}" for error in spec_quality_errors(spec))
     if errors:
@@ -4853,28 +4987,10 @@ def finish_change(
     else:
         text = re.sub(r"(?mi)^(Specs:.*)$", rf"\1\n{exception_line}", text, count=1)
     completed_text = text.rstrip() + "\n"
-    if publish_path.exists():
-        existing = publish_path.read_text(encoding="utf-8")
-        if (
-            field_value(existing, "Handoff ID") != session_id
-            or field_value(existing, "Status").casefold() != "completed"
-        ):
-            print(f"Publish target already exists: {rel_posix(publish_path, repo)}", file=sys.stderr)
-            return 2
-        completed_text = redact_record_local_paths(existing, repo).rstrip() + "\n"
-        if completed_text != existing:
-            atomic_write(publish_path, completed_text)
-    else:
-        atomic_write(publish_path, completed_text)
-    for spec in specs:
-        link_change_to_spec(spec, publish_path)
-    sync_repo(repo)
     published_errors = handoff_validation_errors(
         completed_text, repo, config, expected_status="completed"
     )
-    published_errors.extend(task_session_finish_errors(
-        repo, config, completed_text, specs, no_spec
-    ))
+    add_command_timing("validation_ms", (time.perf_counter() - validation_started) * 1000)
     if published_errors:
         for error in published_errors:
             print(error, file=sys.stderr)
@@ -4883,15 +4999,70 @@ def finish_change(
             file=sys.stderr,
         )
         return 2
-    state = load_context_state(repo)
-    state["task_sessions"].pop(session_id, None)
-    save_context_state(repo, state)
+    publish_started = time.perf_counter()
+    with repo_lock(repo, WRITE_LOCK_WAIT_SECONDS):
+        latest_record, latest_draft = revalidate_finish_session(
+            repo, config, session_id, record, epoch
+        )
+        latest_text = latest_draft.read_text(encoding="utf-8")
+        latest_signature = finish_input_signature(
+            repo, config, text, specs, publish_path
+        )
+        latest_draft_digest = hashlib.sha256(latest_text.encode("utf-8")).hexdigest()
+        if (
+            latest_draft_digest != source_draft_digest
+            or latest_signature != prepared_signature
+        ):
+            print(
+                "Finish inputs changed during validation; the private draft remains active. "
+                "Wait for running verification commands, then retry finish.",
+                file=sys.stderr,
+            )
+            return 2
+        if publish_path.exists():
+            existing = publish_path.read_text(encoding="utf-8")
+            if (
+                field_value(existing, "Handoff ID") != session_id
+                or field_value(existing, "Status").casefold() != "completed"
+            ):
+                print(f"Publish target already exists: {rel_posix(publish_path, repo)}", file=sys.stderr)
+                return 2
+            completed_text = redact_record_local_paths(existing, repo).rstrip() + "\n"
+            recovery_errors = handoff_validation_errors(
+                completed_text, repo, config, expected_status="completed"
+            )
+            if recovery_errors:
+                for error in recovery_errors:
+                    print(error, file=sys.stderr)
+                return 2
+            if completed_text != existing:
+                atomic_write(publish_path, completed_text)
+        else:
+            atomic_write(publish_path, completed_text)
+        for spec in specs:
+            link_change_to_spec(spec, publish_path)
+        state = load_context_state(repo)
+        state["task_sessions"].pop(session_id, None)
+        save_context_state(repo, state)
+        try:
+            private = validate_private_draft_path(repo, latest_record["draft"])
+            private.unlink(missing_ok=True)
+            private.parent.rmdir()
+        except (LedgerError, OSError):
+            print(
+                f"WARNING: completed session draft could not be cleaned automatically: "
+                f"{latest_record['draft']}"
+            )
+    add_command_timing("publish_ms", (time.perf_counter() - publish_started) * 1000)
+    derived_started = time.perf_counter()
     try:
-        private = validate_private_draft_path(repo, record["draft"])
-        private.unlink(missing_ok=True)
-        private.parent.rmdir()
-    except (LedgerError, OSError):
-        print(f"WARNING: completed session draft could not be cleaned automatically: {record['draft']}")
+        sync_repo(repo)
+    except (LedgerError, OSError) as exc:
+        print(
+            f"WARNING: completed change published, but derived indexes need a later sync: {exc}",
+            file=sys.stderr,
+        )
+    add_command_timing("derived_sync_ms", (time.perf_counter() - derived_started) * 1000)
     print(f"Completed {rel_posix(publish_path, repo)}")
     return 0
 
@@ -4940,13 +5111,12 @@ def filter_auto_evidence_paths(repo: Path, config: dict, paths: list[str]) -> li
     return kept
 
 
-def refresh_handoff_evidence(
+def render_handoff_evidence(
     repo: Path,
-    handoff: Path,
+    config: dict,
+    text: str,
     raw_paths: list[str] | None = None,
-) -> list[str]:
-    config = load_config(repo)
-    text = handoff.read_text(encoding="utf-8")
+) -> tuple[str, list[str]]:
     paths = handoff_evidence_paths(repo, text, raw_paths)
     if raw_paths is None:
         paths = filter_auto_evidence_paths(repo, config, paths)
@@ -4967,6 +5137,17 @@ def refresh_handoff_evidence(
     if not paths:
         lines.append("  - None detected.")
     updated = replace_managed_text(text, EVIDENCE_START, EVIDENCE_END, "\n".join(lines))
+    return updated.rstrip() + "\n", paths
+
+
+def refresh_handoff_evidence(
+    repo: Path,
+    handoff: Path,
+    raw_paths: list[str] | None = None,
+) -> list[str]:
+    config = load_config(repo)
+    text = handoff.read_text(encoding="utf-8")
+    updated, paths = render_handoff_evidence(repo, config, text, raw_paths)
     atomic_write(handoff, updated.rstrip() + "\n")
     return paths
 
@@ -5284,7 +5465,7 @@ def record_verification(
         if len(reason.strip()) < 20:
             print("A not-run verification reason must contain at least 20 characters.", file=sys.stderr)
             return 2
-        with repo_lock(repo):
+        with repo_lock(repo, WRITE_LOCK_WAIT_SECONDS):
             session_id, record, handoff = resolve_task_session(
                 repo, config, session=session, expected_epoch=epoch
             )
@@ -5306,7 +5487,7 @@ def record_verification(
     if timeout_seconds < 1 or timeout_seconds > 3600:
         print("Verification timeout must be from 1 to 3600 seconds.", file=sys.stderr)
         return 2
-    with repo_lock(repo):
+    with repo_lock(repo, WRITE_LOCK_WAIT_SECONDS):
         session_id, record, handoff = resolve_task_session(
             repo, config, session=session, expected_epoch=epoch
         )
@@ -5340,6 +5521,7 @@ def record_verification(
         stdout, stderr = "", str(exc)
         status = "failed"
     duration = time.monotonic() - started
+    add_command_timing("verification_command_ms", duration * 1000)
     extras = secret_values_from_command(command)
     display_command = (
         "<sensitive verification>"
@@ -5361,7 +5543,7 @@ def record_verification(
         f"{'intentionally not persisted' if sensitive else verification_output_summary(stdout, stderr, status, extras, repo)}"
     )
     try:
-        with repo_lock(repo):
+        with repo_lock(repo, WRITE_LOCK_WAIT_SECONDS):
             latest_id, _, latest_handoff = resolve_task_session(
                 repo, config, session=session_id, status="active", expected_epoch=epoch
             )
@@ -6057,6 +6239,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = LedgerArgumentParser(description="Maintain AI-friendly repository context documentation.")
     parser.add_argument("--version", action="version", version=f"repo-context-ledger {TOOL_VERSION}")
     parser.add_argument("--repo", default=".", help="Repository root (default: current directory)")
+    parser.add_argument(
+        "--timings",
+        action="store_true",
+        help="Emit private per-command stage timings to stderr without persisting them",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     init = sub.add_parser("init", help="Initialize or refresh repository integration")
     init.add_argument(
@@ -6281,7 +6468,7 @@ def emit_requested_json_error(argv: list[str], repo: Path, exc: LedgerError) -> 
     return True
 
 
-def main(argv: list[str] | None = None) -> int:
+def run_main(argv: list[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     repo = Path.cwd().resolve()
     try:
@@ -6290,13 +6477,13 @@ def main(argv: list[str] | None = None) -> int:
             repo = Path(args.repo).resolve()
         repo = resolve_repo(args.repo, explicit=argv_has_explicit_repo(raw_argv))
         mutating = args.command in {
-            "start", "pack", "focus", "checkpoint", "pause", "resume", "share", "finish",
+            "start", "pack", "focus", "checkpoint", "pause", "resume", "share",
             "evidence", "sync",
         } or (args.command == "init" and not args.dry_run) or (
             args.command in {"manifest", "adapters"} and args.action == "sync"
         )
         if mutating:
-            with repo_lock(repo):
+            with repo_lock(repo, WRITE_LOCK_WAIT_SECONDS):
                 if args.command == "init":
                     return init_repo(repo, args.dry_run)
                 if args.command == "start":
@@ -6324,16 +6511,6 @@ def main(argv: list[str] | None = None) -> int:
                         args.expires_hours,
                         args.epoch,
                     )
-                if args.command == "finish":
-                    return finish_change(
-                        repo,
-                        args.spec,
-                        args.no_spec,
-                        args.reason,
-                        args.session,
-                        args.epoch,
-                        args.path,
-                    )
                 if args.command == "evidence":
                     return capture_evidence(repo, args.session, args.path, args.epoch)
                 if args.command == "manifest":
@@ -6341,6 +6518,16 @@ def main(argv: list[str] | None = None) -> int:
                 if args.command == "adapters":
                     return sync_adapters(repo, load_config(repo))
                 return sync_repo(repo, args.derived)
+        if args.command == "finish":
+            return finish_change(
+                repo,
+                args.spec,
+                args.no_spec,
+                args.reason,
+                args.session,
+                args.epoch,
+                args.path,
+            )
         if args.command == "context":
             return context_search(
                 repo,
@@ -6387,6 +6574,32 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_INVALID
         print(f"ERROR: {exc}", file=sys.stderr)
         return EXIT_INVALID
+
+
+def timing_command_name(argv: list[str]) -> str:
+    index = 0
+    while index < len(argv):
+        raw = argv[index]
+        if raw == "--repo":
+            index += 2
+            continue
+        if raw.startswith("--repo=") or raw == "--timings":
+            index += 1
+            continue
+        if raw.startswith("-"):
+            index += 1
+            continue
+        return raw
+    return "unknown"
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    begin_command_timings(timing_command_name(raw_argv), "--timings" in raw_argv)
+    try:
+        return run_main(raw_argv)
+    finally:
+        emit_command_timings()
 
 
 if __name__ == "__main__":

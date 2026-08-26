@@ -293,6 +293,14 @@ python scripts/build_runtime.py --check
 
 源码与生成物边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
+## v0.7.2 新增能力
+
+- 对代码位置和行为边界已经明确的小修复，默认走最短流程：开始任务、修改代码、并行执行互不依赖的检查、完成记录。除非任务变得不确定或存在其他 session 需要明确路径，否则不再做宽泛上下文路由，也不单独执行 evidence 命令。
+- 多个独立 `verify` 进程可以并发执行，只在把结果追加到各自私有记录时短暂等待。共用数据库、端口、生成目录或可变测试夹具的检查仍保持串行。
+- `finish` 会在仓库写锁外准备 evidence 并完成校验，最后只用一个很短的 compare-and-swap 阶段重新确认 session、私有草稿、spec、Pack 和发布目标，再原子发布；派生索引在释放锁后生成。
+- 新增可选全局参数 `--timings`，只向 stderr 输出当前命令的私有阶段耗时；不会持久化，也不包含仓库路径。
+- 新增可重复运行的纯合成收尾基准。当前三轮样例中，端到端中位耗时从 3.56 秒降到 2.31 秒，`finish` 持锁中位时间约 20 毫秒；实际结果会随机器和验证命令变化。
+
 ## v0.7.1 新增能力
 
 - 小型、受 Git 跟踪且仅影响本机/worktree 的配置改动改走紧凑流程：`start --kind local-config`、`verify --sensitive`、`finish --path ...`。
