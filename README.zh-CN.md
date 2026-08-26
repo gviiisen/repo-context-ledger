@@ -1,8 +1,10 @@
-# Repo Context Ledger
+# Repo Context Ledger：AI 编程上下文管理与上下文切换
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-一个开放的 Agent Skill。它在 Codex、Claude、Cursor、GitHub Copilot、Grok 等编码 Agent 之间桥接经过验证的仓库上下文，并在代码新增或修复后同步维护功能说明、变更交接记录以及各级 README 摘要。
+Repo Context Ledger 是一个面向 AI 编程的仓库上下文管理与上下文切换 Skill。它在 Codex、Claude、Cursor、GitHub Copilot、Grok 等编码 Agent 之间桥接经过验证的仓库上下文，并在代码新增或修复后同步维护功能说明、变更交接记录以及各级 README 摘要。
+
+它适用于 AI 编程上下文管理、跨窗口续接、跨 Agent 上下文切换与任务交接，不需要在新会话中重新描述全部背景。
 
 用户只需正常描述开发需求，文档生命周期由 AI 自主完成。
 
