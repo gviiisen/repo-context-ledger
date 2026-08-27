@@ -3,6 +3,8 @@
 <!-- repo-context-ledger:start -->
 ## Changes in 2026-08
 
+- [Address PR 25 review blockers](20260827214039-gviiisen-c84859e7d8-address-pr-25-review-blockers.md) — completed
+- [Harden v1.0.1 workflow and repository boundaries](20260827202058-gviiisen-0e61ed5004-harden-v1-0-1-workflow-and-repository-boundaries.md) — completed
 - [Cover public protocol error shapes](20260827191239-gviiisen-eaffca7e21-cover-public-protocol-error-shapes.md) — completed
 - [Modularize runtime source and stabilize protocols](20260827185543-gviiisen-9afe5ba1c7-modularize-runtime-source-and-stabilize-protocol.md) — completed
 - [Add deterministic Workflow Plan](20260827183113-gviiisen-f737fa1ffb-add-deterministic-workflow-plan.md) — completed

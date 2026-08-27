@@ -539,5 +539,5 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
 - [Change history](docs/changes/README.md)
 - [Feature Context Packs](docs/ai/context-packs)
 - Relevant specs: [Compact local configuration workflow](docs/specs/compact-local-config-workflow.md), [Context Routing Performance](docs/specs/context-routing-performance.md), [Continuation Quality](docs/specs/continuation-quality.md), [Contract Stability](docs/specs/contract-stability.md), [Coverage Integrity](docs/specs/coverage-integrity.md)
-- Latest recorded change: [Harden v1.0.1 workflow and repository boundaries](docs/changes/2026/08/20260827202058-gviiisen-0e61ed5004-harden-v1-0-1-workflow-and-repository-boundaries.md)
+- Latest recorded change: [Address PR 25 review blockers](docs/changes/2026/08/20260827214039-gviiisen-c84859e7d8-address-pr-25-review-blockers.md)
 <!-- repo-context-ledger:end -->
