@@ -532,5 +532,5 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
 - [Change history](docs/changes/README.md)
 - [Feature Context Packs](docs/ai/context-packs)
 - Relevant specs: [Compact local configuration workflow](docs/specs/compact-local-config-workflow.md), [Context Routing Performance](docs/specs/context-routing-performance.md), [Continuation Quality](docs/specs/continuation-quality.md), [Contract Stability](docs/specs/contract-stability.md), [Coverage Integrity](docs/specs/coverage-integrity.md)
-- Latest recorded change: [Build continuation quality engine](docs/changes/2026/08/20260827075252-gviiisen-c783c8332f-build-continuation-quality-engine.md)
+- Latest recorded change: [Cover public protocol error shapes](docs/changes/2026/08/20260827191239-gviiisen-eaffca7e21-cover-public-protocol-error-shapes.md)
 <!-- repo-context-ledger:end -->
