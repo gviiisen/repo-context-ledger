@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -16,6 +17,9 @@ FRAGMENTS = (
     ("# @repo-context-ledger:constants@", ROOT / "src" / "repo_context_ledger" / "constants.pyfrag"),
     ("# @repo-context-ledger:errors@", ROOT / "src" / "repo_context_ledger" / "errors.pyfrag"),
     ("# @repo-context-ledger:models@", ROOT / "src" / "repo_context_ledger" / "models.pyfrag"),
+    ("# @repo-context-ledger:locks@", ROOT / "src" / "repo_context_ledger" / "locks.pyfrag"),
+    ("# @repo-context-ledger:git@", ROOT / "src" / "repo_context_ledger" / "git.pyfrag"),
+    ("# @repo-context-ledger:workflow@", ROOT / "src" / "repo_context_ledger" / "workflow.pyfrag"),
 )
 DEFAULT_OUTPUTS = (
     ROOT / "skills" / "repo-context-ledger" / "scripts" / "ledger.py",
@@ -38,6 +42,7 @@ def render_runtime() -> bytes:
 
 def write_atomic(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    existing_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
     descriptor, raw_temp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temp_path = Path(raw_temp)
     try:
@@ -45,6 +50,8 @@ def write_atomic(path: Path, content: bytes) -> None:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
+        if existing_mode is not None:
+            os.chmod(temp_path, existing_mode)
         os.replace(temp_path, path)
     finally:
         temp_path.unlink(missing_ok=True)

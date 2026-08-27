@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -22,10 +23,11 @@ from pathlib import Path
 
 
 VERSION = 8
-TOOL_VERSION = "0.8.0"
+TOOL_VERSION = "1.0.0"
 MANIFEST_VERSION = 1
 ROUTER_CACHE_SCHEMA = 2
 CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
+WORKFLOW_PLAN_SCHEMA = "workflow-plan-v1"
 RESUME_CAPSULE_SCHEMA = "resume-capsule-v2"
 DOCTOR_SCHEMA = "doctor-v1"
 STATUS_SCHEMA = "status-v1"
@@ -39,6 +41,8 @@ ERROR_UNSUPPORTED_SCHEMA = "UNSUPPORTED_SCHEMA"
 ERROR_CONTEXT_NO_MATCH = "CONTEXT_NO_MATCH"
 ERROR_CHECK_FAILED = "CHECK_FAILED"
 ERROR_DOCTOR_FAILED = "DOCTOR_FAILED"
+ERROR_GIT_COMMAND_FAILED = "GIT_COMMAND_FAILED"
+ERROR_PRESET_TRUST_REQUIRED = "PRESET_TRUST_REQUIRED"
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
 BLOCK_END = "<!-- repo-context-ledger:end -->"
@@ -103,6 +107,7 @@ CONTEXT_DEFAULTS = {
 DEFAULT_VERIFICATION_TIMEOUT = 300
 VERIFICATION_PLATFORMS = ("windows", "linux", "darwin")
 VERIFICATION_PRESET_KEYS = ("argv", "cwd", "timeout", "sensitive", "platforms")
+PRESET_TRUST_SCHEMA = 1
 RESUME_NEAR_SCORE_RATIO = 0.85
 RESUME_SUMMARY_CHARS = 600
 RESUME_NEXT_CHARS = 320
@@ -158,6 +163,22 @@ class CommandResult:
             "messages": self.messages,
             "errors": self.errors,
         }
+
+
+class GitResult:
+    """Lossless result for one Git subprocess invocation."""
+
+    def __init__(
+        self,
+        argv: tuple[str, ...],
+        returncode: int,
+        stdout: bytes,
+        stderr: bytes,
+    ) -> None:
+        self.argv = argv
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
 
 
 _COMMAND_TIMINGS: dict[str, object] | None = None
@@ -323,6 +344,11 @@ class InitPlan:
                     pass
                 continue
             change.path.parent.mkdir(parents=True, exist_ok=True)
+            existing_mode = (
+                stat.S_IMODE(change.path.stat().st_mode)
+                if change.path.exists()
+                else change.mode
+            )
             descriptor, raw_temp = tempfile.mkstemp(
                 prefix=f".{change.path.name}.", suffix=".tmp", dir=change.path.parent
             )
@@ -331,9 +357,10 @@ class InitPlan:
                 with os.fdopen(descriptor, "wb") as handle:
                     handle.write(change.content or b"")
                     handle.flush()
+                    os.fsync(handle.fileno())
+                if existing_mode is not None:
+                    os.chmod(temp_path, existing_mode)
                 os.replace(temp_path, change.path)
-                if change.mode is not None:
-                    os.chmod(change.path, change.mode)
             finally:
                 if temp_path.exists():
                     temp_path.unlink()
@@ -454,12 +481,16 @@ def atomic_write(path: Path, content: str, kind: str = "file") -> None:
         _ACTIVE_INIT_PLAN.write_text(path, content, kind)
         return
     path.parent.mkdir(parents=True, exist_ok=True)
+    existing_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
     descriptor, raw_temp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temp_path = Path(raw_temp)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
             handle.write(content)
             handle.flush()
+            os.fsync(handle.fileno())
+        if existing_mode is not None:
+            os.chmod(temp_path, existing_mode)
         os.replace(temp_path, path)
     finally:
         if temp_path.exists():
@@ -473,30 +504,50 @@ def repo_lock(repo: Path, wait_seconds: float = 0.0):
     lock_path = lock_dir / ".write.lock"
     wait_started = time.perf_counter()
     deadline = wait_started + max(0.0, wait_seconds)
+    nonce = uuid.uuid4().hex
+    command = "unknown"
+    if _COMMAND_TIMINGS:
+        command = str(_COMMAND_TIMINGS.get("command", "unknown"))
+    command = re.sub(r"[^a-z0-9._-]+", "-", command.casefold()).strip("-") or "unknown"
+    owner_identity: tuple[int, int] | None = None
     while True:
         try:
-            descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            descriptor = os.open(lock_path, flags, 0o600)
+            opened = os.fstat(descriptor)
+            owner_identity = (opened.st_dev, opened.st_ino)
             break
         except FileExistsError as exc:
             remaining = deadline - time.perf_counter()
             if remaining <= 0:
                 add_command_timing("lock_wait_ms", (time.perf_counter() - wait_started) * 1000)
                 raise LedgerError(
-                    "Another Repo Context Ledger write is active. Wait for it to finish; "
-                    "remove .context-ledger/.write.lock only if the prior process crashed."
+                    "Another Repo Context Ledger write lock exists. Run doctor to distinguish "
+                    "a live writer from a stale or unsafe lock before taking recovery action."
                 ) from exc
             time.sleep(min(0.025, remaining))
     add_command_timing("lock_wait_ms", (time.perf_counter() - wait_started) * 1000)
     hold_started = time.perf_counter()
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(f"pid={os.getpid()} started={now().isoformat(timespec='seconds')}\n")
+            handle.write(
+                f"version=1 pid={os.getpid()} started={now().isoformat(timespec='seconds')} "
+                f"command={command} nonce={nonce}\n"
+            )
+            handle.flush()
+            os.fsync(handle.fileno())
         yield
     finally:
         add_command_timing("lock_hold_ms", (time.perf_counter() - hold_started) * 1000)
         try:
-            lock_path.unlink()
-        except FileNotFoundError:
+            current_stat = lock_path.lstat()
+            same_identity = owner_identity == (current_stat.st_dev, current_stat.st_ino)
+            current = lock_path.read_text(encoding="utf-8") if same_identity else ""
+            if same_identity and f"nonce={nonce}" in current.split():
+                lock_path.unlink()
+        except (FileNotFoundError, OSError, UnicodeError):
             pass
 
 
@@ -606,22 +657,50 @@ def slugify(value: str) -> str:
     return ascii_slug[:48] or "change"
 
 
-def git_output(repo: Path, *args: str) -> str:
+def run_git(repo: Path, *args: str) -> GitResult:
+    argv = ("git", "-C", str(repo), *args)
     try:
         result = subprocess.run(
-            ["git", "-C", str(repo), *args],
-            text=True,
+            argv,
             capture_output=True,
-            encoding="utf-8",
             timeout=10,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as exc:
+        return GitResult(argv, -1, b"", str(exc).encode("utf-8", errors="replace"))
+    return GitResult(argv, result.returncode, result.stdout, result.stderr)
+
+
+def git_command_error(repo: Path, result: GitResult) -> LedgerError:
+    command = "git " + " ".join(result.argv[3:])
+    detail = result.stderr.decode("utf-8", errors="replace").strip()
+    detail = redact_local_paths(detail, repo)[:600]
+    suffix = f": {detail}" if detail else ""
+    return LedgerError(
+        f"Git command failed ({command}, exit {result.returncode}){suffix}",
+        ERROR_GIT_COMMAND_FAILED,
+    )
+
+
+def git_output(repo: Path, *args: str, required: bool = False) -> str:
+    result = run_git(repo, *args)
+    if result.returncode != 0:
+        if required:
+            raise git_command_error(repo, result)
         return ""
-    return result.stdout.strip() if result.returncode == 0 else ""
+    return result.stdout.decode("utf-8", errors="replace").strip()
+
+
+def git_repository_detected(repo: Path, required: bool = False) -> bool:
+    result = run_git(repo, "rev-parse", "--is-inside-work-tree")
+    if result.returncode == 0:
+        return result.stdout.strip() == b"true"
+    if required and (repo / ".git").exists():
+        raise git_command_error(repo, result)
+    return False
 
 
 def is_git_repo(repo: Path) -> bool:
-    return git_output(repo, "rev-parse", "--is-inside-work-tree") == "true"
+    return git_repository_detected(repo)
 
 
 def git_revision(repo: Path, ref: str = "HEAD") -> str:
@@ -689,28 +768,49 @@ def configured_base_ref(repo: Path, config: dict) -> str:
     return remote if git_revision(repo, remote) != "none" else branch
 
 
-def git_dirty_paths(repo: Path) -> list[str]:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all"],
-            text=True,
-            capture_output=True,
-            encoding="utf-8",
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
+def decode_git_path(raw: bytes) -> str:
+    decoded = os.fsdecode(raw)
+    return decoded.replace(os.sep, "/") if os.sep != "/" else decoded
+
+
+def git_dirty_paths(repo: Path, required: bool = True) -> list[str]:
+    if not git_repository_detected(repo, required=required):
         return []
+    result = run_git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all")
     if result.returncode != 0:
+        if required:
+            raise git_command_error(repo, result)
         return []
-    paths = []
-    for line in result.stdout.splitlines():
-        raw = line[3:].strip()
-        if " -> " in raw:
-            raw = raw.split(" -> ", 1)[1]
-        if raw.replace("\\", "/") == ".context-ledger/.write.lock":
+    paths: list[str] = []
+    records = result.stdout.split(b"\0")
+    index = 0
+    while index < len(records):
+        record = records[index]
+        index += 1
+        if not record:
+            continue
+        if len(record) < 3 or record[2:3] != b" ":
+            if required:
+                raise LedgerError(
+                    "Git status returned an invalid NUL-delimited record.",
+                    ERROR_GIT_COMMAND_FAILED,
+                )
+            continue
+        status = record[:2]
+        raw = decode_git_path(record[3:])
+        if b"R" in status or b"C" in status:
+            if index >= len(records) or not records[index]:
+                if required:
+                    raise LedgerError(
+                        "Git status returned an incomplete rename/copy record.",
+                        ERROR_GIT_COMMAND_FAILED,
+                    )
+            else:
+                index += 1
+        if raw == ".context-ledger/.write.lock":
             continue
         if raw:
-            paths.append(raw.replace("\\", "/"))
+            paths.append(raw)
     return sorted(dict.fromkeys(paths))
 
 
@@ -1336,6 +1436,86 @@ def resolve_verification_preset(
     )
 
 
+def verification_preset_digest(preset: dict[str, object]) -> str:
+    canonical = json.dumps(
+        preset,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(canonical).hexdigest()
+
+
+def preset_trust_path(repo: Path) -> Path:
+    if is_git_repo(repo):
+        raw = git_output(repo, "rev-parse", "--git-common-dir", required=True)
+        common = Path(raw)
+        common = common.resolve() if common.is_absolute() else (repo / common).resolve()
+        return common / "repo-context-ledger" / "preset-trust.json"
+    return safe_repo_path(repo, ".context-ledger/preset-trust.json", "preset trust")
+
+
+def load_preset_trust(repo: Path) -> dict[str, object]:
+    path = preset_trust_path(repo)
+    if not path.exists():
+        return {"schema_version": PRESET_TRUST_SCHEMA, "principals": {}}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise LedgerError("Private preset trust state is unreadable; no preset was executed.") from exc
+    if not isinstance(raw, dict) or raw.get("schema_version") != PRESET_TRUST_SCHEMA:
+        raise LedgerError("Private preset trust state has an unsupported schema; no preset was executed.")
+    principals = raw.get("principals")
+    if not isinstance(principals, dict):
+        raise LedgerError("Private preset trust state is invalid; no preset was executed.")
+    return raw
+
+
+def save_preset_trust(repo: Path, trust: dict[str, object]) -> None:
+    path = preset_trust_path(repo)
+    atomic_write(path, json.dumps(trust, indent=2, ensure_ascii=False) + "\n")
+    if os.name != "nt":
+        os.chmod(path, 0o600)
+
+
+def require_verification_preset_trust(
+    repo: Path,
+    name: str,
+    preset: dict[str, object],
+    supplied_digest: str = "",
+) -> str:
+    digest = verification_preset_digest(preset)
+    principal = current_principal(repo)
+    trust = load_preset_trust(repo)
+    principals = trust["principals"]
+    assert isinstance(principals, dict)
+    existing = principals.get(principal, {})
+    if isinstance(existing, dict) and existing.get(name) == digest:
+        if supplied_digest and supplied_digest != digest:
+            raise LedgerError(
+                f"Preset trust digest does not match {name}; expected {digest}.",
+                ERROR_PRESET_TRUST_REQUIRED,
+            )
+        return digest
+    if supplied_digest != digest:
+        raise LedgerError(
+            f"Verification preset {name} is not trusted for the current principal. "
+            f"Review config.verification.presets.{name}, then repeat with "
+            f"--trust-digest {digest}.",
+            ERROR_PRESET_TRUST_REQUIRED,
+        )
+    with repo_lock(repo, WRITE_LOCK_WAIT_SECONDS):
+        trust = load_preset_trust(repo)
+        principals = trust["principals"]
+        assert isinstance(principals, dict)
+        principal_trust = principals.setdefault(principal, {})
+        if not isinstance(principal_trust, dict):
+            raise LedgerError("Private preset trust state is invalid; no preset was executed.")
+        principal_trust[name] = digest
+        save_preset_trust(repo, trust)
+    return digest
+
+
 def validate_config(repo: Path, config: dict) -> dict:
     if not isinstance(config, dict):
         raise LedgerError("Ledger configuration must be a JSON object.")
@@ -1549,15 +1729,15 @@ def managed_rules(config: dict) -> str:
     specs = config["docs"]["specs"]
     return f"""## Repository context ledger
 
-Choose the shortest applicable path. Read-only work uses `context` only when routing is needed and never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config>`. A single-session small fix with an already known code path uses `status` → `start` → implement → independent parallel `verify` commands → `finish`; prefer an exact reviewed `verify --preset <name>` when configured, and otherwise pass direct executable arguments; skip context/focus and a separate evidence command unless the task expands or becomes uncertain. Ordinary behavior changes use the lifecycle below.
+Start a new request or fresh window with `plan --query "<user request>" --tool <agent>`. Follow its `readonly`, `small-fix`, `ordinary-change`, or `resume` mode and structured `next_action`; clarify instead of acting when `requires_confirmation` is true. Read-only work never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --workflow small-fix --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config>`. A single-session small fix with an already known code path uses `status` → `start --workflow small-fix` → implement → independent parallel `verify` commands → `finish`; prefer an exact reviewed `verify --preset <name>` when configured. On first use or after the preset changes, inspect it and repeat with the exact printed `--trust-digest`; otherwise pass direct executable arguments; skip context/focus and a separate evidence command unless the task expands or becomes uncertain. Ordinary behavior changes use the lifecycle below.
 
 For every feature, bug fix, refactor, interface change, or other ordinary behavior-changing code task:
 
-1. Before editing code, run `status`, then start or reuse only this task's private draft session. Keep the returned session ID and pass `--session <id>` whenever multiple sessions exist.
+1. Before editing code, run `plan`, then `status`; start or reuse only this task's private draft session. Keep the returned session ID and pass `--session <id>` whenever multiple sessions exist. `start --workflow readonly|resume` must fail rather than create duplicate work.
 2. Resolve `quality.language`; when it is `auto`, follow nearby docs or the user's language. Keep paths, symbols, commands, and error text untranslated.
 3. For medium/large or uncertain work, {context_plan_policy()} Focus the selected feature Context Pack before broad code exploration. If no Pack exists, create and fill one. Skip routing only for a genuinely small fix whose code path and behavior boundary are already established.
 4. {resume_plan_policy()} Run `checkpoint --session <id> --summary "..." --next "..."` before handing active work to another Agent. Pause only this task's session; never pause, resume, or finish another task's session.
-5. After code is stable, run independent checks concurrently. Prefer a reviewed `.context-ledger/config.json` verification preset that exactly matches the claimed check: `python .context-ledger/ledger.py verify --preset <name>`. Presets are explicit argv arrays and are never auto-run. Otherwise use `verify -- <direct executable and arguments>`; do not nest PowerShell or shell command strings. While checks run, refresh the Pack and spec when those edits do not share mutable test resources. Wait for every verification to record before `finish`; never hand-edit the private draft while verification appends to it. Keep checks serial when they share a database, port, generated directory, or mutable fixture. Use `verify --not-run --reason \"...\"` only when verification is genuinely unavailable.
+5. After code is stable, run independent checks concurrently. Prefer a reviewed `.context-ledger/config.json` verification preset that exactly matches the claimed check: `python .context-ledger/ledger.py verify --preset <name>`. Presets are explicit argv arrays and are never auto-run. If the runtime reports `PRESET_TRUST_REQUIRED`, inspect the exact Git-tracked preset and repeat with its printed `--trust-digest`; never trust a digest without reviewing the command. Otherwise use `verify -- <direct executable and arguments>`; do not nest PowerShell or shell command strings. While checks run, refresh the Pack and spec when those edits do not share mutable test resources. Wait for every verification to record before `finish`; never hand-edit the private draft while verification appends to it. Keep checks serial when they share a database, port, generated directory, or mutable fixture. Use `verify --not-run --reason \"...\"` only when verification is genuinely unavailable.
 6. Let `finish` capture evidence for a single-session small fix. Run explicit `evidence --path` only when another session exists or automatic collection is too broad; never capture foreign dirty paths.
 7. Update `{specs}/` and refresh affected Context Packs when current behavior, contracts, boundaries, code navigation, or tracked production paths change.
 8. Finish with `finish --spec <affected-spec>`, or use `--no-spec --reason \"...\"` only when no stable behavior exists.
@@ -2009,6 +2189,7 @@ def start_change(
     language: str = "",
     tool: str = "",
     kind: str = "change",
+    workflow: str = "ordinary-change",
 ) -> int:
     title = title.strip()
     if not title or len(title) > 160 or "\n" in title or "\r" in title:
@@ -2018,6 +2199,14 @@ def start_change(
     if kind not in {"change", "local-config"}:
         print("Task kind must be change or local-config.", file=sys.stderr)
         return 2
+    if workflow in {"readonly", "resume"}:
+        print(f"Workflow {workflow} cannot start a new task session.", file=sys.stderr)
+        return 2
+    if workflow not in {"small-fix", "ordinary-change"}:
+        print("Start workflow must be small-fix or ordinary-change.", file=sys.stderr)
+        return 2
+    if kind == "local-config":
+        workflow = "small-fix"
     feature = feature_slug(feature or title)
     stamp = now()
     handoff_id = unique_handoff_id(repo, stamp)
@@ -2073,6 +2262,7 @@ def start_change(
     remember_feature(state, feature)
     save_context_state(repo, state)
     print(f"Session: {handoff_id}")
+    print(f"Workflow: {workflow}")
     print("Continuation epoch: 1")
     print(f"Publish target: {rel_posix(publish_path, repo)}")
     return 0
@@ -2723,8 +2913,8 @@ def context_baseline(repo: Path, raw_ref: str) -> tuple[dict[str, object], set[s
             "truncated": False,
             "warnings": ["baseline merge base could not be resolved; route selection excludes PR-delta boosting"],
         }, set()
-    changed = set(git_changed_paths(repo, f"{merge_base}..HEAD"))
-    changed.update(git_dirty_paths(repo))
+    changed = set(git_changed_paths(repo, f"{merge_base}..HEAD", required=False))
+    changed.update(git_dirty_paths(repo, required=False))
     changed = {normalize_git_path(path) for path in changed if path}
     return {
         "status": "resolved",
@@ -3189,6 +3379,162 @@ def route_resume_sessions(
     }, selected
 
 
+def build_workflow_plan(
+    repo: Path,
+    query: str,
+    intent: str,
+    resume_route: dict[str, object],
+    feature: str = "",
+) -> dict[str, object]:
+    requested = intent or "auto"
+    if requested not in {"auto", "readonly", "small-fix", "ordinary-change", "resume"}:
+        raise LedgerError("Workflow intent must be auto, readonly, small-fix, ordinary-change, or resume.")
+    lowered = query.casefold().strip()
+    tokens = set(query_tokens(query))
+    change_signal = bool(re.search(
+        r"\b(add|change|create|fix|implement|remove|rename|repair|update)\b|"
+        r"新增|修改|创建|修复|实现|删除|重命名|更新|优化",
+        lowered,
+    ))
+    readonly_signal = bool(re.search(
+        r"\b(analy[sz]e|audit|explain|how|inspect|read|review|show|status|understand|what|why)\b|"
+        r"分析|审查|解释|如何|看看|查看|状态|了解|是什么|为什么",
+        lowered,
+    )) or lowered.endswith(("?", "？"))
+    small_signal = bool(re.search(
+        r"\b(minor|one|single|small|tiny|typo)\b|小修|很小|一个|错别字|拼写",
+        lowered,
+    ))
+    capsule = resume_route.get("capsule")
+    blocked_resume = resume_route.get("mode") == "blocked"
+    resume_signal = bool(tokens.intersection(RESUME_INTENT_TOKENS))
+    reasons: list[str] = []
+    requires_confirmation = False
+    confidence = "medium"
+
+    if requested == "resume" or (
+        requested == "auto" and isinstance(capsule, dict) and (resume_signal or capsule)
+    ):
+        mode = "resume"
+        if isinstance(capsule, dict):
+            confidence = "high"
+            reasons.append("one accessible task session matches the query")
+        elif blocked_resume:
+            confidence = "low"
+            requires_confirmation = True
+            reasons.append("multiple accessible task sessions match the query")
+        else:
+            confidence = "low"
+            requires_confirmation = True
+            reasons.append("no accessible task session can be selected safely")
+    elif requested != "auto":
+        mode = requested
+        confidence = "high"
+        reasons.append(f"the caller explicitly selected {requested}")
+    elif change_signal and small_signal:
+        mode = "small-fix"
+        reasons.extend(["the request asks for a change", "the request explicitly bounds it as small"])
+    elif change_signal:
+        mode = "ordinary-change"
+        reasons.append("the request asks to change observable repository behavior")
+    elif readonly_signal:
+        mode = "readonly"
+        reasons.append("the request asks to inspect or explain without an explicit change")
+    else:
+        mode = "readonly"
+        confidence = "low"
+        requires_confirmation = True
+        reasons.append("the query contains no reliable change or resume signal")
+
+    session_id = str(capsule.get("session_id", "")) if isinstance(capsule, dict) else ""
+    if requires_confirmation:
+        next_action = {
+            "kind": "clarify",
+            "argv": [],
+            "description": "Confirm the intended workflow or select an explicit task session.",
+        }
+    elif mode == "resume":
+        next_action = {
+            "kind": "resume",
+            "argv": ["resume", "--session", session_id],
+            "description": "Resume the selected private task and keep the returned continuation epoch.",
+        }
+    elif mode == "readonly":
+        next_action = {
+            "kind": "focus" if feature else "context",
+            "argv": (["focus", "--feature", feature] if feature else ["context", "--query", query]),
+            "description": "Load only the bounded read-only route; do not create a task session.",
+        }
+    else:
+        title = query.strip()[:160] or ("Small repository fix" if mode == "small-fix" else "Repository change")
+        argv = ["start", "--title", title, "--workflow", mode]
+        if feature:
+            argv.extend(["--feature", feature])
+        next_action = {
+            "kind": "start",
+            "argv": argv,
+            "description": "Create one private task session after accepting the routed feature boundary.",
+        }
+    return {
+        "schema": WORKFLOW_PLAN_SCHEMA,
+        "tool_version": TOOL_VERSION,
+        "query": query,
+        "requested_intent": requested,
+        "mode": mode,
+        "confidence": confidence,
+        "requires_confirmation": requires_confirmation,
+        "reasons": reasons,
+        "feature": feature,
+        "session_id": session_id,
+        "next_action": next_action,
+        "safety": {
+            "mutates_repository": False,
+            "foreign_private_state_loaded": False,
+            "code_reading_is_bounded_initially_not_capped": True,
+        },
+    }
+
+def workflow_plan_command(
+    repo: Path,
+    query: str,
+    intent: str,
+    output_format: str,
+    tool: str = "",
+    baseline_ref: str = "",
+) -> int:
+    captured = io.StringIO()
+    with redirect_stdout(captured):
+        context_search(
+            repo,
+            query,
+            1,
+            "json",
+            tool,
+            baseline_ref,
+            intent,
+        )
+    try:
+        bundle = json.loads(captured.getvalue())
+        workflow = bundle["workflow"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise LedgerError("Workflow Plan could not be produced from the context preflight.") from exc
+    if output_format == "json":
+        print(json.dumps(workflow, indent=2, ensure_ascii=True))
+        return EXIT_SUCCESS
+    print(f"Workflow Plan: {workflow['schema']}")
+    print(f"Mode: {workflow['mode']}")
+    print(f"Confidence: {workflow['confidence']}")
+    print(f"Requires confirmation: {'yes' if workflow['requires_confirmation'] else 'no'}")
+    print("Reasons:")
+    for reason in workflow["reasons"]:
+        print(f"- {reason}")
+    action = workflow["next_action"]
+    print(f"Next action: {action['kind']}")
+    print(f"Arguments: {json.dumps(action['argv'], ensure_ascii=False)}")
+    print(f"Guidance: {action['description']}")
+    return EXIT_SUCCESS
+
+
 def context_search(
     repo: Path,
     query: str,
@@ -3196,6 +3542,7 @@ def context_search(
     output_format: str = "text",
     tool: str = "",
     baseline_ref: str = "",
+    intent: str = "auto",
 ) -> int:
     started = time.perf_counter()
     config = load_config(repo)
@@ -3258,6 +3605,7 @@ def context_search(
         best_score, primary, reasons = 0, None, ["private checkpoint without current Pack"]
     else:
         if output_format == "json":
+            workflow = build_workflow_plan(repo, query, intent, resume_route)
             print(json.dumps({
                 "schema": CONTEXT_BUNDLE_SCHEMA,
                 "tool_version": TOOL_VERSION,
@@ -3268,6 +3616,7 @@ def context_search(
                     "message": "No matching Git-tracked Context Pack was found.",
                 },
                 "required_reads": [],
+                "workflow": workflow,
                 "warnings": ([
                     "a matching private task belongs to another principal"
                 ] if resume_route["foreign_overlap"] else []),
@@ -3373,6 +3722,7 @@ def context_search(
             ),
         },
         "resume": resume_route,
+        "workflow": build_workflow_plan(repo, query, intent, resume_route, feature),
         "baseline": baseline,
         "required_reads": [
             {"kind": kind, "path": path, "characters": characters}
@@ -3428,6 +3778,12 @@ def context_search(
     print(f"Score: {best_score}")
     print(f"Fingerprints: {plan['selection']['fingerprints']}")
     print(f"Resume mode: {resume_route['mode']}")
+    workflow = plan["workflow"]
+    print(
+        f"Workflow: {workflow['mode']} "
+        f"(confidence={workflow['confidence']}; confirmation={'yes' if workflow['requires_confirmation'] else 'no'})"
+    )
+    print(f"Workflow next action: {workflow['next_action']['kind']}")
     capsule = resume_route.get("capsule")
     if isinstance(capsule, dict):
         print(f"Resume session: {capsule['session_id']} ({capsule['status']}; epoch={capsule['resume_epoch']})")
@@ -3488,6 +3844,8 @@ def context_search(
         for score, pack, why in near:
             print(f"- {pack['rel']} score={score} why={', '.join(why) or 'token overlap'}")
     return 0
+
+
 
 
 def context_pack_path(repo: Path, config: dict, feature: str) -> Path:
@@ -3976,11 +4334,118 @@ def doctor_legacy_workflow_findings(repo: Path, max_items: int) -> list[dict[str
     )]
 
 
+def lock_process_status(pid: int) -> str:
+    if pid <= 0:
+        return "unknown"
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            process_query_limited_information = 0x1000
+            still_active = 259
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            kernel32.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+            kernel32.GetExitCodeProcess.restype = ctypes.c_int
+            kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+            kernel32.CloseHandle.restype = ctypes.c_int
+            handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+            if not handle:
+                error = ctypes.get_last_error()
+                return "live" if error == 5 else "stale" if error in {87, 1168} else "unknown"
+            try:
+                exit_code = ctypes.c_ulong()
+                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                    return "unknown"
+                return "live" if exit_code.value == still_active else "stale"
+            finally:
+                kernel32.CloseHandle(handle)
+        except (AttributeError, OSError, ValueError):
+            return "unknown"
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return "stale"
+    except PermissionError:
+        return "live"
+    except (OSError, OverflowError):
+        return "stale" if pid > 2_147_483_647 else "unknown"
+    return "live"
+
+
+def doctor_lock_findings(repo: Path, max_items: int) -> list[dict[str, object]]:
+    lock = safe_repo_path(repo, ".context-ledger/.write.lock", "repository write lock")
+    if not lock.exists() and not lock.is_symlink():
+        return [doctor_finding("WRITE_LOCK", "pass", "write-lock", "No repository write lock is present.")]
+    if lock.is_symlink() or not lock.is_file():
+        return [doctor_finding(
+            "WRITE_LOCK_UNSAFE", "error", "write-lock",
+            "The repository write-lock path is not a regular file.",
+            actions=["Inspect and remove the unsafe lock path manually; the runtime will not follow it."],
+        )]
+    try:
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(lock, flags)
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            os.close(descriptor)
+            raise OSError("write lock is not a regular file")
+        with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+            text = handle.read(2049)
+        if len(text) > 2048:
+            raise OSError("write-lock metadata exceeds the diagnostic limit")
+        text = text.strip()
+    except (OSError, UnicodeError):
+        return [doctor_finding(
+            "WRITE_LOCK_UNREADABLE", "repairable", "write-lock",
+            "The repository write lock cannot be read safely.",
+            actions=["Confirm no Ledger process is writing, then remove only .context-ledger/.write.lock."],
+        )]
+    fields = dict(re.findall(r"(?:^|\s)([a-z_]+)=([^\s]+)", text))
+    try:
+        pid = int(fields.get("pid", ""))
+    except ValueError:
+        pid = 0
+    required = {"version", "pid", "started", "command", "nonce"}
+    if fields.get("version") != "1" or not required.issubset(fields) or pid <= 0:
+        return [doctor_finding(
+            "WRITE_LOCK_INVALID", "repairable", "write-lock",
+            "The repository write lock has invalid or legacy metadata.",
+            actions=["Confirm no Ledger process is writing, then remove only .context-ledger/.write.lock."],
+        )]
+    status = lock_process_status(pid)
+    item = f"pid={pid} command={fields['command']} started={fields['started']}"
+    if status == "live":
+        return [doctor_finding(
+            "WRITE_LOCK_ACTIVE", "warning", "write-lock",
+            "A live Repo Context Ledger writer owns the repository lock.",
+            items=[item], max_items=max_items,
+            actions=["Wait for the owning command to finish; do not remove its lock."],
+        )]
+    if status == "stale":
+        return [doctor_finding(
+            "WRITE_LOCK_STALE", "repairable", "write-lock",
+            "The repository write lock belongs to a process that is no longer running.",
+            items=[item], max_items=max_items,
+            actions=["Confirm the recorded process is gone, then remove only .context-ledger/.write.lock."],
+        )]
+    return [doctor_finding(
+        "WRITE_LOCK_UNKNOWN", "warning", "write-lock",
+        "The repository write-lock owner could not be proven live or stale.",
+        items=[item], max_items=max_items,
+        actions=["Inspect the recorded process before taking any lock recovery action."],
+    )]
+
+
 def doctor_repo(repo: Path, output_format: str = "text", max_items: int = 20) -> int:
     """Run bounded, deterministic, read-only repository health diagnostics."""
     if not 1 <= max_items <= 100:
         raise LedgerError("doctor --max-items must be between 1 and 100.", ERROR_INVALID_ARGUMENT)
     findings: list[dict[str, object]] = []
+    findings.extend(doctor_lock_findings(repo, max_items))
     try:
         config = load_config(repo)
     except LedgerError as exc:
@@ -4042,7 +4507,10 @@ def doctor_repo(repo: Path, output_format: str = "text", max_items: int = 20) ->
             else:
                 findings.append(doctor_finding("MANIFEST", "pass", "manifest", "Context Manifest is current."))
         else:
-            dirty_derived = [raw for raw in git_dirty_paths(repo) if is_generated_index(config, raw)]
+            dirty_derived = [
+                raw for raw in git_dirty_paths(repo, required=False)
+                if is_generated_index(config, raw)
+            ]
             if dirty_derived:
                 findings.append(doctor_finding(
                     "DERIVED_BRANCH_DIRTY", "warning", "derived-files",
@@ -4431,6 +4899,7 @@ def resume_change(
         remember_feature(state, str(new_record["feature"]))
         save_context_state(repo, state)
         print(f"Forked session {session_id} -> {new_id}")
+        print("Workflow: resume")
         print("Continuation epoch: 1")
         print(f"Continuation tool: {normalize_tool_id(tool)}")
         print(f"Private draft: {session_draft_ref(repo, new_draft)}")
@@ -4463,6 +4932,7 @@ def resume_change(
     remember_feature(state, feature)
     save_context_state(repo, state)
     print(f"Continued session {session_id}")
+    print("Workflow: resume")
     print(f"Continuation epoch: {next_epoch}")
     print(f"Continuation tool: {normalize_tool_id(tool)}")
     print(f"Resume summary: {field_value(text, 'Resume summary') or 'none'}")
@@ -5416,9 +5886,19 @@ def local_links(path: Path) -> list[str]:
     return re.findall(r"(?<!!)\[[^\]]*\]\(([^)]+)\)", text)
 
 
-def git_changed_paths(repo: Path, *args: str) -> set[str]:
-    output = git_output(repo, "diff", "--name-only", "--diff-filter=ACMRD", *args)
-    return {line.strip().replace("\\", "/") for line in output.splitlines() if line.strip()}
+def git_changed_paths(repo: Path, *args: str, required: bool = True) -> set[str]:
+    if not git_repository_detected(repo, required=required):
+        return set()
+    result = run_git(repo, "diff", "--name-only", "-z", "--diff-filter=ACMRD", *args)
+    if result.returncode != 0:
+        if required:
+            raise git_command_error(repo, result)
+        return set()
+    return {
+        decode_git_path(raw)
+        for raw in result.stdout.split(b"\0")
+        if raw
+    }
 
 
 def handoff_evidence_paths(
@@ -6274,6 +6754,8 @@ def check_repo(
                 repo, config, strict, coverage, coverage_base, changed_since
             )
         except LedgerError as exc:
+            if exc.code == ERROR_GIT_COMMAND_FAILED:
+                raise
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
     specs_root = safe_repo_path(repo, config["docs"]["specs"], "config.docs.specs")
@@ -6606,6 +7088,12 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--language", choices=("auto", "en", "zh-CN"), default="")
     start.add_argument("--tool", default="", help="Calling Agent tool ID for continuation audit")
     start.add_argument(
+        "--workflow",
+        choices=("readonly", "small-fix", "ordinary-change", "resume"),
+        default="ordinary-change",
+        help="Accepted workflow-plan mode; readonly and resume cannot create a new session",
+    )
+    start.add_argument(
         "--kind",
         choices=("change", "local-config"),
         default="change",
@@ -6617,10 +7105,26 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("--format", choices=("text", "json"), default="text")
     context.add_argument("--tool", default="", help="Calling Agent tool ID for the Context Bundle")
     context.add_argument(
+        "--intent",
+        choices=("auto", "readonly", "small-fix", "ordinary-change", "resume"),
+        default="auto",
+        help="Explicit workflow intent; auto uses deterministic request signals",
+    )
+    context.add_argument(
         "--baseline",
         default="",
         help="Optional Git ref whose merge-base delta should guide Pack selection",
     )
+    plan = sub.add_parser("plan", help="Classify the task and return one safe next action")
+    plan.add_argument("--query", required=True)
+    plan.add_argument(
+        "--intent",
+        choices=("auto", "readonly", "small-fix", "ordinary-change", "resume"),
+        default="auto",
+    )
+    plan.add_argument("--format", choices=("text", "json"), default="text")
+    plan.add_argument("--tool", default="", help="Calling Agent tool ID")
+    plan.add_argument("--baseline", default="", help="Optional Git ref for PR-delta routing")
     pack = sub.add_parser("pack", help="Create or refresh a feature Context Pack")
     pack.add_argument("--feature", required=True)
     pack.add_argument("--title", default="")
@@ -6695,6 +7199,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Execute a reviewed argv-array preset from config.verification.presets",
     )
+    verify.add_argument(
+        "--trust-digest",
+        default="",
+        help="After reviewing a preset, trust its exact sha256 digest for this local principal",
+    )
     verify.add_argument("verification_command", nargs=argparse.REMAINDER)
     sync = sub.add_parser("sync", help="Regenerate indexes and managed README blocks")
     sync.add_argument(
@@ -6752,7 +7261,7 @@ def requested_json_command(argv: list[str]) -> str:
         if raw.startswith("-"):
             index += 1
             continue
-        return raw if raw in {"context", "doctor", "status", "check"} else ""
+        return raw if raw in {"plan", "context", "doctor", "status", "check"} else ""
     return ""
 
 
@@ -6772,7 +7281,27 @@ def emit_requested_json_error(argv: list[str], repo: Path, exc: LedgerError) -> 
     if not command:
         return False
     message = redact_local_paths(str(exc), repo)
-    if command == "context":
+    if command == "plan":
+        report = {
+            "schema": WORKFLOW_PLAN_SCHEMA,
+            "tool_version": TOOL_VERSION,
+            "query": argument_value(argv, "--query"),
+            "requested_intent": argument_value(argv, "--intent") or "auto",
+            "mode": "readonly",
+            "confidence": "low",
+            "requires_confirmation": True,
+            "reasons": [message],
+            "feature": "",
+            "session_id": "",
+            "next_action": {"kind": "clarify", "argv": [], "description": message},
+            "safety": {
+                "mutates_repository": False,
+                "foreign_private_state_loaded": False,
+                "code_reading_is_bounded_initially_not_capped": True,
+            },
+            "error": {"code": exc.code, "message": message},
+        }
+    elif command == "context":
         report = {
             "schema": CONTEXT_BUNDLE_SCHEMA,
             "tool_version": TOOL_VERSION,
@@ -6848,7 +7377,8 @@ def run_main(argv: list[str] | None = None) -> int:
                     return init_repo(repo, args.dry_run)
                 if args.command == "start":
                     return start_change(
-                        repo, args.title, args.feature, args.language, args.tool, args.kind
+                        repo, args.title, args.feature, args.language, args.tool, args.kind,
+                        args.workflow,
                     )
                 if args.command == "pack":
                     return refresh_context_pack(
@@ -6897,6 +7427,11 @@ def run_main(argv: list[str] | None = None) -> int:
                 args.format,
                 args.tool,
                 args.baseline,
+                args.intent,
+            )
+        if args.command == "plan":
+            return workflow_plan_command(
+                repo, args.query, args.intent, args.format, args.tool, args.baseline
             )
         if args.command == "init":
             return init_repo(repo, args.dry_run)
@@ -6908,13 +7443,22 @@ def run_main(argv: list[str] | None = None) -> int:
             if args.preset and command:
                 print("Use either --preset or a command after --, not both.", file=sys.stderr)
                 return 2
+            if args.trust_digest and not args.preset:
+                print("--trust-digest requires --preset.", file=sys.stderr)
+                return 2
             timeout = args.timeout if args.timeout is not None else DEFAULT_VERIFICATION_TIMEOUT
             sensitive = args.sensitive
             working_directory = repo
             if args.preset:
-                command, working_directory, preset_timeout, preset_sensitive = (
-                    resolve_verification_preset(repo, load_config(repo), args.preset)
+                config = load_config(repo)
+                preset = config.get("verification", {}).get("presets", {}).get(args.preset)
+                if not isinstance(preset, dict):
+                    available = ", ".join(sorted(config.get("verification", {}).get("presets", {}))) or "none configured"
+                    raise LedgerError(f"Unknown verification preset: {args.preset}. Available: {available}.")
+                command, working_directory, preset_timeout, preset_sensitive = resolve_verification_preset(
+                    repo, config, args.preset
                 )
+                require_verification_preset_trust(repo, args.preset, preset, args.trust_digest)
                 if args.timeout is None:
                     timeout = preset_timeout
                 sensitive = sensitive or preset_sensitive

@@ -6,10 +6,10 @@ Aliases: 跨窗口续接 | cross-agent continuation | resume capsule
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 45055d81262efa4ef1ec627ac22e578fb1be61d3
+Source commit: 2c5ea2f81b7b8f8939ad274f44094a6b937faca5
 Base branch: main
-Base commit: 45055d81262efa4ef1ec627ac22e578fb1be61d3
-Last refreshed: 2026-08-27T08:05:54+08:00
+Base commit: 0d7e1f289e726edc4ae2b621361f89c621de5623
+Last refreshed: 2026-08-27T19:05:01+08:00
 
 ## Purpose
 
@@ -50,10 +50,10 @@ Run `python scripts/evaluate_continuation.py --format json` for the synthetic se
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:8dbccc54b87e0dfd05f93edadc3f716ac4873450d1e240801ebfa2101f1ca9f5`
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:bdfac50c0e0f2aa013c6f73e1ca259921559e999e715924994411dc9fad855c4`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:6552c343fb986f841042fae89716668ad7612165eaf594b7bb6f0bd8022e57aa`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:e4b8e16789bce7ba8e405f0069f0372dd0ff25fcbfd9dc805cb460b0fbe5a62a`
 - `skills/repo-context-ledger/assets/context-pack-template.md` — `sha256:b5f282aa01d34cbd59a085e8844e1b997f202b01ba64cbb69638bfca9a410dfa`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:3b1e2c2b42ff57f3b9828d6f86394c47f9d0e0ae1f0a739750e565120027e101`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:c49a692005ff85c62c4fc3ebb5617af4725c55bba3857a3413b5c4d8bba4e12a`
 - `scripts/evaluate_continuation.py` — `sha256:8e105e174ef7c4560ed5c1e34b7420f4db568d54661eb0c1b38a272c0a62ed63`
 - `tests/test_continuation_evaluation.py` — `sha256:c4f76cdbefcacda985b35eb860cdeda9a48123f800a31e75c3d7f9ce0801f141`
 - `tests/fixtures/continuation-eval-v1.json` — `sha256:665ce216ccd359416d8f8a8748a89613700ad6047e599f760ec7a681a9efb4d7`

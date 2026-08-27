@@ -1,0 +1,52 @@
+@contextmanager
+def repo_lock(repo: Path, wait_seconds: float = 0.0):
+    lock_dir = safe_repo_path(repo, ".context-ledger", "ledger runtime directory")
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / ".write.lock"
+    wait_started = time.perf_counter()
+    deadline = wait_started + max(0.0, wait_seconds)
+    nonce = uuid.uuid4().hex
+    command = "unknown"
+    if _COMMAND_TIMINGS:
+        command = str(_COMMAND_TIMINGS.get("command", "unknown"))
+    command = re.sub(r"[^a-z0-9._-]+", "-", command.casefold()).strip("-") or "unknown"
+    owner_identity: tuple[int, int] | None = None
+    while True:
+        try:
+            flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            descriptor = os.open(lock_path, flags, 0o600)
+            opened = os.fstat(descriptor)
+            owner_identity = (opened.st_dev, opened.st_ino)
+            break
+        except FileExistsError as exc:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                add_command_timing("lock_wait_ms", (time.perf_counter() - wait_started) * 1000)
+                raise LedgerError(
+                    "Another Repo Context Ledger write lock exists. Run doctor to distinguish "
+                    "a live writer from a stale or unsafe lock before taking recovery action."
+                ) from exc
+            time.sleep(min(0.025, remaining))
+    add_command_timing("lock_wait_ms", (time.perf_counter() - wait_started) * 1000)
+    hold_started = time.perf_counter()
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(
+                f"version=1 pid={os.getpid()} started={now().isoformat(timespec='seconds')} "
+                f"command={command} nonce={nonce}\n"
+            )
+            handle.flush()
+            os.fsync(handle.fileno())
+        yield
+    finally:
+        add_command_timing("lock_hold_ms", (time.perf_counter() - hold_started) * 1000)
+        try:
+            current_stat = lock_path.lstat()
+            same_identity = owner_identity == (current_stat.st_dev, current_stat.st_ino)
+            current = lock_path.read_text(encoding="utf-8") if same_identity else ""
+            if same_identity and f"nonce={nonce}" in current.split():
+                lock_path.unlink()
+        except (FileNotFoundError, OSError, UnicodeError):
+            pass

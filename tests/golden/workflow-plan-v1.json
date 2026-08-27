@@ -1,0 +1,19 @@
+{
+  "schema": "workflow-plan-v1",
+  "modes": ["readonly", "small-fix", "ordinary-change", "resume"],
+  "required_fields": [
+    "schema",
+    "tool_version",
+    "query",
+    "requested_intent",
+    "mode",
+    "confidence",
+    "requires_confirmation",
+    "reasons",
+    "feature",
+    "session_id",
+    "next_action",
+    "safety"
+  ],
+  "next_action_fields": ["kind", "argv", "description"]
+}

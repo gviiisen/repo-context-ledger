@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "skills" / "repo-context-ledger" / "scripts" / "ledger.py"
 GOLDEN = ROOT / "tests" / "golden" / "v0.6.2-cli-contract.json"
+WORKFLOW_GOLDEN = ROOT / "tests" / "golden" / "workflow-plan-v1.json"
 SPEC = importlib.util.spec_from_file_location("repo_context_ledger_stable_runtime", LEDGER)
 RUNTIME = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNTIME)
@@ -109,6 +110,43 @@ class ContractStabilityTests(unittest.TestCase):
                 self.assertTrue(set(golden["required_fields"][schema]).issubset(report), schema)
             self.assertEqual("CONTEXT_NO_MATCH", reports["context-bundle-v1"]["error"]["code"])
 
+    def test_workflow_plan_contract_is_versioned_and_read_only(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_repo(repo)
+            before = subprocess.run(
+                ["git", "-C", str(repo), "status", "--porcelain=v1"],
+                text=True,
+                capture_output=True,
+                encoding="utf-8",
+                check=True,
+            ).stdout
+            report = json.loads(
+                self.run_ledger(
+                    repo,
+                    "plan",
+                    "--query",
+                    "explain the retry boundary",
+                    "--format",
+                    "json",
+                ).stdout
+            )
+            golden = json.loads(WORKFLOW_GOLDEN.read_text(encoding="utf-8"))
+            self.assertEqual(golden["schema"], report["schema"])
+            self.assertIn(report["mode"], golden["modes"])
+            self.assertTrue(set(golden["required_fields"]).issubset(report))
+            self.assertTrue(
+                set(golden["next_action_fields"]).issubset(report["next_action"])
+            )
+            after = subprocess.run(
+                ["git", "-C", str(repo), "status", "--porcelain=v1"],
+                text=True,
+                capture_output=True,
+                encoding="utf-8",
+                check=True,
+            ).stdout
+            self.assertEqual(before, after)
+
     def test_doctor_failed_error_code_matches_the_golden_contract(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw) / "repo"
@@ -199,6 +237,15 @@ class ContractStabilityTests(unittest.TestCase):
             self.assertEqual("UNSUPPORTED_SCHEMA", context_report["error"]["code"])
             self.assertNotIn(str(repo), context.stdout)
             self.assertEqual("", context.stderr)
+
+            plan = self.run_ledger(
+                repo, "plan", "--query", "feature", "--format", "json", expected=2
+            )
+            plan_report = json.loads(plan.stdout)
+            self.assertEqual("workflow-plan-v1", plan_report["schema"])
+            self.assertEqual("UNSUPPORTED_SCHEMA", plan_report["error"]["code"])
+            self.assertNotIn(str(repo), plan.stdout)
+            self.assertEqual("", plan.stderr)
 
     def test_future_private_state_schema_returns_stable_json_error(self):
         with tempfile.TemporaryDirectory() as raw:

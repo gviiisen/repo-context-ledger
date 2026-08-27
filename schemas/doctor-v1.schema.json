@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gviiisen/repo-context-ledger/schemas/doctor-v1.schema.json",
+  "title": "doctor-v1",
+  "type": "object",
+  "required": ["schema", "tool_version", "ok", "error_code", "summary", "findings"],
+  "properties": {
+    "schema": {"type": "string", "const": "doctor-v1"},
+    "tool_version": {"type": "string"},
+    "ok": {"type": "boolean"},
+    "error_code": {"type": "string"},
+    "repository": {"type": "object"},
+    "summary": {"type": "object"},
+    "findings": {"type": "array"}
+  },
+  "additionalProperties": true
+}

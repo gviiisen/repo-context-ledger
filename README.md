@@ -20,6 +20,8 @@ npx skills@latest add gviiisen/repo-context-ledger --skill repo-context-ledger
 
 You make ordinary coding requests. The AI owns the documentation lifecycle.
 
+Before any lifecycle command, the Agent can ask the read-only Workflow Plan whether the request is understanding work, a small fix, an ordinary change, or a continuation. The plan reuses the bounded context router, explains its decision, and asks for clarification instead of guessing when intent is ambiguous.
+
 ## Why it exists
 
 AI coding sessions often start without the context accumulated in earlier windows. The next agent must read a large part of the codebase again, and implementation details or important boundaries can be lost between sessions.
@@ -131,13 +133,14 @@ Make the same request you would make without this skill:
 
 You do **not** need to run `ctx begin`, name a handoff, or remember lifecycle commands. The agent should autonomously:
 
-1. retrieve the relevant repository and feature context;
-2. start a change handoff before implementation;
-3. update code and execute claimed checks through the verification recorder;
-4. derive changed paths from Git and record Before/After behavior, boundaries, and evidence;
-5. update the stable feature spec and Context Pack;
-6. refresh affected module README files and the root README summary;
-7. close the handoff and validate structure plus Git-diff documentation coverage.
+1. produce a read-only `workflow-plan-v1` decision for the request;
+2. retrieve the relevant repository and feature context when the selected workflow needs it;
+3. start a private handoff only for a small fix or ordinary behavior change;
+4. update code and execute claimed checks through the verification recorder;
+5. derive changed paths from Git and record Before/After behavior, boundaries, and evidence;
+6. update the stable feature spec and Context Pack;
+7. refresh affected module README files and the root README summary;
+8. close the handoff and validate structure plus Git-diff documentation coverage.
 
 On a feature branch, shared monthly indexes and README summary blocks are intentionally left unchanged until merge.
 
@@ -210,7 +213,7 @@ Project maintainers can also define reviewed verification presets in `.context-l
 }
 ```
 
-Run one explicitly with `python .context-ledger/ledger.py verify --preset unit`. Presets never run during `init`, routing, or `finish`; they cannot carry environment variables or secrets. Shell strings such as PowerShell `-Command`, `cmd.exe`, and `bash -c` are rejected. See [verification-presets.md](skills/repo-context-ledger/references/verification-presets.md) for the complete contract.
+Run one explicitly with `python .context-ledger/ledger.py verify --preset unit`. The first run, and the first run after a preset changes, stops and prints its exact digest; review the Git-tracked preset and repeat with `--trust-digest sha256:...`. Trust is per local principal and never enters Git. Presets never run during `init`, routing, or `finish`; they cannot carry environment variables or secrets. Shell strings such as PowerShell `-Command`, `cmd.exe`, and `bash -c` are rejected. See [verification-presets.md](skills/repo-context-ledger/references/verification-presets.md) for the complete contract.
 
 ### 3. Continue in another agent or switch tasks naturally
 
@@ -316,6 +319,37 @@ python scripts/build_runtime.py --check
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
+
+## What's new in v1.0.0
+
+- The editable runtime is now split at tested boundaries for constants, errors, result models, repository locks, core Git access, and Workflow Planning. A deterministic builder still emits one zero-dependency `ledger.py`, so installation and `init` do not gain a package dependency.
+- Every public JSON protocol now has a checked-in Draft 2020-12 declaration under `schemas/`: `workflow-plan-v1`, `context-bundle-v1`, `resume-capsule-v2`, `doctor-v1`, `status-v1`, and `check-v1`.
+- Protocol tests execute real CLI commands and recursively compare successful, no-match, and error reports with the published schemas. The 1.x compatibility promise freezes required fields, meanings, and exit classes while leaving optional extensions open.
+- Extraction remains incremental: lifecycle, routing, health, and rendering stay in the template until a focused test boundary exists, avoiding a flag-day rewrite.
+
+## What's new in v0.9.0
+
+- `plan --query` adds a read-only `workflow-plan-v1` front door with four explicit modes: `readonly`, `small-fix`, `ordinary-change`, and `resume`. It returns reasons, confidence, a confirmation flag, and a structured argument array for the next action without executing it.
+- Explicit intent is deterministic. Automatic planning uses bounded English and Chinese request signals plus principal-owned Resume Capsule discovery; an ambiguous request returns `clarify` instead of creating or resuming a session.
+- `context --format json` additively embeds the same Workflow Plan, while `start` rejects `readonly` and `resume` workflows so the decision layer cannot accidentally mutate task state.
+- A synthetic bilingual evaluation corpus and a golden contract fixture keep the planner behavior and machine schema reviewable without production prompts or repository data.
+- The primary `SKILL.md` was reduced from roughly 22,000 characters to under 12,000 and now routes detailed production, verification, and writing guidance through progressive-disclosure references.
+
+## What's new in v0.8.2
+
+- Repository write locks carry a version, PID, start time, command, and random ownership nonce. The owner removes a lock only when both file identity and nonce still match, so it cannot delete a replacement lock created by another writer.
+- `doctor` distinguishes a live writer, stale process, unknown owner, malformed legacy metadata, and an unsafe symlink/non-regular lock path. Diagnosis is read-only and never removes a lock automatically.
+- Windows process liveness uses a read-only process query instead of signal emulation; Unix uses signal 0. Diagnostics expose only bounded lock metadata and no repository path.
+- Git-tracked verification presets require principal-local digest trust before their first execution and after every configuration change. A mismatch fails with `PRESET_TRUST_REQUIRED`; trust decisions stay below Git metadata and do not transfer to another user.
+- [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md) document supported reporting, assets, trust boundaries, considered threats, recovery rules, and deliberate non-goals.
+
+## What's new in v0.8.1
+
+- Git path collection now uses NUL-delimited byte output. Spaces, Unicode, quotes, literal backslashes, tabs, newlines, and rename destinations reach evidence and changed-scope checks without shell-style parsing or lossy unquoting.
+- Once a directory is confirmed as a Git worktree, required evidence, coverage, finish, and `check --changed-since` operations fail closed when Git cannot read repository state. Genuine non-Git directories keep the documented local fallback.
+- Machine-readable Git failures use the stable `GIT_COMMAND_FAILED` error code and bounded, redacted diagnostics instead of silently treating an unreadable index or ref as an empty change set.
+- Atomic runtime and managed-file replacement preserves an existing target's permission mode on Unix-like systems while retaining the same crash-safe replace behavior on every platform.
+- Focused repository-reliability tests cover complex Git filenames, Unicode renames, fail-closed corrupted-index behavior, and executable-bit preservation without storing production paths or data.
 
 ## What's new in v0.8.0
 

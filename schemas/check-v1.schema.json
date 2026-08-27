@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gviiisen/repo-context-ledger/schemas/check-v1.schema.json",
+  "title": "check-v1",
+  "type": "object",
+  "required": ["schema", "tool_version", "command", "ok", "exit_code", "error_code", "messages", "errors"],
+  "properties": {
+    "schema": {"type": "string", "const": "check-v1"},
+    "tool_version": {"type": "string"},
+    "command": {"type": "string", "const": "check"},
+    "ok": {"type": "boolean"},
+    "exit_code": {"type": "integer", "enum": [0, 2]},
+    "error_code": {"type": "string"},
+    "messages": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

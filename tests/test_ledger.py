@@ -124,6 +124,11 @@ class LedgerFlowTests(unittest.TestCase):
             )
         return result
 
+    def preset_trust_args(self, repo: Path, name: str) -> tuple[str, str]:
+        config = LEDGER_MODULE.load_config(repo)
+        preset = config["verification"]["presets"][name]
+        return "--trust-digest", LEDGER_MODULE.verification_preset_digest(preset)
+
     def repository_snapshot(self, repo: Path) -> dict[str, bytes]:
         return {
             path.relative_to(repo).as_posix(): path.read_bytes()
@@ -1014,7 +1019,15 @@ class LedgerFlowTests(unittest.TestCase):
             started = self.run_ledger(repo, "start", "--title", "Run preset")
             session = session_from_result(started)
 
-            result = self.run_ledger(repo, "verify", "--session", session, "--preset", "worker-unit")
+            result = self.run_ledger(
+                repo,
+                "verify",
+                "--session",
+                session,
+                "--preset",
+                "worker-unit",
+                *self.preset_trust_args(repo, "worker-unit"),
+            )
 
             self.assertIn("preset-ok:worker:two words", result.stdout)
             draft = private_draft(repo, started).read_text(encoding="utf-8")
@@ -1041,6 +1054,7 @@ class LedgerFlowTests(unittest.TestCase):
             result = self.run_ledger(
                 repo, "verify", "--session", session_from_result(started),
                 "--preset", "private-check",
+                *self.preset_trust_args(repo, "private-check"),
             )
 
             self.assertNotIn("SUPERSECRET", result.stdout + result.stderr)
@@ -2542,7 +2556,8 @@ class LedgerFlowTests(unittest.TestCase):
             lock = repo / ".context-ledger/.write.lock"
             lock.write_text("existing writer", encoding="utf-8")
             result = self.run_ledger(repo, "sync", expected=2)
-            self.assertIn("Another Repo Context Ledger write is active", result.stderr)
+            self.assertIn("Another Repo Context Ledger write lock exists", result.stderr)
+            self.assertIn("Run doctor", result.stderr)
             self.assertEqual("existing writer", lock.read_text(encoding="utf-8"))
 
     def test_context_plan_bounds_required_reads(self):

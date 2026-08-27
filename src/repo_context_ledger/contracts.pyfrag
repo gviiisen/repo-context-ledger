@@ -1,1 +1,1 @@
-# Compatibility tombstone: v0.7.0 builds from constants.pyfrag, errors.pyfrag, and models.pyfrag.
+# Compatibility tombstone: v1.0 builds from the ordered fragments declared in scripts/build_runtime.py.

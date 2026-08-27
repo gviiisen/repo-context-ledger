@@ -20,6 +20,8 @@ npx skills@latest add gviiisen/repo-context-ledger --skill repo-context-ledger
 
 用户只需正常描述开发需求，文档生命周期由 AI 自主完成。
 
+在执行任何生命周期命令前，Agent 可以先通过只读 Workflow Plan 判断这是了解功能、小修复、普通变更还是续接任务。它复用有界上下文路由、解释判断理由；意图不明确时先请求澄清，不会猜测并创建 session。
+
 ## 为什么需要它
 
 不同的 AI 编程窗口通常无法自动继承此前积累的上下文。新的 Agent 不得不重新阅读大量代码，功能逻辑、关键边界和历史决策也容易在会话之间丢失。
@@ -131,13 +133,14 @@ python path/to/ledger.py --repo path/to/repository init --dry-run
 
 你**不需要**手动执行 `ctx begin`，也不需要给交接记录命名或记忆生命周期命令。Agent 应该自主完成：
 
-1. 获取与本次需求有关的项目和功能上下文；
-2. 在开始修改前创建变更交接；
-3. 修改代码，并通过验证记录器执行所有声称完成的检查；
-4. 从 Git 获取实际变更路径，记录 Before/After 行为、边界和证据；
-5. 更新长期有效的功能说明和 Context Pack；
-6. 刷新相关模块 README 和根目录 README 摘要；
-7. 完成交接，并校验 Ledger 结构及 Git diff 文档覆盖。
+1. 为本次请求生成只读的 `workflow-plan-v1` 判断；
+2. 在所选工作流需要时获取相关项目和功能上下文；
+3. 仅在小修复或普通行为变更时创建私有 handoff；
+4. 修改代码，并通过验证记录器执行所有声称完成的检查；
+5. 从 Git 获取实际变更路径，记录 Before/After 行为、边界和证据；
+6. 更新长期有效的功能说明和 Context Pack；
+7. 刷新相关模块 README 和根目录 README 摘要；
+8. 完成交接，并校验 Ledger 结构及 Git diff 文档覆盖。
 
 如果当前处于功能分支，共享月度索引和 README 摘要区块会暂时保持不变，等合并后再统一生成。
 
@@ -210,7 +213,7 @@ Coverage 路径分类在 `.context-ledger/config.json` 中单独配置：
 }
 ```
 
-需要执行时显式运行 `python .context-ledger/ledger.py verify --preset unit`。预设不会在 `init`、上下文路由或 `finish` 时自动运行，也不能携带环境变量或密钥。PowerShell `-Command`、`cmd.exe`、`bash -c` 等 shell 字符串形式会被拒绝。完整约束见 [verification-presets.md](skills/repo-context-ledger/references/verification-presets.md)。
+需要执行时显式运行 `python .context-ledger/ledger.py verify --preset unit`。首次运行以及 preset 内容变更后的首次运行会先停止并打印精确 digest；审核 Git 中的 preset 后，再带 `--trust-digest sha256:...` 重试。信任按本机 principal 隔离，不进入 Git。预设不会在 `init`、上下文路由或 `finish` 时自动运行，也不能携带环境变量或密钥。PowerShell `-Command`、`cmd.exe`、`bash -c` 等 shell 字符串形式会被拒绝。完整约束见 [verification-presets.md](skills/repo-context-ledger/references/verification-presets.md)。
 
 ### 3. 在另一个 Agent 中继续，或者自然切换任务
 
@@ -316,6 +319,37 @@ python scripts/build_runtime.py --check
 ```
 
 源码与生成物边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## v1.0.0 新增能力
+
+- 可编辑运行时现在按经过测试的边界拆分为常量、错误、结果模型、仓库锁、核心 Git 访问和 Workflow Planning。确定性构建仍只生成一个零依赖 `ledger.py`，安装和 `init` 不会增加 Python package 依赖。
+- `schemas/` 正式提供 6 份 Draft 2020-12 协议声明：`workflow-plan-v1`、`context-bundle-v1`、`resume-capsule-v2`、`doctor-v1`、`status-v1` 和 `check-v1`。
+- 协议测试会执行真实 CLI，并递归核对成功、无匹配与错误响应。1.x 兼容承诺固定必需字段、语义和退出类别，同时允许增加可选扩展。
+- 模块化继续采用渐进方式；生命周期、路由、健康检查和渲染仍留在模板中，等形成聚焦测试边界后再拆，避免一次性重写整个运行时。
+
+## v0.9.0 新增能力
+
+- `plan --query` 新增只读的 `workflow-plan-v1` 入口，明确区分 `readonly`、`small-fix`、`ordinary-change` 与 `resume`；输出理由、置信度、是否需要确认，以及不会被自动执行的结构化下一步参数数组。
+- 显式 intent 的结果完全确定；自动判断只使用有界的中英文请求信号和当前 principal 自己的 Resume Capsule。意图不明确时返回 `clarify`，不会擅自创建或续接 session。
+- `context --format json` 以向后兼容方式附带同一份 Workflow Plan；`start` 会拒绝 `readonly` 和 `resume`，避免只读决策层意外修改任务状态。
+- 新增不含生产提示词和仓库数据的中英文合成评测集与 golden 契约，固定规划行为和机器接口。
+- 主 `SKILL.md` 从约 22,000 字符压缩到 12,000 字符以内，详细的生产、验证和写作规则改为按需读取 reference。
+
+## v0.8.2 新增能力
+
+- 仓库写锁现在记录版本、PID、开始时间、命令和随机 ownership nonce；只有文件身份与 nonce 都仍然匹配时，持有者才会删除锁，不会误删另一个写进程后来创建的替代锁。
+- `doctor` 可以区分 live writer、stale process、未知 owner、旧版/损坏 metadata，以及 symlink 或非普通文件等不安全锁路径。诊断严格只读，绝不自动删锁。
+- Windows 使用只读进程句柄查询存活状态，不模拟 signal；Unix 使用 signal 0。诊断只返回有上限的锁 metadata，不暴露仓库绝对路径。
+- Git 跟踪的 verification preset 在首次执行和每次配置变化后都必须由当前本机 principal 按精确 digest 授信。不匹配时使用 `PRESET_TRUST_REQUIRED` fail closed；信任记录位于 Git metadata 下，不会传给另一用户。
+- 新增 [SECURITY.md](SECURITY.md) 与 [THREAT_MODEL.md](THREAT_MODEL.md)，明确安全报告、资产、信任边界、已考虑威胁、恢复原则和非目标。
+
+## v0.8.1 新增能力
+
+- Git 路径采集改用以 NUL 分隔的原始字节输出。空格、Unicode、引号、反斜杠、制表符、换行符以及 rename 的目标路径都能无损进入 evidence 与 changed-scope 检查，不再依赖 shell 风格解析。
+- 一旦目录已经确认是 Git worktree，必须读取 Git 状态的 evidence、coverage、finish 与 `check --changed-since` 会在 Git 读取失败时 fail closed；真正的非 Git 目录仍保留原有本地 fallback。
+- Git 失败在 JSON 中使用稳定的 `GIT_COMMAND_FAILED` 错误码，并只输出有上限且已脱敏的诊断，不会再把损坏的 index 或不可解析的 ref 当成“没有改动”。
+- 在 Unix 类系统上，运行时与受管文件的原子替换会保留现有目标文件的权限位；所有平台仍保持原有的崩溃安全替换语义。
+- 新增聚焦的仓库可靠性测试，覆盖复杂 Git 文件名、Unicode rename、损坏 index 时的 fail-closed 行为与可执行权限保留，且不包含生产路径或生产资料。
 
 ## v0.8.0 新增能力
 

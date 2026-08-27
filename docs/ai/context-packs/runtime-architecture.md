@@ -6,19 +6,19 @@ Aliases: none
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 45055d81262efa4ef1ec627ac22e578fb1be61d3
+Source commit: 2c5ea2f81b7b8f8939ad274f44094a6b937faca5
 Base branch: main
-Base commit: 45055d81262efa4ef1ec627ac22e578fb1be61d3
-Last refreshed: 2026-08-27T08:06:30+08:00
+Base commit: 0d7e1f289e726edc4ae2b621361f89c621de5623
+Last refreshed: 2026-08-27T19:19:05+08:00
 
 ## Purpose
 
-Routes runtime changes to one editable template, ordered low-coupling fragments, the deterministic builder, and focused architecture tests. Generated Skill/dogfood runtimes remain byte-identical standalone files so initialized repositories gain the maintainability improvement without a package dependency.
+Routes runtime changes to one editable template, ordered low-coupling fragments, the deterministic builder, Git-path reliability code, and focused architecture tests. Generated Skill/dogfood runtimes remain byte-identical standalone files so initialized repositories gain the maintainability improvement without a package dependency.
 
 ## Load order
 
 - Read first: Read `ARCHITECTURE.md` and `docs/specs/runtime-architecture.md`, then edit the relevant source template or fragment.
-- Read if needed: Read `scripts/build_runtime.py`, `tests/test_runtime_build.py`, and the affected public contract tests when changing generation or extraction boundaries.
+- Read if needed: Read `scripts/build_runtime.py`, `tests/test_runtime_build.py`, `tests/test_repository_reliability.py`, `tests/test_lock_and_preset_trust.py`, and the affected public contract tests when changing generation, Git state, write coordination, preset execution, or extraction boundaries.
 - Do not load by default: Do not edit generated runtime outputs, load completed Changes, or split unrelated subsystems merely because they remain in the template.
 
 ## Entry points and code map
@@ -29,20 +29,28 @@ Routes runtime changes to one editable template, ordered low-coupling fragments,
 | `src/repo_context_ledger/constants.pyfrag` | Canonical version/schema/exit and runtime constants. |
 | `src/repo_context_ledger/errors.pyfrag` | Canonical `LedgerError` and stable machine error codes. |
 | `src/repo_context_ledger/models.pyfrag` | Canonical typed result models such as `CommandResult`. |
+| `src/repo_context_ledger/locks.pyfrag` | Canonical short-lock acquisition and ownership-safe cleanup. |
+| `src/repo_context_ledger/git.pyfrag` | Canonical core Git execution and fail-closed identity queries. |
+| `src/repo_context_ledger/workflow.pyfrag` | Canonical Workflow Plan classifier and renderer. |
 | `src/repo_context_ledger/contracts.pyfrag` | Non-built compatibility pointer to the ordered fragments. |
 | `scripts/build_runtime.py::render_runtime` | Produces normalized deterministic standalone bytes. |
 | `.gitattributes` | Pins build inputs and both generated outputs to LF on Windows and Unix. |
 | `tests/test_runtime_build.py` | Verifies drift detection, atomic build outputs, byte identity, compilation, and standalone execution. |
+| `tests/test_repository_reliability.py` | Verifies NUL-safe Git paths, fail-closed required Git reads, and existing target modes. |
+| `tests/test_lock_and_preset_trust.py` | Verifies lock diagnosis/ownership and exact principal-local preset trust. |
+| `schemas/*.schema.json` | Publishes public 1.x JSON protocol boundaries without runtime imports. |
+| `tests/test_protocol_schemas.py` | Executes CLI reports against those published top-level contracts. |
+| `SECURITY.md` / `THREAT_MODEL.md` | Explain the public security and local trust boundary. |
 
 ## Contracts and boundaries
 
-- Invariants and contracts: both generated outputs are byte-identical after Windows or Unix checkout, contain no timestamp or absolute build path, use only Python 3.10+ standard library, report the version from `constants.pyfrag`, and preserve all v0.6.2 CLI/JSON/exit behavior.
-- Failure / recovery: invalid source, a missing/duplicate marker, or output drift returns 2; repair canonical source and rebuild rather than patching one generated file.
-- Non-goals: v0.7.0 does not create a published Python package, add dependencies, split every subsystem, change `init` distribution, or redesign routing/lifecycle semantics.
+- Invariants and contracts: both generated outputs are byte-identical after Windows or Unix checkout, contain no timestamp or absolute build path, use only Python 3.10+ standard library, report the version from `constants.pyfrag`, preserve an existing target's Unix mode, and retain the published 1.x CLI/JSON/exit behavior. Git path readers split NUL-delimited bytes before decoding and use rename destinations.
+- Failure / recovery: invalid source, a missing/duplicate marker, output drift, a failed required Git query, or missing preset trust returns 2. Required Git failures use `GIT_COMMAND_FAILED`; untrusted presets use `PRESET_TRUST_REQUIRED`. Diagnose locks before manual cleanup and repair canonical source/repository state rather than patching one generated file or assuming an empty change set.
+- Non-goals: v1.0 does not create a published Python package, add dependencies, split every subsystem, change `init` distribution, or redesign routing/lifecycle semantics.
 
 ## Verification
 
-`python scripts/build_runtime.py --check` verifies repository outputs match source. `python -m unittest discover -s tests -p test_runtime_build.py` verifies deterministic fresh builds, drift detection, compilation, and standalone version execution; the complete suite protects behavior.
+`python scripts/build_runtime.py --check` verifies repository outputs match source. `python -m unittest discover -s tests -p test_runtime_build.py` verifies deterministic fresh builds, drift detection, compilation, and standalone version execution. `python -m unittest discover -s tests -p test_repository_reliability.py` verifies Git paths, fail-closed reads, and permissions. `python -m unittest discover -s tests -p test_lock_and_preset_trust.py` verifies lock safety and preset trust; the complete suite protects behavior.
 
 <!-- repo-context-ledger:pack-specs:start -->
 ## Stable context
@@ -55,14 +63,25 @@ Routes runtime changes to one editable template, ordered low-coupling fragments,
 
 - `.gitattributes` — `sha256:74b3190f5e5511242a0f8cca97184bafadf3ae5a151d95fe9f1d45cb5944dc29`
 - `src/repo_context_ledger/__init__.py` — `sha256:afeadce023c709f93c003327e9b023da4b14aaf59e275418e47de6978ce42615`
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:8dbccc54b87e0dfd05f93edadc3f716ac4873450d1e240801ebfa2101f1ca9f5`
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:bdfac50c0e0f2aa013c6f73e1ca259921559e999e715924994411dc9fad855c4`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:6552c343fb986f841042fae89716668ad7612165eaf594b7bb6f0bd8022e57aa`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:e4b8e16789bce7ba8e405f0069f0372dd0ff25fcbfd9dc805cb460b0fbe5a62a`
 - `src/repo_context_ledger/errors.pyfrag` — `sha256:7cd76293bd376f12cf7e13ba747159820667919afcc720098e7958ee05bb9717`
-- `src/repo_context_ledger/models.pyfrag` — `sha256:b059542121c00e2177408be18fc1252d4d3f32a5ae4438b2634eb3da49f874d4`
-- `src/repo_context_ledger/contracts.pyfrag` — `sha256:7c16c987fa157b6333528f6f6d42bb5aa72718ba28dc7186c3832fb5c59ca860`
-- `scripts/build_runtime.py` — `sha256:23b564a2d6517b80f2266f0f6304bbf122839c691486873302de858c9f68446c`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:c72b923b0c5f1cd758e5771e914e150f9bc885a2ba176410287c077804645007`
-- `tests/test_runtime_build.py` — `sha256:4f8521e9745c614c2625e6f55789225cc16e9471ad02ad38d0782146f6de9877`
-- `ARCHITECTURE.md` — `sha256:5e954ee761bb5a08772e492692bf61f62fabcb8fe30698b121517b9397df71d3`
+- `src/repo_context_ledger/models.pyfrag` — `sha256:54149dd494724f91ee4a4530892b074261c9888d940e561ee0b301687a37d4d2`
+- `src/repo_context_ledger/locks.pyfrag` — `sha256:185ce4c5f8187f1c44d684299e0e090173d3ab371e556852ef82f78d708aff7a`
+- `src/repo_context_ledger/git.pyfrag` — `sha256:934ffac62d7780f524f36aad7a431e8d4323daf43f7d440a2043a1cb78fa5b21`
+- `src/repo_context_ledger/workflow.pyfrag` — `sha256:2f2418090cf30008b9d4f738696628be1bba89d2f97a238105a3b38dc5215bca`
+- `src/repo_context_ledger/contracts.pyfrag` — `sha256:542f32ce352a7450693a70eb559c983188c150e08b5933d2ce9e9d28400d448c`
+- `scripts/build_runtime.py` — `sha256:c94ec02761a97d70631a2f261780f569e357f026d1a86c6d293359dff5cb6324`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:0bfead16d1f3312ac8a0eacbb907905be4159c123f85f96dab4bc7ed4e0c985a`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:c49a692005ff85c62c4fc3ebb5617af4725c55bba3857a3413b5c4d8bba4e12a`
+- `skills/repo-context-ledger/references/verification-presets.md` — `sha256:0650fa160e9a46a3b0f6cad68c8153f09614626e2046eb4acada3ab8b59e04f3`
+- `tests/test_runtime_build.py` — `sha256:e4c39e9a37a1205bd4b8ee536af1840d0c823a12f77a34733cbc6a449168ab2a`
+- `tests/test_repository_reliability.py` — `sha256:4d3df992a9a933830eb42b9c6c76b7f6156d4eadbef82dc2a8c99b21b9b90022`
+- `tests/test_lock_and_preset_trust.py` — `sha256:4efb34f5c3d2de6d8ea226fa570d66399061e7497d1e8b84fd3acfcfa0ab1e5d`
+- `tests/test_protocol_schemas.py` — `sha256:ee28283b2ace2f73e0e674e53abb97fa0a7952c1bd961a7d6022cb0a5f8ec59b`
+- `tests/test_ledger.py` — `sha256:7944c012f406e8c8dabe7946a07f6477a886515104e53b2de9c8497162bfc65e`
+- `ARCHITECTURE.md` — `sha256:7f87435665f8dadc0cc6896858d0fd0aef127cae3b27e049d9da991d2ae0e67c`
+- `SECURITY.md` — `sha256:e3bae6d08d032d2b56bc23ad9571b3dc94f0e81502f802b484aa031634e4734c`
+- `THREAT_MODEL.md` — `sha256:3ff1f8795c87223a7b3c8d03ad714150c135571bfa458de039e10756739e3575`
 - `.github/workflows/test.yml` — `sha256:8d268c040a7c68c86a738aee36d01e5a34d102723bbf722e3665ee982d195ade`
 <!-- repo-context-ledger:pack-files:end -->
