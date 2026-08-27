@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -22,7 +23,7 @@ from pathlib import Path
 
 
 VERSION = 8
-TOOL_VERSION = "0.8.0"
+TOOL_VERSION = "0.8.1"
 MANIFEST_VERSION = 1
 ROUTER_CACHE_SCHEMA = 2
 CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
@@ -39,6 +40,7 @@ ERROR_UNSUPPORTED_SCHEMA = "UNSUPPORTED_SCHEMA"
 ERROR_CONTEXT_NO_MATCH = "CONTEXT_NO_MATCH"
 ERROR_CHECK_FAILED = "CHECK_FAILED"
 ERROR_DOCTOR_FAILED = "DOCTOR_FAILED"
+ERROR_GIT_COMMAND_FAILED = "GIT_COMMAND_FAILED"
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
 BLOCK_END = "<!-- repo-context-ledger:end -->"
@@ -158,6 +160,22 @@ class CommandResult:
             "messages": self.messages,
             "errors": self.errors,
         }
+
+
+class GitResult:
+    """Lossless result for one Git subprocess invocation."""
+
+    def __init__(
+        self,
+        argv: tuple[str, ...],
+        returncode: int,
+        stdout: bytes,
+        stderr: bytes,
+    ) -> None:
+        self.argv = argv
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
 
 
 _COMMAND_TIMINGS: dict[str, object] | None = None
@@ -323,6 +341,11 @@ class InitPlan:
                     pass
                 continue
             change.path.parent.mkdir(parents=True, exist_ok=True)
+            existing_mode = (
+                stat.S_IMODE(change.path.stat().st_mode)
+                if change.path.exists()
+                else change.mode
+            )
             descriptor, raw_temp = tempfile.mkstemp(
                 prefix=f".{change.path.name}.", suffix=".tmp", dir=change.path.parent
             )
@@ -331,9 +354,10 @@ class InitPlan:
                 with os.fdopen(descriptor, "wb") as handle:
                     handle.write(change.content or b"")
                     handle.flush()
+                    os.fsync(handle.fileno())
+                if existing_mode is not None:
+                    os.chmod(temp_path, existing_mode)
                 os.replace(temp_path, change.path)
-                if change.mode is not None:
-                    os.chmod(change.path, change.mode)
             finally:
                 if temp_path.exists():
                     temp_path.unlink()
@@ -454,12 +478,16 @@ def atomic_write(path: Path, content: str, kind: str = "file") -> None:
         _ACTIVE_INIT_PLAN.write_text(path, content, kind)
         return
     path.parent.mkdir(parents=True, exist_ok=True)
+    existing_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
     descriptor, raw_temp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temp_path = Path(raw_temp)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
             handle.write(content)
             handle.flush()
+            os.fsync(handle.fileno())
+        if existing_mode is not None:
+            os.chmod(temp_path, existing_mode)
         os.replace(temp_path, path)
     finally:
         if temp_path.exists():
@@ -606,22 +634,50 @@ def slugify(value: str) -> str:
     return ascii_slug[:48] or "change"
 
 
-def git_output(repo: Path, *args: str) -> str:
+def run_git(repo: Path, *args: str) -> GitResult:
+    argv = ("git", "-C", str(repo), *args)
     try:
         result = subprocess.run(
-            ["git", "-C", str(repo), *args],
-            text=True,
+            argv,
             capture_output=True,
-            encoding="utf-8",
             timeout=10,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as exc:
+        return GitResult(argv, -1, b"", str(exc).encode("utf-8", errors="replace"))
+    return GitResult(argv, result.returncode, result.stdout, result.stderr)
+
+
+def git_command_error(repo: Path, result: GitResult) -> LedgerError:
+    command = "git " + " ".join(result.argv[3:])
+    detail = result.stderr.decode("utf-8", errors="replace").strip()
+    detail = redact_local_paths(detail, repo)[:600]
+    suffix = f": {detail}" if detail else ""
+    return LedgerError(
+        f"Git command failed ({command}, exit {result.returncode}){suffix}",
+        ERROR_GIT_COMMAND_FAILED,
+    )
+
+
+def git_output(repo: Path, *args: str, required: bool = False) -> str:
+    result = run_git(repo, *args)
+    if result.returncode != 0:
+        if required:
+            raise git_command_error(repo, result)
         return ""
-    return result.stdout.strip() if result.returncode == 0 else ""
+    return result.stdout.decode("utf-8", errors="replace").strip()
+
+
+def git_repository_detected(repo: Path, required: bool = False) -> bool:
+    result = run_git(repo, "rev-parse", "--is-inside-work-tree")
+    if result.returncode == 0:
+        return result.stdout.strip() == b"true"
+    if required and (repo / ".git").exists():
+        raise git_command_error(repo, result)
+    return False
 
 
 def is_git_repo(repo: Path) -> bool:
-    return git_output(repo, "rev-parse", "--is-inside-work-tree") == "true"
+    return git_repository_detected(repo)
 
 
 def git_revision(repo: Path, ref: str = "HEAD") -> str:
@@ -689,28 +745,49 @@ def configured_base_ref(repo: Path, config: dict) -> str:
     return remote if git_revision(repo, remote) != "none" else branch
 
 
-def git_dirty_paths(repo: Path) -> list[str]:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all"],
-            text=True,
-            capture_output=True,
-            encoding="utf-8",
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
+def decode_git_path(raw: bytes) -> str:
+    decoded = os.fsdecode(raw)
+    return decoded.replace(os.sep, "/") if os.sep != "/" else decoded
+
+
+def git_dirty_paths(repo: Path, required: bool = True) -> list[str]:
+    if not git_repository_detected(repo, required=required):
         return []
+    result = run_git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all")
     if result.returncode != 0:
+        if required:
+            raise git_command_error(repo, result)
         return []
-    paths = []
-    for line in result.stdout.splitlines():
-        raw = line[3:].strip()
-        if " -> " in raw:
-            raw = raw.split(" -> ", 1)[1]
-        if raw.replace("\\", "/") == ".context-ledger/.write.lock":
+    paths: list[str] = []
+    records = result.stdout.split(b"\0")
+    index = 0
+    while index < len(records):
+        record = records[index]
+        index += 1
+        if not record:
+            continue
+        if len(record) < 3 or record[2:3] != b" ":
+            if required:
+                raise LedgerError(
+                    "Git status returned an invalid NUL-delimited record.",
+                    ERROR_GIT_COMMAND_FAILED,
+                )
+            continue
+        status = record[:2]
+        raw = decode_git_path(record[3:])
+        if b"R" in status or b"C" in status:
+            if index >= len(records) or not records[index]:
+                if required:
+                    raise LedgerError(
+                        "Git status returned an incomplete rename/copy record.",
+                        ERROR_GIT_COMMAND_FAILED,
+                    )
+            else:
+                index += 1
+        if raw == ".context-ledger/.write.lock":
             continue
         if raw:
-            paths.append(raw.replace("\\", "/"))
+            paths.append(raw)
     return sorted(dict.fromkeys(paths))
 
 
@@ -2723,8 +2800,8 @@ def context_baseline(repo: Path, raw_ref: str) -> tuple[dict[str, object], set[s
             "truncated": False,
             "warnings": ["baseline merge base could not be resolved; route selection excludes PR-delta boosting"],
         }, set()
-    changed = set(git_changed_paths(repo, f"{merge_base}..HEAD"))
-    changed.update(git_dirty_paths(repo))
+    changed = set(git_changed_paths(repo, f"{merge_base}..HEAD", required=False))
+    changed.update(git_dirty_paths(repo, required=False))
     changed = {normalize_git_path(path) for path in changed if path}
     return {
         "status": "resolved",
@@ -4042,7 +4119,10 @@ def doctor_repo(repo: Path, output_format: str = "text", max_items: int = 20) ->
             else:
                 findings.append(doctor_finding("MANIFEST", "pass", "manifest", "Context Manifest is current."))
         else:
-            dirty_derived = [raw for raw in git_dirty_paths(repo) if is_generated_index(config, raw)]
+            dirty_derived = [
+                raw for raw in git_dirty_paths(repo, required=False)
+                if is_generated_index(config, raw)
+            ]
             if dirty_derived:
                 findings.append(doctor_finding(
                     "DERIVED_BRANCH_DIRTY", "warning", "derived-files",
@@ -5416,9 +5496,19 @@ def local_links(path: Path) -> list[str]:
     return re.findall(r"(?<!!)\[[^\]]*\]\(([^)]+)\)", text)
 
 
-def git_changed_paths(repo: Path, *args: str) -> set[str]:
-    output = git_output(repo, "diff", "--name-only", "--diff-filter=ACMRD", *args)
-    return {line.strip().replace("\\", "/") for line in output.splitlines() if line.strip()}
+def git_changed_paths(repo: Path, *args: str, required: bool = True) -> set[str]:
+    if not git_repository_detected(repo, required=required):
+        return set()
+    result = run_git(repo, "diff", "--name-only", "-z", "--diff-filter=ACMRD", *args)
+    if result.returncode != 0:
+        if required:
+            raise git_command_error(repo, result)
+        return set()
+    return {
+        decode_git_path(raw)
+        for raw in result.stdout.split(b"\0")
+        if raw
+    }
 
 
 def handoff_evidence_paths(
@@ -6274,6 +6364,8 @@ def check_repo(
                 repo, config, strict, coverage, coverage_base, changed_since
             )
         except LedgerError as exc:
+            if exc.code == ERROR_GIT_COMMAND_FAILED:
+                raise
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
     specs_root = safe_repo_path(repo, config["docs"]["specs"], "config.docs.specs")

@@ -317,6 +317,14 @@ python scripts/build_runtime.py --check
 
 源码与生成物边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
+## v0.8.1 新增能力
+
+- Git 路径采集改用以 NUL 分隔的原始字节输出。空格、Unicode、引号、反斜杠、制表符、换行符以及 rename 的目标路径都能无损进入 evidence 与 changed-scope 检查，不再依赖 shell 风格解析。
+- 一旦目录已经确认是 Git worktree，必须读取 Git 状态的 evidence、coverage、finish 与 `check --changed-since` 会在 Git 读取失败时 fail closed；真正的非 Git 目录仍保留原有本地 fallback。
+- Git 失败在 JSON 中使用稳定的 `GIT_COMMAND_FAILED` 错误码，并只输出有上限且已脱敏的诊断，不会再把损坏的 index 或不可解析的 ref 当成“没有改动”。
+- 在 Unix 类系统上，运行时与受管文件的原子替换会保留现有目标文件的权限位；所有平台仍保持原有的崩溃安全替换语义。
+- 新增聚焦的仓库可靠性测试，覆盖复杂 Git 文件名、Unicode rename、损坏 index 时的 fail-closed 行为与可执行权限保留，且不包含生产路径或生产资料。
+
 ## v0.8.0 新增能力
 
 - Resume Capsule v2 继续使用向后兼容的 `context-bundle-v1` 外层，并把私有续接路线整理为目标、当前状态、下一动作、显式代码锚点、必须保持的契约、已验证事实、未决问题、Required reads 与默认不加载内容。

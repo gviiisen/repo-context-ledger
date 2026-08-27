@@ -317,6 +317,14 @@ python scripts/build_runtime.py --check
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
 
+## What's new in v0.8.1
+
+- Git path collection now uses NUL-delimited byte output. Spaces, Unicode, quotes, literal backslashes, tabs, newlines, and rename destinations reach evidence and changed-scope checks without shell-style parsing or lossy unquoting.
+- Once a directory is confirmed as a Git worktree, required evidence, coverage, finish, and `check --changed-since` operations fail closed when Git cannot read repository state. Genuine non-Git directories keep the documented local fallback.
+- Machine-readable Git failures use the stable `GIT_COMMAND_FAILED` error code and bounded, redacted diagnostics instead of silently treating an unreadable index or ref as an empty change set.
+- Atomic runtime and managed-file replacement preserves an existing target's permission mode on Unix-like systems while retaining the same crash-safe replace behavior on every platform.
+- Focused repository-reliability tests cover complex Git filenames, Unicode renames, fail-closed corrupted-index behavior, and executable-bit preservation without storing production paths or data.
+
 ## What's new in v0.8.0
 
 - Resume Capsule v2 keeps the additive `context-bundle-v1` envelope while organizing private continuation guidance into goal, current state, next action, explicit code anchors, must-preserve contracts, verified facts, unresolved questions, Required reads, and cold-document exclusions.

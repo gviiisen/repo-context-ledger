@@ -1,3 +1,5 @@
+import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -43,7 +45,7 @@ class RuntimeBuildTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(0, version.returncode, version.stderr)
-            self.assertIn("repo-context-ledger 0.8.0", version.stdout)
+            self.assertIn("repo-context-ledger 0.8.1", version.stdout)
 
     def test_check_detects_output_drift_without_rewriting_it(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -55,9 +57,18 @@ class RuntimeBuildTests(unittest.TestCase):
             self.assertIn("drift", result.stderr.casefold())
             self.assertEqual(before, output.read_bytes())
 
+    @unittest.skipIf(os.name == "nt", "POSIX file modes are not enforced on Windows")
+    def test_build_preserves_an_existing_output_mode(self):
+        with tempfile.TemporaryDirectory() as raw:
+            output = Path(raw) / "ledger.py"
+            output.write_text("# previous output\n", encoding="utf-8")
+            output.chmod(0o644)
+            self.run_build("--output", str(output))
+            self.assertEqual(0o644, stat.S_IMODE(output.stat().st_mode))
+
     def test_ordered_low_coupling_fragments_are_embedded_without_markers(self):
         generated = CANONICAL.read_text(encoding="utf-8")
-        self.assertIn('TOOL_VERSION = "0.8.0"', generated)
+        self.assertIn('TOOL_VERSION = "0.8.1"', generated)
         self.assertIn("class LedgerError", generated)
         self.assertIn("class CommandResult", generated)
         self.assertLess(generated.index("class LedgerError"), generated.index("class CommandResult"))

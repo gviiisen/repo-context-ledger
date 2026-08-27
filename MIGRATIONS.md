@@ -14,6 +14,8 @@ v0.7.3 adds an empty `verification.presets` object to normalized configuration. 
 
 v0.8.0 does not change repository/private-state schema v8 or replace `context-bundle-v1`. Existing Context Packs remain valid without `Aliases`. Add repeated `pack --alias "<human phrase>"` values only when a team needs cross-language or colloquial routing, and keep the Pack code map's existing `path::Symbol` entries accurate. Resume Capsule v2 is generated on demand; no Capsule file or inferred task state is migrated or committed.
 
+v0.8.1 does not change repository/private-state schema v8 or any published JSON schema. Re-run `init` to refresh the standalone runtime. Existing executable/read-only permission bits are preserved when an existing file is atomically replaced on Unix-like systems. No history, Pack, spec, completed Change, or private session migration is required.
+
 ## Rollback
 
 Keep the prior Skill installation or release artifact until the upgraded repository passes its checks. Repository file changes are ordinary Git changes and should be reviewed or reverted through Git. Private state is not committed; back it up separately before a state-schema migration when an active task cannot be recreated safely.

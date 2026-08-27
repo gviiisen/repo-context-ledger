@@ -9,7 +9,7 @@ Repo Context Ledger separates editable source from the single-file runtime insta
 | `src/repo_context_ledger/runtime.py.tmpl` | Canonical runtime body and ordered build markers. |
 | `src/repo_context_ledger/constants.pyfrag` | Stable version, schema, exit, and runtime constants. |
 | `src/repo_context_ledger/errors.pyfrag` | Stable user-facing error type and machine error-code carrier. |
-| `src/repo_context_ledger/models.pyfrag` | Typed machine-result contracts such as `CommandResult`. |
+| `src/repo_context_ledger/models.pyfrag` | Typed machine-result contracts such as `CommandResult` and raw-byte `GitResult`. |
 | `src/repo_context_ledger/contracts.pyfrag` | Non-built compatibility tombstone that points older contributors to the three ordered fragments. |
 | `scripts/build_runtime.py` | Deterministic standard-library builder and drift checker. |
 | `.gitattributes` | Pins canonical inputs and generated outputs to LF across Windows and Unix checkouts. |
@@ -20,7 +20,9 @@ The generated files are byte-identical. `init` copies the currently executing st
 
 ## Build contract
 
-The builder reads UTF-8 source, normalizes line endings to LF, injects each ordered fragment through exactly one explicit marker, emits no timestamp or machine path, and writes outputs atomically. Git attributes pin the build inputs and generated outputs to LF so byte comparison remains portable when Windows enables `core.autocrlf`. `--check` compares bytes and never writes. CI runs the check on Windows and Ubuntu with Python 3.10 and 3.12 before tests; release, scheduled, and manual workflows also run on macOS.
+The builder reads UTF-8 source, normalizes line endings to LF, injects each ordered fragment through exactly one explicit marker, emits no timestamp or machine path, and writes outputs atomically. When replacing an existing target on Unix-like systems, the temporary file receives the target's permission mode before the atomic replace. Git attributes pin the build inputs and generated outputs to LF so byte comparison remains portable when Windows enables `core.autocrlf`. `--check` compares bytes and never writes. CI runs the check on Windows and Ubuntu with Python 3.10 and 3.12 before tests; release, scheduled, and manual workflows also run on macOS.
+
+Git-facing runtime code captures stdout and stderr as bytes. Path-producing commands use `-z`, split only on NUL, and decode individual paths through the operating-system filesystem codec. After Git confirms a worktree, required path/evidence queries fail closed; only a genuine non-Git directory may use the local fallback.
 
 Edit source and rebuild with:
 

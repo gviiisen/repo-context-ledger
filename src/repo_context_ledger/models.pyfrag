@@ -28,3 +28,19 @@ class CommandResult:
             "messages": self.messages,
             "errors": self.errors,
         }
+
+
+class GitResult:
+    """Lossless result for one Git subprocess invocation."""
+
+    def __init__(
+        self,
+        argv: tuple[str, ...],
+        returncode: int,
+        stdout: bytes,
+        stderr: bytes,
+    ) -> None:
+        self.argv = argv
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
