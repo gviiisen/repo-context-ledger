@@ -24,6 +24,8 @@ The stable JSON contracts are:
 
 Exit classes are `0` for success, `1` for a valid query with no context match, and `2` for invalid input, an unhealthy required contract, or a failed gate. A future incompatible field removal, meaning change, or exit-class change requires a new JSON schema name and a major project version.
 
+Starting in v0.8.0, an owned continuation may include an additive `resume-capsule-v2` object under `context-bundle-v1.resume.capsule`. Every pre-v0.8 Capsule field remains present; v2 adds structured guidance fields. Consumers must continue to ignore unknown fields, and a missing Capsule remains valid for no-match, ambiguous, or foreign-only routes.
+
 Expected JSON failures remain inside the requested schema and use stable machine codes: `LEDGER_ERROR`, `INVALID_ARGUMENT`, `UNSUPPORTED_SCHEMA`, `CONTEXT_NO_MATCH`, `CHECK_FAILED`, and `DOCTOR_FAILED`. Human messages may improve without changing the code. Unknown future repository/private-state schemas fail closed with `UNSUPPORTED_SCHEMA` rather than being normalized or rewritten.
 
 ## Repository and private-state compatibility
@@ -31,5 +33,7 @@ Expected JSON failures remain inside the requested schema and use stable machine
 `.context-ledger/config.json` and private task state currently use schema v8. `init --dry-run` must preview the same migration plan as real `init`. Git-tracked Packs, specs, and completed Changes remain readable across minor releases. Private active/paused state remains local to the clone/worktree and is not a portable Git contract.
 
 `config.verification.presets` is an optional v8 field added in v0.7.3. Presets are explicit executable argument arrays with bounded metadata; they never execute during initialization, routing, checking, or finishing. Existing direct `verify -- <command>` calls remain compatible.
+
+Context Pack `Aliases` are optional Git-tracked metadata added in v0.8.0. Existing Packs without the field behave as before. Aliases are explicit phrases only; upgrade and routing never generate translations or infer private task state.
 
 The initialized `.context-ledger/ledger.py` is a standalone artifact. Its version should match the installed Skill runtime after `init`; the repository does not require a Python package installation or API key.

@@ -2,6 +2,7 @@
 
 Status: current
 Feature: {{FEATURE}}
+Aliases: none
 Quality profile: evidence-v1
 Language: {{LANGUAGE}}
 Detail: {{DETAIL}}

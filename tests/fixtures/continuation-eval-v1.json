@@ -1,0 +1,122 @@
+{
+  "schema": "continuation-eval-v1",
+  "packs": [
+    {
+      "feature": "announcement-throttling",
+      "title": "Announcement Throttling",
+      "purpose": "Limits announcement fetch traffic while preserving retry behavior.",
+      "aliases": ["公告抓取限频", "announcement fetch rate limiting"],
+      "tracked": ["src/announcements/worker.go"],
+      "code_anchors": ["src/announcements/worker.go::fetchPage"],
+      "invariants": ["Retries remain bounded and providers retain their existing error contract."],
+      "specs": ["docs/specs/announcement-throttling.md"]
+    },
+    {
+      "feature": "asset-authority",
+      "title": "Asset Authority",
+      "purpose": "Owns canonical asset identity and projection boundaries.",
+      "aliases": ["资产权威", "asset identity authority"],
+      "tracked": ["src/assets/authority.go"],
+      "code_anchors": ["src/assets/authority.go::ResolveAuthority"],
+      "invariants": ["Canonical identity is committed before derived projections are exposed."],
+      "specs": ["docs/specs/asset-authority.md"]
+    },
+    {
+      "feature": "payment-routing",
+      "title": "Payment Routing",
+      "purpose": "Routes authorized payment requests.",
+      "aliases": ["支付路由", "payment dispatch"],
+      "tracked": ["src/payments/router.py"],
+      "code_anchors": ["src/payments/router.py::route_payment"],
+      "invariants": ["Authorization remains upstream of payment dispatch."],
+      "specs": ["docs/specs/payment-routing.md"]
+    }
+  ],
+  "cases": [
+    {
+      "name": "exact-feature",
+      "query": "continue announcement throttling",
+      "expected_session": "session-announcement",
+      "expected_mode": "ready",
+      "expected_anchor": "src/announcements/worker.go::fetchPage",
+      "sessions": [
+        {"id": "session-announcement", "access": "owner", "feature": "announcement-throttling", "title": "Tune provider throttling", "summary": "The provider boundary is located.", "next": "Verify retry behavior.", "evidence": ["src/announcements/worker.go"]},
+        {"id": "session-assets", "access": "owner", "feature": "asset-authority", "title": "Repair asset projection", "summary": "The authority boundary is located.", "next": "Verify projection behavior.", "evidence": ["src/assets/authority.go"]}
+      ]
+    },
+    {
+      "name": "chinese-alias",
+      "query": "继续公告抓取限频",
+      "expected_session": "session-announcement",
+      "expected_mode": "ready",
+      "expected_anchor": "src/announcements/worker.go::fetchPage",
+      "sessions": [
+        {"id": "session-announcement", "access": "owner", "feature": "announcement-throttling", "title": "Tune provider throttling", "summary": "The provider boundary is located.", "next": "Verify retry behavior.", "evidence": ["src/announcements/worker.go"]}
+      ]
+    },
+    {
+      "name": "code-symbol",
+      "query": "continue fetchPage retry work",
+      "expected_session": "session-announcement",
+      "expected_mode": "ready",
+      "expected_anchor": "src/announcements/worker.go::fetchPage",
+      "sessions": [
+        {"id": "session-announcement", "access": "owner", "feature": "announcement-throttling", "title": "Tune provider throttling", "summary": "The provider boundary is located.", "next": "Verify retry behavior.", "evidence": ["src/announcements/worker.go"]}
+      ]
+    },
+    {
+      "name": "tracked-path",
+      "query": "continue authority.go repair",
+      "expected_session": "session-assets",
+      "expected_mode": "ready",
+      "expected_anchor": "src/assets/authority.go::ResolveAuthority",
+      "sessions": [
+        {"id": "session-assets", "access": "owner", "feature": "asset-authority", "title": "Repair asset projection", "summary": "The authority boundary is located.", "next": "Verify projection behavior.", "evidence": ["src/assets/authority.go"]},
+        {"id": "session-payment", "access": "owner", "feature": "payment-routing", "title": "Repair payment routing", "summary": "The router is located.", "next": "Verify dispatch behavior.", "evidence": ["src/payments/router.py"]}
+      ]
+    },
+    {
+      "name": "ambiguous-owned-sessions",
+      "query": "继续公告抓取限频",
+      "expected_session": null,
+      "expected_mode": "blocked",
+      "sessions": [
+        {"id": "session-announcement-a", "access": "owner", "feature": "announcement-throttling", "title": "Tune provider throttling", "summary": "First bounded task.", "next": "Verify first retry boundary.", "evidence": ["src/announcements/worker.go"]},
+        {"id": "session-announcement-b", "access": "owner", "feature": "announcement-throttling", "title": "Tune provider throttling", "summary": "Second bounded task.", "next": "Verify second retry boundary.", "evidence": ["src/announcements/worker.go"]}
+      ]
+    },
+    {
+      "name": "foreign-private-overlap",
+      "query": "继续公告抓取限频",
+      "expected_session": null,
+      "expected_mode": "guided",
+      "expected_foreign_overlap": true,
+      "private_marker": "FOREIGN_PRIVATE_SUMMARY_MUST_NOT_LEAK",
+      "sessions": [
+        {"id": "session-foreign", "access": "foreign", "feature": "announcement-throttling", "title": "Private title", "summary": "FOREIGN_PRIVATE_SUMMARY_MUST_NOT_LEAK", "next": "Private next", "evidence": ["src/announcements/worker.go"]}
+      ]
+    },
+    {
+      "name": "owned-wins-with-foreign-overlap",
+      "query": "asset identity authority",
+      "expected_session": "session-assets",
+      "expected_mode": "ready",
+      "expected_foreign_overlap": true,
+      "private_marker": "OTHER_USER_PRIVATE_ASSET_NOTES",
+      "expected_anchor": "src/assets/authority.go::ResolveAuthority",
+      "sessions": [
+        {"id": "session-assets", "access": "owner", "feature": "asset-authority", "title": "Repair asset projection", "summary": "The authority boundary is located.", "next": "Verify projection behavior.", "evidence": ["src/assets/authority.go"]},
+        {"id": "session-assets-foreign", "access": "foreign", "feature": "asset-authority", "title": "Private title", "summary": "OTHER_USER_PRIVATE_ASSET_NOTES", "next": "Private next", "evidence": ["src/assets/authority.go"]}
+      ]
+    },
+    {
+      "name": "no-match",
+      "query": "continue unrelated telescope calibration",
+      "expected_session": null,
+      "expected_mode": "none",
+      "sessions": [
+        {"id": "session-payment", "access": "owner", "feature": "payment-routing", "title": "Repair payment routing", "summary": "The router is located.", "next": "Verify dispatch behavior.", "evidence": ["src/payments/router.py"]}
+      ]
+    }
+  ]
+}

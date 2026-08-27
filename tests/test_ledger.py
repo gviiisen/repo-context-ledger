@@ -2621,6 +2621,74 @@ class LedgerFlowTests(unittest.TestCase):
             self.assertGreaterEqual(plan["metrics"]["elapsed_ms"], 0)
             self.assertNotIn(str(repo), result.stdout)
 
+    def test_cross_language_alias_and_code_anchor_route_resume_capsule_v2(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            self.run_git(repo, "config", "repo-context-ledger.principal", "alice-profile")
+            created = self.run_ledger(
+                repo,
+                "pack", "--feature", "announcement-throttling",
+                "--title", "Announcement Throttling",
+                "--file", "src/service.py",
+                "--alias", "公告抓取限频",
+                "--alias", "announcement fetch rate limiting",
+            )
+            pack_path = repo / created.stdout.splitlines()[0]
+            self.fill_context_pack(pack_path)
+            pack_text = pack_path.read_text(encoding="utf-8").replace(
+                "`src/auth.py`", "`src/service.py::RateLimiter`"
+            )
+            pack_path.write_text(pack_text, encoding="utf-8")
+
+            chinese = json.loads(self.run_ledger(
+                repo, "context", "--query", "继续公告抓取限频", "--format", "json"
+            ).stdout)
+            self.assertEqual("announcement-throttling", chinese["feature"])
+            self.assertTrue(any(
+                reason.startswith("alias=") for reason in chinese["selection"]["reasons"]
+            ))
+
+            symbol = json.loads(self.run_ledger(
+                repo, "context", "--query", "RateLimiter retry boundary", "--format", "json"
+            ).stdout)
+            self.assertEqual("announcement-throttling", symbol["feature"])
+            self.assertTrue(any(
+                reason.startswith("anchor=") for reason in symbol["selection"]["reasons"]
+            ))
+            started = self.run_ledger(
+                repo,
+                "start", "--title", "Tune announcement throttling",
+                "--feature", "announcement-throttling", "--tool", "codex",
+            )
+            session = session_from_result(started)
+            self.run_ledger(
+                repo, "checkpoint", "--session", session,
+                "--summary", "The explicit limiter boundary is located and ready for implementation.",
+                "--next", "Inspect the retry caller before changing the limiter.",
+            )
+            capsule_plan = json.loads(self.run_ledger(
+                repo, "context", "--query", "继续公告抓取限频",
+                "--tool", "cursor", "--format", "json",
+            ).stdout)
+            self.assertEqual("context-bundle-v1", capsule_plan["schema"])
+            capsule = capsule_plan["resume"]["capsule"]
+            self.assertEqual("resume-capsule-v2", capsule["schema"])
+            self.assertEqual(capsule["title"], capsule["goal"])
+            self.assertEqual(capsule["summary"], capsule["current_state"])
+            self.assertEqual(capsule["next_step"], capsule["next_action"])
+            self.assertIn("src/service.py::RateLimiter", capsule["code_anchors"])
+            self.assertIn(
+                "docs/ai/context-packs/announcement-throttling.md",
+                capsule["required_reads"],
+            )
+            self.assertTrue(capsule["must_preserve"])
+            self.assertLessEqual(
+                capsule["budget"]["used_characters"],
+                capsule["budget"]["max_characters"],
+            )
+
+
     def test_context_router_private_cache_reuses_and_invalidates_entries(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw) / "repo"

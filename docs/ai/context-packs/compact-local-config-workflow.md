@@ -2,13 +2,14 @@
 
 Status: current
 Feature: compact-local-config-workflow
+Aliases: none
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: e9589ed8c0474590bc6266d9d92424ac1b5050cb
+Source commit: 45055d81262efa4ef1ec627ac22e578fb1be61d3
 Base branch: main
-Base commit: b7e4eb53249faa64881e37401a764093faf476b7
-Last refreshed: 2026-08-27T07:16:02+08:00
+Base commit: 45055d81262efa4ef1ec627ac22e578fb1be61d3
+Last refreshed: 2026-08-27T08:19:55+08:00
 
 ## Purpose
 
@@ -48,13 +49,13 @@ Run `python -m unittest discover -s tests -p test_ledger.py` for public CLI life
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:bb86aed0eb01b87403cfcfe6f95f3895cc2fa7dc6d74b5c38568b5b0ff8a9a08`
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:3df3ad1683588826e815cb3576f8e63d8bb320928c478222bead0c55736dffc2`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:187328722f04f19285b4e95115a6bda0b565ab554419156797307229a911045c`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:819c709ed64de35af4cf57efc4967ccb68554d340ffc4aac673222fb5763b6d2`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:8dbccc54b87e0dfd05f93edadc3f716ac4873450d1e240801ebfa2101f1ca9f5`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:bdfac50c0e0f2aa013c6f73e1ca259921559e999e715924994411dc9fad855c4`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:c72b923b0c5f1cd758e5771e914e150f9bc885a2ba176410287c077804645007`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:3b1e2c2b42ff57f3b9828d6f86394c47f9d0e0ae1f0a739750e565120027e101`
 - `skills/repo-context-ledger/references/production-workflow.md` — `sha256:6dc2c1cc8f3483e2c977e0e58483559d93411247d69fe3623d047e4486279003`
 - `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:dd1e26e29993ac93d5f52de315df130b270982125b4037dc01c17d9cb63f9a52`
-- `tests/test_ledger.py` — `sha256:bb1837198bb1324bea43b4f974991d59041780970efe5251a20085a83fd4a03a`
+- `tests/test_ledger.py` — `sha256:7ad70640f1331235e79c7860ea613b971b0b64991e09faf9008c0dd37f84e8f8`
 - `tests/test_doctor.py` — `sha256:84526dcc76e8bc08fcc4888763426729c8e73db4c6c70242abeecd763fcad8bd`
 - `benchmarks/closeout_workflow_benchmark.py` — `sha256:33fb3dc82c2acd29e5bab6d3870046868a5d79858c2ac7641bb0a8102c089d6c`
 - `benchmarks/README.md` — `sha256:9244091fc1202a9c40c54f2fb7f81d7e708dacd3d619f8e68e70f70ee633088a`
