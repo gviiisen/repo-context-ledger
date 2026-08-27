@@ -24,6 +24,8 @@ The builder reads UTF-8 source, normalizes line endings to LF, injects each orde
 
 Git-facing runtime code captures stdout and stderr as bytes. Path-producing commands use `-z`, split only on NUL, and decode individual paths through the operating-system filesystem codec. After Git confirms a worktree, required path/evidence queries fail closed; only a genuine non-Git directory may use the local fallback.
 
+Repository writes use a short exclusive lock containing only bounded diagnostic metadata and a random ownership nonce. Cleanup checks both the original file identity and nonce. `doctor` may classify the lock but never removes it. Verification presets remain Git-tracked inert data until their normalized digest is trusted for the current local principal; trust state lives below Git metadata and is not part of repository history.
+
 Edit source and rebuild with:
 
 ```text

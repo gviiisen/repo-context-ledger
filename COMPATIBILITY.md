@@ -30,6 +30,8 @@ Expected JSON failures remain inside the requested schema and use stable machine
 
 Starting in v0.8.1, a confirmed Git worktree that cannot answer a required status/diff query fails with `GIT_COMMAND_FAILED`. This is an additive error code within the existing schemas and exit class 2. Git path readers use NUL-delimited byte output, so filenames are interpreted by the operating-system filesystem codec rather than Git's display quoting. Genuine non-Git directories retain their local fallback behavior.
 
+Starting in v0.8.2, an untrusted or changed verification preset fails before execution with `PRESET_TRUST_REQUIRED` and exit class 2. Trust is keyed by the current local principal and the canonical normalized preset digest. It is private clone state, not a repository schema or portable Git contract. Existing direct `verify -- <command>` behavior is unchanged.
+
 ## Repository and private-state compatibility
 
 `.context-ledger/config.json` and private task state currently use schema v8. `init --dry-run` must preview the same migration plan as real `init`. Git-tracked Packs, specs, and completed Changes remain readable across minor releases. Private active/paused state remains local to the clone/worktree and is not a portable Git contract.

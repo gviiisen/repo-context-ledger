@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 VERSION = 8
-TOOL_VERSION = "0.8.1"
+TOOL_VERSION = "0.8.2"
 MANIFEST_VERSION = 1
 ROUTER_CACHE_SCHEMA = 2
 CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
@@ -41,6 +41,7 @@ ERROR_CONTEXT_NO_MATCH = "CONTEXT_NO_MATCH"
 ERROR_CHECK_FAILED = "CHECK_FAILED"
 ERROR_DOCTOR_FAILED = "DOCTOR_FAILED"
 ERROR_GIT_COMMAND_FAILED = "GIT_COMMAND_FAILED"
+ERROR_PRESET_TRUST_REQUIRED = "PRESET_TRUST_REQUIRED"
 QUALITY_PROFILE = "evidence-v1"
 BLOCK_START = "<!-- repo-context-ledger:start -->"
 BLOCK_END = "<!-- repo-context-ledger:end -->"
@@ -105,6 +106,7 @@ CONTEXT_DEFAULTS = {
 DEFAULT_VERIFICATION_TIMEOUT = 300
 VERIFICATION_PLATFORMS = ("windows", "linux", "darwin")
 VERIFICATION_PRESET_KEYS = ("argv", "cwd", "timeout", "sensitive", "platforms")
+PRESET_TRUST_SCHEMA = 1
 RESUME_NEAR_SCORE_RATIO = 0.85
 RESUME_SUMMARY_CHARS = 600
 RESUME_NEXT_CHARS = 320
@@ -501,30 +503,50 @@ def repo_lock(repo: Path, wait_seconds: float = 0.0):
     lock_path = lock_dir / ".write.lock"
     wait_started = time.perf_counter()
     deadline = wait_started + max(0.0, wait_seconds)
+    nonce = uuid.uuid4().hex
+    command = "unknown"
+    if _COMMAND_TIMINGS:
+        command = str(_COMMAND_TIMINGS.get("command", "unknown"))
+    command = re.sub(r"[^a-z0-9._-]+", "-", command.casefold()).strip("-") or "unknown"
+    owner_identity: tuple[int, int] | None = None
     while True:
         try:
-            descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            descriptor = os.open(lock_path, flags, 0o600)
+            opened = os.fstat(descriptor)
+            owner_identity = (opened.st_dev, opened.st_ino)
             break
         except FileExistsError as exc:
             remaining = deadline - time.perf_counter()
             if remaining <= 0:
                 add_command_timing("lock_wait_ms", (time.perf_counter() - wait_started) * 1000)
                 raise LedgerError(
-                    "Another Repo Context Ledger write is active. Wait for it to finish; "
-                    "remove .context-ledger/.write.lock only if the prior process crashed."
+                    "Another Repo Context Ledger write lock exists. Run doctor to distinguish "
+                    "a live writer from a stale or unsafe lock before taking recovery action."
                 ) from exc
             time.sleep(min(0.025, remaining))
     add_command_timing("lock_wait_ms", (time.perf_counter() - wait_started) * 1000)
     hold_started = time.perf_counter()
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(f"pid={os.getpid()} started={now().isoformat(timespec='seconds')}\n")
+            handle.write(
+                f"version=1 pid={os.getpid()} started={now().isoformat(timespec='seconds')} "
+                f"command={command} nonce={nonce}\n"
+            )
+            handle.flush()
+            os.fsync(handle.fileno())
         yield
     finally:
         add_command_timing("lock_hold_ms", (time.perf_counter() - hold_started) * 1000)
         try:
-            lock_path.unlink()
-        except FileNotFoundError:
+            current_stat = lock_path.lstat()
+            same_identity = owner_identity == (current_stat.st_dev, current_stat.st_ino)
+            current = lock_path.read_text(encoding="utf-8") if same_identity else ""
+            if same_identity and f"nonce={nonce}" in current.split():
+                lock_path.unlink()
+        except (FileNotFoundError, OSError, UnicodeError):
             pass
 
 
@@ -1413,6 +1435,86 @@ def resolve_verification_preset(
     )
 
 
+def verification_preset_digest(preset: dict[str, object]) -> str:
+    canonical = json.dumps(
+        preset,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(canonical).hexdigest()
+
+
+def preset_trust_path(repo: Path) -> Path:
+    if is_git_repo(repo):
+        raw = git_output(repo, "rev-parse", "--git-common-dir", required=True)
+        common = Path(raw)
+        common = common.resolve() if common.is_absolute() else (repo / common).resolve()
+        return common / "repo-context-ledger" / "preset-trust.json"
+    return safe_repo_path(repo, ".context-ledger/preset-trust.json", "preset trust")
+
+
+def load_preset_trust(repo: Path) -> dict[str, object]:
+    path = preset_trust_path(repo)
+    if not path.exists():
+        return {"schema_version": PRESET_TRUST_SCHEMA, "principals": {}}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise LedgerError("Private preset trust state is unreadable; no preset was executed.") from exc
+    if not isinstance(raw, dict) or raw.get("schema_version") != PRESET_TRUST_SCHEMA:
+        raise LedgerError("Private preset trust state has an unsupported schema; no preset was executed.")
+    principals = raw.get("principals")
+    if not isinstance(principals, dict):
+        raise LedgerError("Private preset trust state is invalid; no preset was executed.")
+    return raw
+
+
+def save_preset_trust(repo: Path, trust: dict[str, object]) -> None:
+    path = preset_trust_path(repo)
+    atomic_write(path, json.dumps(trust, indent=2, ensure_ascii=False) + "\n")
+    if os.name != "nt":
+        os.chmod(path, 0o600)
+
+
+def require_verification_preset_trust(
+    repo: Path,
+    name: str,
+    preset: dict[str, object],
+    supplied_digest: str = "",
+) -> str:
+    digest = verification_preset_digest(preset)
+    principal = current_principal(repo)
+    trust = load_preset_trust(repo)
+    principals = trust["principals"]
+    assert isinstance(principals, dict)
+    existing = principals.get(principal, {})
+    if isinstance(existing, dict) and existing.get(name) == digest:
+        if supplied_digest and supplied_digest != digest:
+            raise LedgerError(
+                f"Preset trust digest does not match {name}; expected {digest}.",
+                ERROR_PRESET_TRUST_REQUIRED,
+            )
+        return digest
+    if supplied_digest != digest:
+        raise LedgerError(
+            f"Verification preset {name} is not trusted for the current principal. "
+            f"Review config.verification.presets.{name}, then repeat with "
+            f"--trust-digest {digest}.",
+            ERROR_PRESET_TRUST_REQUIRED,
+        )
+    with repo_lock(repo, WRITE_LOCK_WAIT_SECONDS):
+        trust = load_preset_trust(repo)
+        principals = trust["principals"]
+        assert isinstance(principals, dict)
+        principal_trust = principals.setdefault(principal, {})
+        if not isinstance(principal_trust, dict):
+            raise LedgerError("Private preset trust state is invalid; no preset was executed.")
+        principal_trust[name] = digest
+        save_preset_trust(repo, trust)
+    return digest
+
+
 def validate_config(repo: Path, config: dict) -> dict:
     if not isinstance(config, dict):
         raise LedgerError("Ledger configuration must be a JSON object.")
@@ -1626,7 +1728,7 @@ def managed_rules(config: dict) -> str:
     specs = config["docs"]["specs"]
     return f"""## Repository context ledger
 
-Choose the shortest applicable path. Read-only work uses `context` only when routing is needed and never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config>`. A single-session small fix with an already known code path uses `status` → `start` → implement → independent parallel `verify` commands → `finish`; prefer an exact reviewed `verify --preset <name>` when configured, and otherwise pass direct executable arguments; skip context/focus and a separate evidence command unless the task expands or becomes uncertain. Ordinary behavior changes use the lifecycle below.
+Choose the shortest applicable path. Read-only work uses `context` only when routing is needed and never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config>`. A single-session small fix with an already known code path uses `status` → `start` → implement → independent parallel `verify` commands → `finish`; prefer an exact reviewed `verify --preset <name>` when configured. On first use or after the preset changes, inspect it and repeat with the exact printed `--trust-digest`; otherwise pass direct executable arguments; skip context/focus and a separate evidence command unless the task expands or becomes uncertain. Ordinary behavior changes use the lifecycle below.
 
 For every feature, bug fix, refactor, interface change, or other ordinary behavior-changing code task:
 
@@ -1634,7 +1736,7 @@ For every feature, bug fix, refactor, interface change, or other ordinary behavi
 2. Resolve `quality.language`; when it is `auto`, follow nearby docs or the user's language. Keep paths, symbols, commands, and error text untranslated.
 3. For medium/large or uncertain work, {context_plan_policy()} Focus the selected feature Context Pack before broad code exploration. If no Pack exists, create and fill one. Skip routing only for a genuinely small fix whose code path and behavior boundary are already established.
 4. {resume_plan_policy()} Run `checkpoint --session <id> --summary "..." --next "..."` before handing active work to another Agent. Pause only this task's session; never pause, resume, or finish another task's session.
-5. After code is stable, run independent checks concurrently. Prefer a reviewed `.context-ledger/config.json` verification preset that exactly matches the claimed check: `python .context-ledger/ledger.py verify --preset <name>`. Presets are explicit argv arrays and are never auto-run. Otherwise use `verify -- <direct executable and arguments>`; do not nest PowerShell or shell command strings. While checks run, refresh the Pack and spec when those edits do not share mutable test resources. Wait for every verification to record before `finish`; never hand-edit the private draft while verification appends to it. Keep checks serial when they share a database, port, generated directory, or mutable fixture. Use `verify --not-run --reason \"...\"` only when verification is genuinely unavailable.
+5. After code is stable, run independent checks concurrently. Prefer a reviewed `.context-ledger/config.json` verification preset that exactly matches the claimed check: `python .context-ledger/ledger.py verify --preset <name>`. Presets are explicit argv arrays and are never auto-run. If the runtime reports `PRESET_TRUST_REQUIRED`, inspect the exact Git-tracked preset and repeat with its printed `--trust-digest`; never trust a digest without reviewing the command. Otherwise use `verify -- <direct executable and arguments>`; do not nest PowerShell or shell command strings. While checks run, refresh the Pack and spec when those edits do not share mutable test resources. Wait for every verification to record before `finish`; never hand-edit the private draft while verification appends to it. Keep checks serial when they share a database, port, generated directory, or mutable fixture. Use `verify --not-run --reason \"...\"` only when verification is genuinely unavailable.
 6. Let `finish` capture evidence for a single-session small fix. Run explicit `evidence --path` only when another session exists or automatic collection is too broad; never capture foreign dirty paths.
 7. Update `{specs}/` and refresh affected Context Packs when current behavior, contracts, boundaries, code navigation, or tracked production paths change.
 8. Finish with `finish --spec <affected-spec>`, or use `--no-spec --reason \"...\"` only when no stable behavior exists.
@@ -4053,11 +4155,118 @@ def doctor_legacy_workflow_findings(repo: Path, max_items: int) -> list[dict[str
     )]
 
 
+def lock_process_status(pid: int) -> str:
+    if pid <= 0:
+        return "unknown"
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            process_query_limited_information = 0x1000
+            still_active = 259
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            kernel32.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+            kernel32.GetExitCodeProcess.restype = ctypes.c_int
+            kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+            kernel32.CloseHandle.restype = ctypes.c_int
+            handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+            if not handle:
+                error = ctypes.get_last_error()
+                return "live" if error == 5 else "stale" if error in {87, 1168} else "unknown"
+            try:
+                exit_code = ctypes.c_ulong()
+                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                    return "unknown"
+                return "live" if exit_code.value == still_active else "stale"
+            finally:
+                kernel32.CloseHandle(handle)
+        except (AttributeError, OSError, ValueError):
+            return "unknown"
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return "stale"
+    except PermissionError:
+        return "live"
+    except (OSError, OverflowError):
+        return "stale" if pid > 2_147_483_647 else "unknown"
+    return "live"
+
+
+def doctor_lock_findings(repo: Path, max_items: int) -> list[dict[str, object]]:
+    lock = safe_repo_path(repo, ".context-ledger/.write.lock", "repository write lock")
+    if not lock.exists() and not lock.is_symlink():
+        return [doctor_finding("WRITE_LOCK", "pass", "write-lock", "No repository write lock is present.")]
+    if lock.is_symlink() or not lock.is_file():
+        return [doctor_finding(
+            "WRITE_LOCK_UNSAFE", "error", "write-lock",
+            "The repository write-lock path is not a regular file.",
+            actions=["Inspect and remove the unsafe lock path manually; the runtime will not follow it."],
+        )]
+    try:
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(lock, flags)
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            os.close(descriptor)
+            raise OSError("write lock is not a regular file")
+        with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+            text = handle.read(2049)
+        if len(text) > 2048:
+            raise OSError("write-lock metadata exceeds the diagnostic limit")
+        text = text.strip()
+    except (OSError, UnicodeError):
+        return [doctor_finding(
+            "WRITE_LOCK_UNREADABLE", "repairable", "write-lock",
+            "The repository write lock cannot be read safely.",
+            actions=["Confirm no Ledger process is writing, then remove only .context-ledger/.write.lock."],
+        )]
+    fields = dict(re.findall(r"(?:^|\s)([a-z_]+)=([^\s]+)", text))
+    try:
+        pid = int(fields.get("pid", ""))
+    except ValueError:
+        pid = 0
+    required = {"version", "pid", "started", "command", "nonce"}
+    if fields.get("version") != "1" or not required.issubset(fields) or pid <= 0:
+        return [doctor_finding(
+            "WRITE_LOCK_INVALID", "repairable", "write-lock",
+            "The repository write lock has invalid or legacy metadata.",
+            actions=["Confirm no Ledger process is writing, then remove only .context-ledger/.write.lock."],
+        )]
+    status = lock_process_status(pid)
+    item = f"pid={pid} command={fields['command']} started={fields['started']}"
+    if status == "live":
+        return [doctor_finding(
+            "WRITE_LOCK_ACTIVE", "warning", "write-lock",
+            "A live Repo Context Ledger writer owns the repository lock.",
+            items=[item], max_items=max_items,
+            actions=["Wait for the owning command to finish; do not remove its lock."],
+        )]
+    if status == "stale":
+        return [doctor_finding(
+            "WRITE_LOCK_STALE", "repairable", "write-lock",
+            "The repository write lock belongs to a process that is no longer running.",
+            items=[item], max_items=max_items,
+            actions=["Confirm the recorded process is gone, then remove only .context-ledger/.write.lock."],
+        )]
+    return [doctor_finding(
+        "WRITE_LOCK_UNKNOWN", "warning", "write-lock",
+        "The repository write-lock owner could not be proven live or stale.",
+        items=[item], max_items=max_items,
+        actions=["Inspect the recorded process before taking any lock recovery action."],
+    )]
+
+
 def doctor_repo(repo: Path, output_format: str = "text", max_items: int = 20) -> int:
     """Run bounded, deterministic, read-only repository health diagnostics."""
     if not 1 <= max_items <= 100:
         raise LedgerError("doctor --max-items must be between 1 and 100.", ERROR_INVALID_ARGUMENT)
     findings: list[dict[str, object]] = []
+    findings.extend(doctor_lock_findings(repo, max_items))
     try:
         config = load_config(repo)
     except LedgerError as exc:
@@ -6787,6 +6996,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Execute a reviewed argv-array preset from config.verification.presets",
     )
+    verify.add_argument(
+        "--trust-digest",
+        default="",
+        help="After reviewing a preset, trust its exact sha256 digest for this local principal",
+    )
     verify.add_argument("verification_command", nargs=argparse.REMAINDER)
     sync = sub.add_parser("sync", help="Regenerate indexes and managed README blocks")
     sync.add_argument(
@@ -7000,13 +7214,22 @@ def run_main(argv: list[str] | None = None) -> int:
             if args.preset and command:
                 print("Use either --preset or a command after --, not both.", file=sys.stderr)
                 return 2
+            if args.trust_digest and not args.preset:
+                print("--trust-digest requires --preset.", file=sys.stderr)
+                return 2
             timeout = args.timeout if args.timeout is not None else DEFAULT_VERIFICATION_TIMEOUT
             sensitive = args.sensitive
             working_directory = repo
             if args.preset:
-                command, working_directory, preset_timeout, preset_sensitive = (
-                    resolve_verification_preset(repo, load_config(repo), args.preset)
+                config = load_config(repo)
+                preset = config.get("verification", {}).get("presets", {}).get(args.preset)
+                if not isinstance(preset, dict):
+                    available = ", ".join(sorted(config.get("verification", {}).get("presets", {}))) or "none configured"
+                    raise LedgerError(f"Unknown verification preset: {args.preset}. Available: {available}.")
+                command, working_directory, preset_timeout, preset_sensitive = resolve_verification_preset(
+                    repo, config, args.preset
                 )
+                require_verification_preset_trust(repo, args.preset, preset, args.trust_digest)
                 if args.timeout is None:
                     timeout = preset_timeout
                 sensitive = sensitive or preset_sensitive

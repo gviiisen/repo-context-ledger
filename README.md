@@ -210,7 +210,7 @@ Project maintainers can also define reviewed verification presets in `.context-l
 }
 ```
 
-Run one explicitly with `python .context-ledger/ledger.py verify --preset unit`. Presets never run during `init`, routing, or `finish`; they cannot carry environment variables or secrets. Shell strings such as PowerShell `-Command`, `cmd.exe`, and `bash -c` are rejected. See [verification-presets.md](skills/repo-context-ledger/references/verification-presets.md) for the complete contract.
+Run one explicitly with `python .context-ledger/ledger.py verify --preset unit`. The first run, and the first run after a preset changes, stops and prints its exact digest; review the Git-tracked preset and repeat with `--trust-digest sha256:...`. Trust is per local principal and never enters Git. Presets never run during `init`, routing, or `finish`; they cannot carry environment variables or secrets. Shell strings such as PowerShell `-Command`, `cmd.exe`, and `bash -c` are rejected. See [verification-presets.md](skills/repo-context-ledger/references/verification-presets.md) for the complete contract.
 
 ### 3. Continue in another agent or switch tasks naturally
 
@@ -316,6 +316,14 @@ python scripts/build_runtime.py --check
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
+
+## What's new in v0.8.2
+
+- Repository write locks carry a version, PID, start time, command, and random ownership nonce. The owner removes a lock only when both file identity and nonce still match, so it cannot delete a replacement lock created by another writer.
+- `doctor` distinguishes a live writer, stale process, unknown owner, malformed legacy metadata, and an unsafe symlink/non-regular lock path. Diagnosis is read-only and never removes a lock automatically.
+- Windows process liveness uses a read-only process query instead of signal emulation; Unix uses signal 0. Diagnostics expose only bounded lock metadata and no repository path.
+- Git-tracked verification presets require principal-local digest trust before their first execution and after every configuration change. A mismatch fails with `PRESET_TRUST_REQUIRED`; trust decisions stay below Git metadata and do not transfer to another user.
+- [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md) document supported reporting, assets, trust boundaries, considered threats, recovery rules, and deliberate non-goals.
 
 ## What's new in v0.8.1
 

@@ -210,7 +210,7 @@ Coverage 路径分类在 `.context-ledger/config.json` 中单独配置：
 }
 ```
 
-需要执行时显式运行 `python .context-ledger/ledger.py verify --preset unit`。预设不会在 `init`、上下文路由或 `finish` 时自动运行，也不能携带环境变量或密钥。PowerShell `-Command`、`cmd.exe`、`bash -c` 等 shell 字符串形式会被拒绝。完整约束见 [verification-presets.md](skills/repo-context-ledger/references/verification-presets.md)。
+需要执行时显式运行 `python .context-ledger/ledger.py verify --preset unit`。首次运行以及 preset 内容变更后的首次运行会先停止并打印精确 digest；审核 Git 中的 preset 后，再带 `--trust-digest sha256:...` 重试。信任按本机 principal 隔离，不进入 Git。预设不会在 `init`、上下文路由或 `finish` 时自动运行，也不能携带环境变量或密钥。PowerShell `-Command`、`cmd.exe`、`bash -c` 等 shell 字符串形式会被拒绝。完整约束见 [verification-presets.md](skills/repo-context-ledger/references/verification-presets.md)。
 
 ### 3. 在另一个 Agent 中继续，或者自然切换任务
 
@@ -316,6 +316,14 @@ python scripts/build_runtime.py --check
 ```
 
 源码与生成物边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## v0.8.2 新增能力
+
+- 仓库写锁现在记录版本、PID、开始时间、命令和随机 ownership nonce；只有文件身份与 nonce 都仍然匹配时，持有者才会删除锁，不会误删另一个写进程后来创建的替代锁。
+- `doctor` 可以区分 live writer、stale process、未知 owner、旧版/损坏 metadata，以及 symlink 或非普通文件等不安全锁路径。诊断严格只读，绝不自动删锁。
+- Windows 使用只读进程句柄查询存活状态，不模拟 signal；Unix 使用 signal 0。诊断只返回有上限的锁 metadata，不暴露仓库绝对路径。
+- Git 跟踪的 verification preset 在首次执行和每次配置变化后都必须由当前本机 principal 按精确 digest 授信。不匹配时使用 `PRESET_TRUST_REQUIRED` fail closed；信任记录位于 Git metadata 下，不会传给另一用户。
+- 新增 [SECURITY.md](SECURITY.md) 与 [THREAT_MODEL.md](THREAT_MODEL.md)，明确安全报告、资产、信任边界、已考虑威胁、恢复原则和非目标。
 
 ## v0.8.1 新增能力
 

@@ -36,10 +36,12 @@ Presets live in the Git-tracked `.context-ledger/config.json` and are never exec
 }
 ```
 
-Run one explicitly:
+Run one explicitly. The first attempt stops before execution and prints the preset's normalized digest:
 
 ```text
 python .context-ledger/ledger.py verify --session <id> --preset python-unit
+ERROR: ... repeat with --trust-digest sha256:<digest>
+python .context-ledger/ledger.py verify --session <id> --preset python-unit --trust-digest sha256:<digest>
 ```
 
 An explicit `--timeout` overrides the preset timeout. An explicit `--sensitive` can strengthen a non-sensitive preset; it cannot make a preset configured as sensitive persist its command or output.
@@ -51,7 +53,7 @@ An explicit `--timeout` overrides the preset timeout. An explicit `--sensitive` 
 - `platforms` contains one or more of `windows`, `linux`, and `darwin`; a mismatched machine fails before execution.
 - PowerShell presets must use `-File` with a reviewed script. `-Command`, encoded command strings, `cmd.exe`, and shell `-c` strings are rejected.
 - Do not store secrets, tokens, local absolute paths, or environment-specific values in a preset. `sensitive: true` protects verification evidence, not the Git-tracked configuration itself.
-- Review a preset after pulling untrusted repository changes. Explicit selection is authorization to run that preset; initialization, context routing, and `finish` never auto-run it.
+- Review a preset after cloning, pulling, changing branches, or receiving configuration changes. Trust requires the exact digest printed by the runtime, is scoped to the current local principal, and is stored outside Git. A changed preset has a new digest and stops again before execution. Initialization, context routing, and `finish` never auto-run it.
 - Prefer checked-in Python, PowerShell, Bash, or project-native scripts when a check needs pipes, conditionals, environment setup, or several commands.
 
 ## Agent behavior
