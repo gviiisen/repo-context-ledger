@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gviiisen/repo-context-ledger/schemas/workflow-plan-v1.schema.json",
+  "title": "workflow-plan-v1",
+  "type": "object",
+  "required": ["schema", "tool_version", "query", "requested_intent", "mode", "confidence", "requires_confirmation", "reasons", "feature", "session_id", "next_action", "safety"],
+  "properties": {
+    "schema": {"type": "string", "const": "workflow-plan-v1"},
+    "tool_version": {"type": "string"},
+    "query": {"type": "string"},
+    "requested_intent": {"type": "string", "enum": ["auto", "readonly", "small-fix", "ordinary-change", "resume"]},
+    "mode": {"type": "string", "enum": ["readonly", "small-fix", "ordinary-change", "resume"]},
+    "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+    "requires_confirmation": {"type": "boolean"},
+    "reasons": {"type": "array", "items": {"type": "string"}},
+    "feature": {"type": "string"},
+    "session_id": {"type": "string"},
+    "next_action": {
+      "type": "object",
+      "required": ["kind", "argv", "description"],
+      "properties": {
+        "kind": {"type": "string", "enum": ["clarify", "context", "focus", "start", "resume"]},
+        "argv": {"type": "array", "items": {"type": "string"}},
+        "description": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "safety": {"type": "object"},
+    "error": {"type": "object"}
+  },
+  "additionalProperties": true
+}

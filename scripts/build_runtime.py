@@ -17,6 +17,9 @@ FRAGMENTS = (
     ("# @repo-context-ledger:constants@", ROOT / "src" / "repo_context_ledger" / "constants.pyfrag"),
     ("# @repo-context-ledger:errors@", ROOT / "src" / "repo_context_ledger" / "errors.pyfrag"),
     ("# @repo-context-ledger:models@", ROOT / "src" / "repo_context_ledger" / "models.pyfrag"),
+    ("# @repo-context-ledger:locks@", ROOT / "src" / "repo_context_ledger" / "locks.pyfrag"),
+    ("# @repo-context-ledger:git@", ROOT / "src" / "repo_context_ledger" / "git.pyfrag"),
+    ("# @repo-context-ledger:workflow@", ROOT / "src" / "repo_context_ledger" / "workflow.pyfrag"),
 )
 DEFAULT_OUTPUTS = (
     ROOT / "skills" / "repo-context-ledger" / "scripts" / "ledger.py",

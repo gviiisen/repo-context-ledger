@@ -320,6 +320,13 @@ python scripts/build_runtime.py --check
 
 源码与生成物边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
+## v1.0.0 新增能力
+
+- 可编辑运行时现在按经过测试的边界拆分为常量、错误、结果模型、仓库锁、核心 Git 访问和 Workflow Planning。确定性构建仍只生成一个零依赖 `ledger.py`，安装和 `init` 不会增加 Python package 依赖。
+- `schemas/` 正式提供 6 份 Draft 2020-12 协议声明：`workflow-plan-v1`、`context-bundle-v1`、`resume-capsule-v2`、`doctor-v1`、`status-v1` 和 `check-v1`。
+- 协议测试会执行真实 CLI，并递归核对成功、无匹配与错误响应。1.x 兼容承诺固定必需字段、语义和退出类别，同时允许增加可选扩展。
+- 模块化继续采用渐进方式；生命周期、路由、健康检查和渲染仍留在模板中，等形成聚焦测试边界后再拆，避免一次性重写整个运行时。
+
 ## v0.9.0 新增能力
 
 - `plan --query` 新增只读的 `workflow-plan-v1` 入口，明确区分 `readonly`、`small-fix`、`ordinary-change` 与 `resume`；输出理由、置信度、是否需要确认，以及不会被自动执行的结构化下一步参数数组。

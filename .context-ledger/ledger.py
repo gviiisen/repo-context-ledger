@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 VERSION = 8
-TOOL_VERSION = "0.9.0"
+TOOL_VERSION = "1.0.0"
 MANIFEST_VERSION = 1
 ROUTER_CACHE_SCHEMA = 2
 CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
@@ -3494,6 +3494,46 @@ def build_workflow_plan(
         },
     }
 
+def workflow_plan_command(
+    repo: Path,
+    query: str,
+    intent: str,
+    output_format: str,
+    tool: str = "",
+    baseline_ref: str = "",
+) -> int:
+    captured = io.StringIO()
+    with redirect_stdout(captured):
+        context_search(
+            repo,
+            query,
+            1,
+            "json",
+            tool,
+            baseline_ref,
+            intent,
+        )
+    try:
+        bundle = json.loads(captured.getvalue())
+        workflow = bundle["workflow"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise LedgerError("Workflow Plan could not be produced from the context preflight.") from exc
+    if output_format == "json":
+        print(json.dumps(workflow, indent=2, ensure_ascii=True))
+        return EXIT_SUCCESS
+    print(f"Workflow Plan: {workflow['schema']}")
+    print(f"Mode: {workflow['mode']}")
+    print(f"Confidence: {workflow['confidence']}")
+    print(f"Requires confirmation: {'yes' if workflow['requires_confirmation'] else 'no'}")
+    print("Reasons:")
+    for reason in workflow["reasons"]:
+        print(f"- {reason}")
+    action = workflow["next_action"]
+    print(f"Next action: {action['kind']}")
+    print(f"Arguments: {json.dumps(action['argv'], ensure_ascii=False)}")
+    print(f"Guidance: {action['description']}")
+    return EXIT_SUCCESS
+
 
 def context_search(
     repo: Path,
@@ -3806,45 +3846,6 @@ def context_search(
     return 0
 
 
-def workflow_plan_command(
-    repo: Path,
-    query: str,
-    intent: str,
-    output_format: str,
-    tool: str = "",
-    baseline_ref: str = "",
-) -> int:
-    captured = io.StringIO()
-    with redirect_stdout(captured):
-        context_search(
-            repo,
-            query,
-            1,
-            "json",
-            tool,
-            baseline_ref,
-            intent,
-        )
-    try:
-        bundle = json.loads(captured.getvalue())
-        workflow = bundle["workflow"]
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise LedgerError("Workflow Plan could not be produced from the context preflight.") from exc
-    if output_format == "json":
-        print(json.dumps(workflow, indent=2, ensure_ascii=True))
-        return EXIT_SUCCESS
-    print(f"Workflow Plan: {workflow['schema']}")
-    print(f"Mode: {workflow['mode']}")
-    print(f"Confidence: {workflow['confidence']}")
-    print(f"Requires confirmation: {'yes' if workflow['requires_confirmation'] else 'no'}")
-    print("Reasons:")
-    for reason in workflow["reasons"]:
-        print(f"- {reason}")
-    action = workflow["next_action"]
-    print(f"Next action: {action['kind']}")
-    print(f"Arguments: {json.dumps(action['argv'], ensure_ascii=False)}")
-    print(f"Guidance: {action['description']}")
-    return EXIT_SUCCESS
 
 
 def context_pack_path(repo: Path, config: dict, feature: str) -> Path:

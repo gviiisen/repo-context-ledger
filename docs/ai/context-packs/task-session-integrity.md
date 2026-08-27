@@ -6,10 +6,10 @@ Aliases: 跨窗口续接 | cross-agent continuation | resume task session
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 25b94983f63d44d3f7134c37621957d531ad88f2
+Source commit: 2c5ea2f81b7b8f8939ad274f44094a6b937faca5
 Base branch: main
 Base commit: 0d7e1f289e726edc4ae2b621361f89c621de5623
-Last refreshed: 2026-08-27T18:55:03+08:00
+Last refreshed: 2026-08-27T19:05:07+08:00
 
 ## Purpose
 
@@ -59,7 +59,7 @@ Run `python -m unittest discover -s tests -p test_ledger.py` for v8 migration, s
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:a54d09dbb14a7ca7b6368bb8ec957dfa5a4a4f4aafe06fc8ce507c97895384b6`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:0bfead16d1f3312ac8a0eacbb907905be4159c123f85f96dab4bc7ed4e0c985a`
 - `skills/repo-context-ledger/SKILL.md` — `sha256:c49a692005ff85c62c4fc3ebb5617af4725c55bba3857a3413b5c4d8bba4e12a`
 - `skills/repo-context-ledger/references/production-workflow.md` — `sha256:61b308e7b737e2677cf0f4c8740ad281710bc6e33740098cee5e17beb2b36d48`
 - `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:dd1e26e29993ac93d5f52de315df130b270982125b4037dc01c17d9cb63f9a52`

@@ -45,7 +45,7 @@ class RuntimeBuildTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(0, version.returncode, version.stderr)
-            self.assertIn("repo-context-ledger 0.9.0", version.stdout)
+            self.assertIn("repo-context-ledger 1.0.0", version.stdout)
 
     def test_check_detects_output_drift_without_rewriting_it(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -68,13 +68,33 @@ class RuntimeBuildTests(unittest.TestCase):
 
     def test_ordered_low_coupling_fragments_are_embedded_without_markers(self):
         generated = CANONICAL.read_text(encoding="utf-8")
-        self.assertIn('TOOL_VERSION = "0.9.0"', generated)
+        self.assertIn('TOOL_VERSION = "1.0.0"', generated)
         self.assertIn("class LedgerError", generated)
         self.assertIn("class CommandResult", generated)
         self.assertLess(generated.index("class LedgerError"), generated.index("class CommandResult"))
         self.assertNotIn("@repo-context-ledger:", generated)
-        for name in ("constants.pyfrag", "errors.pyfrag", "models.pyfrag"):
+        for name in (
+            "constants.pyfrag",
+            "errors.pyfrag",
+            "models.pyfrag",
+            "locks.pyfrag",
+            "git.pyfrag",
+            "workflow.pyfrag",
+        ):
             self.assertTrue((ROOT / "src" / "repo_context_ledger" / name).is_file(), name)
+
+        template = (ROOT / "src/repo_context_ledger/runtime.py.tmpl").read_text(
+            encoding="utf-8"
+        )
+        extracted = {
+            "locks": "def repo_lock(",
+            "git": "def run_git(",
+            "workflow": "def build_workflow_plan(",
+        }
+        for marker, definition in extracted.items():
+            self.assertEqual(1, template.count(f"@repo-context-ledger:{marker}@"))
+            self.assertNotIn(definition, template)
+            self.assertIn(definition, generated)
 
     def test_git_checkout_pins_runtime_generation_inputs_and_outputs_to_lf(self):
         paths = (
@@ -83,6 +103,9 @@ class RuntimeBuildTests(unittest.TestCase):
             "src/repo_context_ledger/constants.pyfrag",
             "src/repo_context_ledger/errors.pyfrag",
             "src/repo_context_ledger/models.pyfrag",
+            "src/repo_context_ledger/locks.pyfrag",
+            "src/repo_context_ledger/git.pyfrag",
+            "src/repo_context_ledger/workflow.pyfrag",
             "skills/repo-context-ledger/scripts/ledger.py",
             ".context-ledger/ledger.py",
         )

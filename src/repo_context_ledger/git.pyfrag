@@ -1,0 +1,62 @@
+def run_git(repo: Path, *args: str) -> GitResult:
+    argv = ("git", "-C", str(repo), *args)
+    try:
+        result = subprocess.run(
+            argv,
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return GitResult(argv, -1, b"", str(exc).encode("utf-8", errors="replace"))
+    return GitResult(argv, result.returncode, result.stdout, result.stderr)
+
+
+def git_command_error(repo: Path, result: GitResult) -> LedgerError:
+    command = "git " + " ".join(result.argv[3:])
+    detail = result.stderr.decode("utf-8", errors="replace").strip()
+    detail = redact_local_paths(detail, repo)[:600]
+    suffix = f": {detail}" if detail else ""
+    return LedgerError(
+        f"Git command failed ({command}, exit {result.returncode}){suffix}",
+        ERROR_GIT_COMMAND_FAILED,
+    )
+
+
+def git_output(repo: Path, *args: str, required: bool = False) -> str:
+    result = run_git(repo, *args)
+    if result.returncode != 0:
+        if required:
+            raise git_command_error(repo, result)
+        return ""
+    return result.stdout.decode("utf-8", errors="replace").strip()
+
+
+def git_repository_detected(repo: Path, required: bool = False) -> bool:
+    result = run_git(repo, "rev-parse", "--is-inside-work-tree")
+    if result.returncode == 0:
+        return result.stdout.strip() == b"true"
+    if required and (repo / ".git").exists():
+        raise git_command_error(repo, result)
+    return False
+
+
+def is_git_repo(repo: Path) -> bool:
+    return git_repository_detected(repo)
+
+
+def git_revision(repo: Path, ref: str = "HEAD") -> str:
+    return git_output(repo, "rev-parse", ref) or "none"
+
+
+def git_branch(repo: Path) -> str:
+    return git_output(repo, "branch", "--show-current") or "detached"
+
+
+def git_actor(repo: Path) -> str:
+    return (
+        git_output(repo, "config", "user.name")
+        or os.environ.get("GITHUB_ACTOR")
+        or os.environ.get("USERNAME")
+        or os.environ.get("USER")
+        or "unknown"
+    )

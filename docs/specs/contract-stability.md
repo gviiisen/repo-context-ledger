@@ -8,7 +8,7 @@ Last reviewed: 2026-08-27
 
 ## Purpose and behavior
 
-Contract Stability keeps automation and initialized repositories safe across minor releases. Existing human-readable commands remain usable, while automation selects explicit versioned JSON for context routing, health, status, and checks. Golden fixtures and a synthetic routing corpus make accidental field, schema, exit-class, and selection drift visible before release.
+Contract Stability keeps automation and initialized repositories safe across the 1.x line. Existing human-readable commands remain usable, while automation selects explicit versioned JSON for planning, context routing, health, status, and checks. Published Draft 2020-12 schemas, golden fixtures, and a synthetic routing corpus make accidental field, type, schema, exit-class, and selection drift visible before release.
 
 ## Entry points and code map
 
@@ -20,29 +20,32 @@ Contract Stability keeps automation and initialized repositories safe across min
 | `scripts/evaluate_routing.py` | Measures labeled synthetic routing accuracy, ambiguity/fallback behavior, lifecycle selection, read characters, and latency. |
 | `tests/test_routing_evaluation.py` | Locks the routing evaluation report and expected corpus outcomes. |
 | `tests/golden/v0.6.2-cli-contract.json` | Records public schema names, required fields, and exit classes. |
+| `schemas/*.schema.json` | Publishes the stable top-level required fields, scalar types, enums, and open extension boundaries for every public JSON protocol. |
+| `tests/test_protocol_schemas.py` | Executes real CLI reports and checks them against the published protocol declarations. |
 | `.github/workflows/test.yml` | Exercises Windows/Ubuntu on pushes and PRs plus macOS on releases, schedules, and manual runs. |
 
 ## Data flow and contracts
 
-- Input: existing CLI arguments, current repository/configuration/state, an explicit `--format json` request, golden contract fixtures, and fully synthetic routing cases. Optional additive configuration such as `verification.presets` must preserve repositories that omit it and existing direct `verify -- <argv>` callers.
-- Flow: status builds a dedicated structured report; check captures its existing text operation in memory and separates ordinary messages from errors; expected failures remain inside their requested JSON schema with stable error codes; tests compare required fields and evaluate a labeled synthetic Pack corpus.
-- Persistence / dependencies: JSON projections write no new state. Golden and routing fixtures are Git-tracked test inputs with no production paths, names, sessions, commits, or logs. Runtime support remains Python 3.10+ standard library only.
-- Output: `status-v1` contains repository branch/default, principal, privacy-bounded owned/shared/foreign session data, and inventory. `check-v1` contains command, success flag, unchanged exit code, stable error code, messages, and errors. `context-bundle-v1` and `doctor-v1` retain their schemas while publishing stable required fields for success and expected failure.
+- Input: existing CLI arguments, current repository/configuration/state, an explicit `--format json` request, published schema documents, golden contract fixtures, and fully synthetic routing cases. Optional additive configuration such as `verification.presets` must preserve repositories that omit it and existing direct `verify -- <argv>` callers.
+- Flow: planning and status build dedicated reports; context, doctor, and check preserve their existing JSON projections and errors; tests execute real commands and recursively compare declared required fields, types, arrays, constants, and enums with Draft 2020-12 declarations, then evaluate the labeled synthetic Pack corpus.
+- Persistence / dependencies: JSON projections write no new state. Schemas, golden files, and routing fixtures are Git-tracked integration/test inputs with no production paths, names, sessions, commits, or logs. The standalone runtime does not load a schema library and remains Python 3.10+ standard-library only.
+- Output: `workflow-plan-v1`, `context-bundle-v1`, its nested `resume-capsule-v2`, `doctor-v1`, `status-v1`, and `check-v1` each publish stable required fields. Extension objects remain open for additive minor-version detail; incompatible removal, meaning, scalar-type, or exit-class changes require a new protocol and major version.
 
 ## Boundaries and failure modes
 
-- Invariants: minor releases do not remove existing commands or required JSON fields, change documented field meanings, expose absolute machine paths, or change exit classes. Automation must ignore additional optional fields.
+- Invariants: 1.x minor releases do not remove existing commands or required JSON fields, change documented field meanings or scalar types, narrow stable enums incompatibly, expose absolute machine paths, or change exit classes. Automation must ignore additional optional fields.
 - Permissions / concurrency: status exposes details only for owned or explicitly shared sessions and only a count for foreign sessions. JSON projection does not grant access or lock repository writers.
-- Failure / recovery: a contract fixture or routing evaluation failure blocks release until the change is made additive or receives a new schema and major-version migration. Text output remains the human recovery path when JSON consumers are unavailable.
+- Failure / recovery: a published-schema, contract fixture, or routing evaluation failure blocks release until the implementation becomes compatible or receives a new schema and major-version migration. Text output remains the human recovery path when JSON consumers are unavailable.
 - Non-goals: this version does not freeze every prose sentence, promise byte-identical timing metrics, support Python below 3.10, export vendor Memory, or turn synthetic routing cases into business-semantic tests.
 
 ## Verification
 
-Run `python -m unittest discover -s tests -p test_contract_stability.py` and `python -m unittest discover -s tests -p test_routing_evaluation.py`. Required GitHub CI runs the complete suite on Windows and Ubuntu with Python 3.10 and 3.12; release/nightly/manual validation also runs on macOS.
+Run `python tests/test_protocol_schemas.py`, `python -m unittest discover -s tests -p test_contract_stability.py`, and `python -m unittest discover -s tests -p test_routing_evaluation.py`. Required GitHub CI runs the complete suite on Windows and Ubuntu with Python 3.10 and 3.12; release/nightly/manual validation also runs on macOS.
 
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Cover public protocol error shapes](../changes/2026/08/20260827191239-gviiisen-eaffca7e21-cover-public-protocol-error-shapes.md)
 - [Add safe verification presets](../changes/2026/08/20260827065951-gviiisen-6daa4a6c38-add-safe-verification-presets.md)
 - [Harden raw JSON command detection](../changes/2026/08/20260822002738-gviiisen-9d24fbee4b-harden-raw-json-command-detection.md)
 - [Complete outer JSON error boundary](../changes/2026/08/20260822001817-gviiisen-3767cb15f0-complete-outer-json-error-boundary.md)

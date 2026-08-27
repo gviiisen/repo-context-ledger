@@ -14,8 +14,8 @@ Workflow Planning gives a fresh Agent one deterministic, read-only front door be
 
 | Path / symbol | Ownership and role |
 | --- | --- |
-| `src/repo_context_ledger/runtime.py.tmpl::build_workflow_plan` | Classifies explicit intent, accessible Resume Capsule state, and bounded request signals into one workflow contract. |
-| `src/repo_context_ledger/runtime.py.tmpl::workflow_plan_command` | Exposes the standalone `plan` text/JSON front door through the same context preflight. |
+| `src/repo_context_ledger/workflow.pyfrag::build_workflow_plan` | Classifies explicit intent, accessible Resume Capsule state, and bounded request signals into one workflow contract. |
+| `src/repo_context_ledger/workflow.pyfrag::workflow_plan_command` | Exposes the standalone `plan` text/JSON front door through the same context preflight. |
 | `src/repo_context_ledger/runtime.py.tmpl::context_search` | Embeds the same `workflow-plan-v1` object inside `context-bundle-v1`. |
 | `src/repo_context_ledger/runtime.py.tmpl::start_change` | Accepts only change workflows; `readonly` and `resume` fail before session creation. |
 | `src/repo_context_ledger/runtime.py.tmpl::resolve_resumable_session` | Uses the same privacy-bounded owned-session router as context and plan. |

@@ -13,12 +13,15 @@ Repo Context Ledger ships a zero-dependency Python runtime and a vendor-neutral 
 
 Minor releases preserve existing command names, arguments, text-mode exit classes, repository schema migrations, and published JSON schema names. New optional fields and new commands may be added in a minor release. Automation must ignore unknown JSON fields and must select JSON explicitly with `--format json`.
 
+The v1.0 contract freezes the listed schema names, required fields, documented scalar types, and exit classes for the 1.x line. Draft 2020-12 declarations live in `schemas/` and are exercised against real CLI output. Extension objects remain open so minor releases can add optional detail without forcing a new protocol.
+
 The stable JSON contracts are:
 
 | Command | Schema | Purpose |
 | --- | --- | --- |
 | `plan --format json` | `workflow-plan-v1` | Read-only workflow classification and structured next action. |
 | `context --format json` | `context-bundle-v1` | Bounded context route and optional Resume Capsule. |
+| `context --format json` → `resume.capsule` | `resume-capsule-v2` | Private, bounded continuation guidance for an owned task. |
 | `doctor --format json` | `doctor-v1` | Read-only health findings and repair suggestions. |
 | `status --format json` | `status-v1` | Privacy-bounded session counts/details and repository inventory. |
 | `check --format json` | `check-v1` | Existing check result projected into separated messages and errors. |
@@ -27,7 +30,7 @@ Exit classes are `0` for success, `1` for a valid query with no context match, a
 
 Starting in v0.8.0, an owned continuation may include an additive `resume-capsule-v2` object under `context-bundle-v1.resume.capsule`. Every pre-v0.8 Capsule field remains present; v2 adds structured guidance fields. Consumers must continue to ignore unknown fields, and a missing Capsule remains valid for no-match, ambiguous, or foreign-only routes.
 
-Starting in v0.9.0, `plan --format json` publishes `workflow-plan-v1` with the stable modes `readonly`, `small-fix`, `ordinary-change`, and `resume`. Its `next_action.argv` is data, not a shell command, and the planner never executes it. When `requires_confirmation` is true, `next_action.action` is `clarify` and `argv` is empty. `context-bundle-v1` additively includes the same object under `workflow`; existing consumers may ignore it.
+Starting in v0.9.0, `plan --format json` publishes `workflow-plan-v1` with the stable modes `readonly`, `small-fix`, `ordinary-change`, and `resume`. Its `next_action.argv` is data, not a shell command, and the planner never executes it. When `requires_confirmation` is true, `next_action.kind` is `clarify` and `argv` is empty. `context-bundle-v1` additively includes the same object under `workflow`; existing consumers may ignore it.
 
 Expected JSON failures remain inside the requested schema and use stable machine codes: `LEDGER_ERROR`, `INVALID_ARGUMENT`, `UNSUPPORTED_SCHEMA`, `CONTEXT_NO_MATCH`, `CHECK_FAILED`, and `DOCTOR_FAILED`. Human messages may improve without changing the code. Unknown future repository/private-state schemas fail closed with `UNSUPPORTED_SCHEMA` rather than being normalized or rewritten.
 
@@ -44,5 +47,7 @@ Starting in v0.8.2, an untrusted or changed verification preset fails before exe
 Context Pack `Aliases` are optional Git-tracked metadata added in v0.8.0. Existing Packs without the field behave as before. Aliases are explicit phrases only; upgrade and routing never generate translations or infer private task state.
 
 The initialized `.context-ledger/ledger.py` is a standalone artifact. Its version should match the installed Skill runtime after `init`; the repository does not require a Python package installation or API key.
+
+Source contributors may edit ordered build fragments, but installed repositories continue to receive one byte-complete `ledger.py`. The schema files and source fragments are development/review assets and are not imported by that runtime.
 
 Atomic rewrites preserve the permission mode of an existing target on Unix-like systems. A newly created file still receives the platform and process defaults. This does not add a cross-platform promise for Windows ACL inheritance or ownership metadata.

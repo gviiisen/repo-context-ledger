@@ -20,6 +20,8 @@ v0.8.2 does not change repository/private-state schema v8 or public JSON schema 
 
 v0.9.0 does not change repository/private-state schema v8. Re-run `init` to refresh the standalone runtime and native Agent adapters. The new `plan` command and `workflow-plan-v1` schema are additive; `context-bundle-v1` consumers must continue to ignore unknown fields. Existing `start` calls default to `ordinary-change`, while new integrations should call `plan` first and require confirmation when the returned plan says so.
 
+v1.0.0 does not change repository/private-state schema v8, private session ownership, or the installed single-file shape. Re-run `init` to replace the repository runtime. Source-only fragment paths and `schemas/*.schema.json` are contributor/integration assets; initialized application repositories do not need to copy them. Integrations already using the documented v1 schemas require no payload migration and must continue to ignore unknown optional fields.
+
 ## Rollback
 
 Keep the prior Skill installation or release artifact until the upgraded repository passes its checks. Repository file changes are ordinary Git changes and should be reviewed or reverted through Git. Private state is not committed; back it up separately before a state-schema migration when an active task cannot be recreated safely.

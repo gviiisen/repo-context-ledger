@@ -6,10 +6,10 @@ Aliases: none
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 25b94983f63d44d3f7134c37621957d531ad88f2
+Source commit: 2c5ea2f81b7b8f8939ad274f44094a6b937faca5
 Base branch: main
 Base commit: 0d7e1f289e726edc4ae2b621361f89c621de5623
-Last refreshed: 2026-08-27T18:55:04+08:00
+Last refreshed: 2026-08-27T19:05:08+08:00
 
 ## Purpose
 
@@ -51,9 +51,9 @@ Verification presets let a repository review a repeated check once as structured
 ## Tracked file fingerprints
 
 - `.context-ledger/config.json` — `sha256:b70099d1d5911cc7edb1c3aefa182effb46314e5746f4b9c4318f9ed147cb4e8`
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:b5b0d9eba8bb211c07ba21e39e83ee8269ba598645a83872534bed4f3bdd7d7e`
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:baf40f4ac0a9038f33d90975b07c5e7fdd581ab45561e8cf29e522b59954a95f`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:a54d09dbb14a7ca7b6368bb8ec957dfa5a4a4f4aafe06fc8ce507c97895384b6`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:6552c343fb986f841042fae89716668ad7612165eaf594b7bb6f0bd8022e57aa`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:e4b8e16789bce7ba8e405f0069f0372dd0ff25fcbfd9dc805cb460b0fbe5a62a`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:0bfead16d1f3312ac8a0eacbb907905be4159c123f85f96dab4bc7ed4e0c985a`
 - `skills/repo-context-ledger/SKILL.md` — `sha256:c49a692005ff85c62c4fc3ebb5617af4725c55bba3857a3413b5c4d8bba4e12a`
 - `skills/repo-context-ledger/references/verification-presets.md` — `sha256:0650fa160e9a46a3b0f6cad68c8153f09614626e2046eb4acada3ab8b59e04f3`
 - `tests/test_ledger.py` — `sha256:7944c012f406e8c8dabe7946a07f6477a886515104e53b2de9c8497162bfc65e`

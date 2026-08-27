@@ -320,6 +320,13 @@ python scripts/build_runtime.py --check
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
 
+## What's new in v1.0.0
+
+- The editable runtime is now split at tested boundaries for constants, errors, result models, repository locks, core Git access, and Workflow Planning. A deterministic builder still emits one zero-dependency `ledger.py`, so installation and `init` do not gain a package dependency.
+- Every public JSON protocol now has a checked-in Draft 2020-12 declaration under `schemas/`: `workflow-plan-v1`, `context-bundle-v1`, `resume-capsule-v2`, `doctor-v1`, `status-v1`, and `check-v1`.
+- Protocol tests execute real CLI commands and recursively compare successful, no-match, and error reports with the published schemas. The 1.x compatibility promise freezes required fields, meanings, and exit classes while leaving optional extensions open.
+- Extraction remains incremental: lifecycle, routing, health, and rendering stay in the template until a focused test boundary exists, avoiding a flag-day rewrite.
+
 ## What's new in v0.9.0
 
 - `plan --query` adds a read-only `workflow-plan-v1` front door with four explicit modes: `readonly`, `small-fix`, `ordinary-change`, and `resume`. It returns reasons, confidence, a confirmation flag, and a structured argument array for the next action without executing it.

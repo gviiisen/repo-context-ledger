@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gviiisen/repo-context-ledger/schemas/resume-capsule-v2.schema.json",
+  "title": "resume-capsule-v2",
+  "type": "object",
+  "required": [
+    "schema", "mode", "session_id", "status", "feature", "title",
+    "checkpointed", "summary", "next_step", "evidence_paths",
+    "omitted_evidence_paths", "last_verification", "base_commit",
+    "current_commit", "branch", "resume_epoch", "continuation_tool",
+    "access", "primary_pack", "warnings", "unknowns", "goal",
+    "current_state", "next_action", "code_anchors", "must_preserve",
+    "verified_facts", "unresolved", "required_reads", "do_not_load",
+    "expand_when", "budget"
+  ],
+  "properties": {
+    "schema": {"type": "string", "const": "resume-capsule-v2"},
+    "mode": {"type": "string", "enum": ["ready", "guided"]},
+    "session_id": {"type": "string"},
+    "status": {"type": "string", "enum": ["active", "paused"]},
+    "feature": {"type": "string"},
+    "title": {"type": "string"},
+    "checkpointed": {"type": "string"},
+    "summary": {"type": "string"},
+    "next_step": {"type": "string"},
+    "evidence_paths": {"type": "array", "items": {"type": "string"}},
+    "omitted_evidence_paths": {"type": "integer"},
+    "last_verification": {"type": "string"},
+    "base_commit": {"type": "string"},
+    "current_commit": {"type": "string"},
+    "branch": {"type": "string"},
+    "resume_epoch": {"type": "integer"},
+    "continuation_tool": {"type": "string"},
+    "access": {"type": "string", "enum": ["owner", "read-only", "transfer", "fork"]},
+    "primary_pack": {"type": "string"},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "unknowns": {"type": "array", "items": {"type": "string"}},
+    "goal": {"type": "string"},
+    "current_state": {"type": "string"},
+    "next_action": {"type": "string"},
+    "code_anchors": {"type": "array", "items": {"type": "string"}},
+    "must_preserve": {"type": "array", "items": {"type": "string"}},
+    "verified_facts": {"type": "array", "items": {"type": "string"}},
+    "unresolved": {"type": "array", "items": {"type": "string"}},
+    "required_reads": {"type": "array", "items": {"type": "string"}},
+    "do_not_load": {"type": "array", "items": {"type": "string"}},
+    "expand_when": {"type": "array", "items": {"type": "string"}},
+    "budget": {
+      "type": "object",
+      "required": ["max_characters", "used_characters"],
+      "properties": {
+        "max_characters": {"type": "integer"},
+        "used_characters": {"type": "integer"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

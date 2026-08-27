@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gviiisen/repo-context-ledger/schemas/context-bundle-v1.schema.json",
+  "title": "context-bundle-v1",
+  "type": "object",
+  "required": ["schema", "tool_version", "query", "result", "error", "required_reads"],
+  "properties": {
+    "schema": {"type": "string", "const": "context-bundle-v1"},
+    "tool_version": {"type": "string"},
+    "query": {"type": "string"},
+    "result": {"type": "string", "enum": ["ok", "no-match", "error"]},
+    "error": {"type": ["object", "null"]},
+    "workflow": {"type": "object"},
+    "request_principal": {"type": "string"},
+    "request_tool": {"type": "string"},
+    "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+    "primary_pack": {"type": "string"},
+    "feature": {"type": "string"},
+    "title": {"type": "string"},
+    "status": {"type": "string"},
+    "selection": {"type": "object"},
+    "required_reads": {"type": "array"},
+    "change_summaries": {"type": "array"},
+    "resume": {"type": "object"},
+    "warnings": {"type": "array"},
+    "budget": {"type": "object"},
+    "instructions": {"type": "array", "items": {"type": "string"}},
+    "metrics": {"type": "object"}
+  },
+  "additionalProperties": true
+}

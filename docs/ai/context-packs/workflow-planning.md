@@ -6,10 +6,10 @@ Aliases: workflow plan | task planning | 工作流规划 | 任务判断
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 25b94983f63d44d3f7134c37621957d531ad88f2
+Source commit: 2c5ea2f81b7b8f8939ad274f44094a6b937faca5
 Base branch: main
 Base commit: 0d7e1f289e726edc4ae2b621361f89c621de5623
-Last refreshed: 2026-08-27T18:55:04+08:00
+Last refreshed: 2026-08-27T19:19:45+08:00
 
 ## Purpose
 
@@ -17,7 +17,7 @@ Routes a natural-language coding request through one deterministic, read-only pr
 
 ## Load order
 
-- Read first: Read `docs/specs/workflow-planning.md`, then the `build_workflow_plan` and `workflow_plan_command` code paths.
+- Read first: Read `docs/specs/workflow-planning.md`, then `src/repo_context_ledger/workflow.pyfrag` and the context integration call sites.
 - Read if needed: Read `tests/test_workflow_plan.py`, the synthetic evaluation fixture, and the golden schema when changing classification, ambiguity, or public fields; read session routing only when resume selection changes.
 - Do not load by default: Do not open completed Change bodies, all Context Packs, verification implementation, or private drafts outside the selected owned session.
 
@@ -25,8 +25,8 @@ Routes a natural-language coding request through one deterministic, read-only pr
 
 | Path / symbol | Role |
 | --- | --- |
-| `src/repo_context_ledger/runtime.py.tmpl::build_workflow_plan` | Owns deterministic mode, confidence, reasons, confirmation, and next-action selection. |
-| `src/repo_context_ledger/runtime.py.tmpl::workflow_plan_command` | Returns the standalone text/JSON Workflow Plan through context preflight. |
+| `src/repo_context_ledger/workflow.pyfrag::build_workflow_plan` | Owns deterministic mode, confidence, reasons, confirmation, and next-action selection. |
+| `src/repo_context_ledger/workflow.pyfrag::workflow_plan_command` | Returns the standalone text/JSON Workflow Plan through context preflight. |
 | `src/repo_context_ledger/runtime.py.tmpl::context_search` | Embeds the same plan in `context-bundle-v1`. |
 | `src/repo_context_ledger/runtime.py.tmpl::start_change` | Rejects read-only/resume modes before creating private state. |
 | `src/repo_context_ledger/runtime.py.tmpl::resolve_resumable_session` | Reuses the privacy-bounded session route for actual continuation. |
@@ -52,14 +52,15 @@ Routes a natural-language coding request through one deterministic, read-only pr
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:b5b0d9eba8bb211c07ba21e39e83ee8269ba598645a83872534bed4f3bdd7d7e`
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:baf40f4ac0a9038f33d90975b07c5e7fdd581ab45561e8cf29e522b59954a95f`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:a54d09dbb14a7ca7b6368bb8ec957dfa5a4a4f4aafe06fc8ce507c97895384b6`
+- `src/repo_context_ledger/workflow.pyfrag` — `sha256:2f2418090cf30008b9d4f738696628be1bba89d2f97a238105a3b38dc5215bca`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:6552c343fb986f841042fae89716668ad7612165eaf594b7bb6f0bd8022e57aa`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:e4b8e16789bce7ba8e405f0069f0372dd0ff25fcbfd9dc805cb460b0fbe5a62a`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:0bfead16d1f3312ac8a0eacbb907905be4159c123f85f96dab4bc7ed4e0c985a`
 - `skills/repo-context-ledger/SKILL.md` — `sha256:c49a692005ff85c62c4fc3ebb5617af4725c55bba3857a3413b5c4d8bba4e12a`
 - `skills/repo-context-ledger/references/production-workflow.md` — `sha256:61b308e7b737e2677cf0f4c8740ad281710bc6e33740098cee5e17beb2b36d48`
-- `ARCHITECTURE.md` — `sha256:f100d252d793d5477d614f96f565fa43c1aebf0785a464c7bc996c853b0581f1`
-- `COMPATIBILITY.md` — `sha256:3f488c7ba6fa8adc5ef2614ad8bed349cbc65067a2fa006cfb83fb52253df538`
-- `MIGRATIONS.md` — `sha256:8ac48c4c34149cfa3452dab3c4758a3e86c0e942f20a22653aa183821001a961`
+- `ARCHITECTURE.md` — `sha256:7f87435665f8dadc0cc6896858d0fd0aef127cae3b27e049d9da991d2ae0e67c`
+- `COMPATIBILITY.md` — `sha256:b5afe2c85b82ffa977be569d1ca666ad335bb3739b5607b9e061c15ea8026373`
+- `MIGRATIONS.md` — `sha256:bcf00e3571a68fc8f8308977feec77af91cbf2b37ec21aa44403b00a4a2358fd`
 - `tests/test_workflow_plan.py` — `sha256:b5803f4d2fc05763d0bb94f02c4108d198eb4b742f3493bb87dce62c26a33283`
 - `tests/fixtures/workflow-plan-eval-v1.json` — `sha256:0f4ccb3f8c666bd6576f76291d527d86bceeb1ec49fda5e2a39094bea1f1d78f`
 - `tests/golden/workflow-plan-v1.json` — `sha256:9ed5dc04cc4afadbb651ff61ed387a6c77145fff7e85d2f846b6d3071d154802`

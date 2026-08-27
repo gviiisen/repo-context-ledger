@@ -345,58 +345,7 @@ def atomic_write(path: Path, content: str, kind: str = "file") -> None:
             temp_path.unlink()
 
 
-@contextmanager
-def repo_lock(repo: Path, wait_seconds: float = 0.0):
-    lock_dir = safe_repo_path(repo, ".context-ledger", "ledger runtime directory")
-    lock_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = lock_dir / ".write.lock"
-    wait_started = time.perf_counter()
-    deadline = wait_started + max(0.0, wait_seconds)
-    nonce = uuid.uuid4().hex
-    command = "unknown"
-    if _COMMAND_TIMINGS:
-        command = str(_COMMAND_TIMINGS.get("command", "unknown"))
-    command = re.sub(r"[^a-z0-9._-]+", "-", command.casefold()).strip("-") or "unknown"
-    owner_identity: tuple[int, int] | None = None
-    while True:
-        try:
-            flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
-            if hasattr(os, "O_NOFOLLOW"):
-                flags |= os.O_NOFOLLOW
-            descriptor = os.open(lock_path, flags, 0o600)
-            opened = os.fstat(descriptor)
-            owner_identity = (opened.st_dev, opened.st_ino)
-            break
-        except FileExistsError as exc:
-            remaining = deadline - time.perf_counter()
-            if remaining <= 0:
-                add_command_timing("lock_wait_ms", (time.perf_counter() - wait_started) * 1000)
-                raise LedgerError(
-                    "Another Repo Context Ledger write lock exists. Run doctor to distinguish "
-                    "a live writer from a stale or unsafe lock before taking recovery action."
-                ) from exc
-            time.sleep(min(0.025, remaining))
-    add_command_timing("lock_wait_ms", (time.perf_counter() - wait_started) * 1000)
-    hold_started = time.perf_counter()
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(
-                f"version=1 pid={os.getpid()} started={now().isoformat(timespec='seconds')} "
-                f"command={command} nonce={nonce}\n"
-            )
-            handle.flush()
-            os.fsync(handle.fileno())
-        yield
-    finally:
-        add_command_timing("lock_hold_ms", (time.perf_counter() - hold_started) * 1000)
-        try:
-            current_stat = lock_path.lstat()
-            same_identity = owner_identity == (current_stat.st_dev, current_stat.st_ino)
-            current = lock_path.read_text(encoding="utf-8") if same_identity else ""
-            if same_identity and f"nonce={nonce}" in current.split():
-                lock_path.unlink()
-        except (FileNotFoundError, OSError, UnicodeError):
-            pass
+# @repo-context-ledger:locks@
 
 
 def replace_block(path: Path, start: str, end: str, body: str, heading: str | None = None) -> None:
@@ -505,68 +454,7 @@ def slugify(value: str) -> str:
     return ascii_slug[:48] or "change"
 
 
-def run_git(repo: Path, *args: str) -> GitResult:
-    argv = ("git", "-C", str(repo), *args)
-    try:
-        result = subprocess.run(
-            argv,
-            capture_output=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return GitResult(argv, -1, b"", str(exc).encode("utf-8", errors="replace"))
-    return GitResult(argv, result.returncode, result.stdout, result.stderr)
-
-
-def git_command_error(repo: Path, result: GitResult) -> LedgerError:
-    command = "git " + " ".join(result.argv[3:])
-    detail = result.stderr.decode("utf-8", errors="replace").strip()
-    detail = redact_local_paths(detail, repo)[:600]
-    suffix = f": {detail}" if detail else ""
-    return LedgerError(
-        f"Git command failed ({command}, exit {result.returncode}){suffix}",
-        ERROR_GIT_COMMAND_FAILED,
-    )
-
-
-def git_output(repo: Path, *args: str, required: bool = False) -> str:
-    result = run_git(repo, *args)
-    if result.returncode != 0:
-        if required:
-            raise git_command_error(repo, result)
-        return ""
-    return result.stdout.decode("utf-8", errors="replace").strip()
-
-
-def git_repository_detected(repo: Path, required: bool = False) -> bool:
-    result = run_git(repo, "rev-parse", "--is-inside-work-tree")
-    if result.returncode == 0:
-        return result.stdout.strip() == b"true"
-    if required and (repo / ".git").exists():
-        raise git_command_error(repo, result)
-    return False
-
-
-def is_git_repo(repo: Path) -> bool:
-    return git_repository_detected(repo)
-
-
-def git_revision(repo: Path, ref: str = "HEAD") -> str:
-    return git_output(repo, "rev-parse", ref) or "none"
-
-
-def git_branch(repo: Path) -> str:
-    return git_output(repo, "branch", "--show-current") or "detached"
-
-
-def git_actor(repo: Path) -> str:
-    return (
-        git_output(repo, "config", "user.name")
-        or os.environ.get("GITHUB_ACTOR")
-        or os.environ.get("USERNAME")
-        or os.environ.get("USER")
-        or "unknown"
-    )
+# @repo-context-ledger:git@
 
 
 def principal_material(repo: Path) -> str:
@@ -3227,120 +3115,7 @@ def route_resume_sessions(
     }, selected
 
 
-def build_workflow_plan(
-    repo: Path,
-    query: str,
-    intent: str,
-    resume_route: dict[str, object],
-    feature: str = "",
-) -> dict[str, object]:
-    requested = intent or "auto"
-    if requested not in {"auto", "readonly", "small-fix", "ordinary-change", "resume"}:
-        raise LedgerError("Workflow intent must be auto, readonly, small-fix, ordinary-change, or resume.")
-    lowered = query.casefold().strip()
-    tokens = set(query_tokens(query))
-    change_signal = bool(re.search(
-        r"\b(add|change|create|fix|implement|remove|rename|repair|update)\b|"
-        r"新增|修改|创建|修复|实现|删除|重命名|更新|优化",
-        lowered,
-    ))
-    readonly_signal = bool(re.search(
-        r"\b(analy[sz]e|audit|explain|how|inspect|read|review|show|status|understand|what|why)\b|"
-        r"分析|审查|解释|如何|看看|查看|状态|了解|是什么|为什么",
-        lowered,
-    )) or lowered.endswith(("?", "？"))
-    small_signal = bool(re.search(
-        r"\b(minor|one|single|small|tiny|typo)\b|小修|很小|一个|错别字|拼写",
-        lowered,
-    ))
-    capsule = resume_route.get("capsule")
-    blocked_resume = resume_route.get("mode") == "blocked"
-    resume_signal = bool(tokens.intersection(RESUME_INTENT_TOKENS))
-    reasons: list[str] = []
-    requires_confirmation = False
-    confidence = "medium"
-
-    if requested == "resume" or (
-        requested == "auto" and isinstance(capsule, dict) and (resume_signal or capsule)
-    ):
-        mode = "resume"
-        if isinstance(capsule, dict):
-            confidence = "high"
-            reasons.append("one accessible task session matches the query")
-        elif blocked_resume:
-            confidence = "low"
-            requires_confirmation = True
-            reasons.append("multiple accessible task sessions match the query")
-        else:
-            confidence = "low"
-            requires_confirmation = True
-            reasons.append("no accessible task session can be selected safely")
-    elif requested != "auto":
-        mode = requested
-        confidence = "high"
-        reasons.append(f"the caller explicitly selected {requested}")
-    elif change_signal and small_signal:
-        mode = "small-fix"
-        reasons.extend(["the request asks for a change", "the request explicitly bounds it as small"])
-    elif change_signal:
-        mode = "ordinary-change"
-        reasons.append("the request asks to change observable repository behavior")
-    elif readonly_signal:
-        mode = "readonly"
-        reasons.append("the request asks to inspect or explain without an explicit change")
-    else:
-        mode = "readonly"
-        confidence = "low"
-        requires_confirmation = True
-        reasons.append("the query contains no reliable change or resume signal")
-
-    session_id = str(capsule.get("session_id", "")) if isinstance(capsule, dict) else ""
-    if requires_confirmation:
-        next_action = {
-            "kind": "clarify",
-            "argv": [],
-            "description": "Confirm the intended workflow or select an explicit task session.",
-        }
-    elif mode == "resume":
-        next_action = {
-            "kind": "resume",
-            "argv": ["resume", "--session", session_id],
-            "description": "Resume the selected private task and keep the returned continuation epoch.",
-        }
-    elif mode == "readonly":
-        next_action = {
-            "kind": "focus" if feature else "context",
-            "argv": (["focus", "--feature", feature] if feature else ["context", "--query", query]),
-            "description": "Load only the bounded read-only route; do not create a task session.",
-        }
-    else:
-        title = query.strip()[:160] or ("Small repository fix" if mode == "small-fix" else "Repository change")
-        argv = ["start", "--title", title, "--workflow", mode]
-        if feature:
-            argv.extend(["--feature", feature])
-        next_action = {
-            "kind": "start",
-            "argv": argv,
-            "description": "Create one private task session after accepting the routed feature boundary.",
-        }
-    return {
-        "schema": WORKFLOW_PLAN_SCHEMA,
-        "tool_version": TOOL_VERSION,
-        "query": query,
-        "requested_intent": requested,
-        "mode": mode,
-        "confidence": confidence,
-        "requires_confirmation": requires_confirmation,
-        "reasons": reasons,
-        "feature": feature,
-        "session_id": session_id,
-        "next_action": next_action,
-        "safety": {
-            "mutates_repository": False,
-            "foreign_private_state_loaded": False,
-            "code_reading_is_bounded_initially_not_capped": True,
-        },
-    }
+# @repo-context-ledger:workflow@
 
 
 def context_search(
@@ -3654,45 +3429,6 @@ def context_search(
     return 0
 
 
-def workflow_plan_command(
-    repo: Path,
-    query: str,
-    intent: str,
-    output_format: str,
-    tool: str = "",
-    baseline_ref: str = "",
-) -> int:
-    captured = io.StringIO()
-    with redirect_stdout(captured):
-        context_search(
-            repo,
-            query,
-            1,
-            "json",
-            tool,
-            baseline_ref,
-            intent,
-        )
-    try:
-        bundle = json.loads(captured.getvalue())
-        workflow = bundle["workflow"]
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise LedgerError("Workflow Plan could not be produced from the context preflight.") from exc
-    if output_format == "json":
-        print(json.dumps(workflow, indent=2, ensure_ascii=True))
-        return EXIT_SUCCESS
-    print(f"Workflow Plan: {workflow['schema']}")
-    print(f"Mode: {workflow['mode']}")
-    print(f"Confidence: {workflow['confidence']}")
-    print(f"Requires confirmation: {'yes' if workflow['requires_confirmation'] else 'no'}")
-    print("Reasons:")
-    for reason in workflow["reasons"]:
-        print(f"- {reason}")
-    action = workflow["next_action"]
-    print(f"Next action: {action['kind']}")
-    print(f"Arguments: {json.dumps(action['argv'], ensure_ascii=False)}")
-    print(f"Guidance: {action['description']}")
-    return EXIT_SUCCESS
 
 
 def context_pack_path(repo: Path, config: dict, feature: str) -> Path:

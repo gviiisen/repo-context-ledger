@@ -10,11 +10,15 @@ Repo Context Ledger separates editable source from the single-file runtime insta
 | `src/repo_context_ledger/constants.pyfrag` | Stable version, schema, exit, and runtime constants. |
 | `src/repo_context_ledger/errors.pyfrag` | Stable user-facing error type and machine error-code carrier. |
 | `src/repo_context_ledger/models.pyfrag` | Typed machine-result contracts such as `CommandResult` and raw-byte `GitResult`. |
-| `src/repo_context_ledger/contracts.pyfrag` | Non-built compatibility tombstone that points older contributors to the three ordered fragments. |
+| `src/repo_context_ledger/locks.pyfrag` | Repository write-lock acquisition, ownership, and safe cleanup. |
+| `src/repo_context_ledger/git.pyfrag` | Core Git process execution, fail-closed errors, repository identity, and actor queries. |
+| `src/repo_context_ledger/workflow.pyfrag` | `workflow-plan-v1` classification and rendering. |
+| `src/repo_context_ledger/contracts.pyfrag` | Non-built compatibility tombstone that points older contributors to the ordered fragments declared in `scripts/build_runtime.py`. |
 | `scripts/build_runtime.py` | Deterministic standard-library builder and drift checker. |
 | `.gitattributes` | Pins canonical inputs and generated outputs to LF across Windows and Unix checkouts. |
 | `skills/repo-context-ledger/scripts/ledger.py` | Generated standalone artifact shipped with the Skill. |
 | `.context-ledger/ledger.py` | Generated dogfood mirror used by this repository. |
+| `schemas/*.schema.json` | Git-tracked Draft 2020-12 declarations for stable public JSON protocols; not runtime dependencies. |
 
 The generated files are byte-identical. `init` copies the currently executing standalone runtime into the target repository, so installed projects keep one zero-dependency file and do not import the source package.
 
@@ -37,8 +41,8 @@ python scripts/build_runtime.py --check
 
 Never repair drift by editing a generated output. Change the template/fragment, rebuild both outputs, and review the generated diff.
 
-## Gradual extraction
+## Modular source, standalone distribution
 
-v0.7.0 deliberately extracts the low-coupling constants, errors, and result models first as separately ordered fragments. Future versions may add fragments for configuration, Git/state access, routing, health, lifecycle, and rendering after their boundaries have focused tests. Every step must preserve the standalone CLI artifact, public JSON schemas, exit classes, `init --dry-run` equivalence, and repository/private-state migrations.
+v0.7.0 extracted low-coupling constants, errors, and result models first. v1.0 adds repository locks, core Git access, and Workflow Planning as independently reviewed ordered fragments. The builder requires every marker exactly once, preserves deterministic order, and compiles them into the same standalone artifact. Future extraction remains incremental and must have focused tests before moving a boundary.
 
-The legacy body remains in one template for now. This avoids a high-risk flag-day rewrite while eliminating the previous requirement to hand-maintain two 5,000-line copies.
+Configuration, lifecycle, routing, health, and rendering remain in the template for now. This avoids a high-risk flag-day rewrite while giving the most security- and protocol-sensitive subsystems explicit source ownership. Public 1.x protocols are declared under `schemas/`; incompatible required-field, meaning, or exit changes require a new schema name and major version.
