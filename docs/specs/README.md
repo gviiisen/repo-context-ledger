@@ -13,4 +13,5 @@
 - [Runtime Architecture](runtime-architecture.md) — current
 - [Task session integrity](task-session-integrity.md) — current
 - [Verification presets](verification-presets.md) — current
+- [Workflow Planning](workflow-planning.md) — current
 <!-- repo-context-ledger:end -->

@@ -3,6 +3,11 @@
 <!-- repo-context-ledger:start -->
 ## Changes in 2026-08
 
+- [Cover public protocol error shapes](20260827191239-gviiisen-eaffca7e21-cover-public-protocol-error-shapes.md) — completed
+- [Modularize runtime source and stabilize protocols](20260827185543-gviiisen-9afe5ba1c7-modularize-runtime-source-and-stabilize-protocol.md) — completed
+- [Add deterministic Workflow Plan](20260827183113-gviiisen-f737fa1ffb-add-deterministic-workflow-plan.md) — completed
+- [Add lock diagnostics and preset trust](20260827171514-gviiisen-5697daa67f-add-lock-diagnostics-and-preset-trust.md) — completed
+- [Harden Git paths and file writes](20260827165407-gviiisen-71a5a84051-harden-git-paths-and-file-writes.md) — completed
 - [Build continuation quality engine](20260827075252-gviiisen-c783c8332f-build-continuation-quality-engine.md) — completed
 - [Add safe verification presets](20260827065951-gviiisen-6daa4a6c38-add-safe-verification-presets.md) — completed
 - [Accelerate small-task closeout](20260827060627-gviiisen-2e52131353-accelerate-small-task-closeout.md) — completed
