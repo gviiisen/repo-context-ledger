@@ -235,14 +235,13 @@ Coverage 路径分类在 `.context-ledger/config.json` 中单独配置：
 
 每位开发者使用合适的 Git 分支或 worktree。Codex、Cursor、Claude、Copilot 与 Grok 可以共用这个人的 principal，不同开发者则使用不同 principal。active/paused 任务状态保持私有；completed handoff、稳定 spec、Context Pack 与代码继续通过 Git 审查和合并。
 
-创建或更新 PR 前，Agent 应先更新目标基础分支，然后运行：
+创建或更新 PR 前，Agent 应先更新目标基础分支，然后运行统一门禁：
 
 ```text
-python .context-ledger/ledger.py team-check --base origin/main
-python .context-ledger/ledger.py check --strict --coverage --changed-since origin/main
+python .context-ledger/ledger.py policy --base origin/main
 ```
 
-如果其他分支修改了同一文件或同一功能，需要先与同事协调并解决重叠。PR 合并后，Agent 会在配置的默认分支上执行一次：
+该门禁根据真实 Git delta 判断，而不是根据分支名猜测。普通改动执行团队重叠、changed-scope Coverage 与空白检查；仅含确定性索引、Manifest 或 README 受管区块的 PR，则证明当前内容与一次内存中的 `sync --derived` 完全一致。如果其他分支修改了同一文件或同一功能，需要先与同事协调并解决重叠。PR 合并后，Agent 会在配置的默认分支上执行一次：
 
 ```text
 python .context-ledger/ledger.py sync --derived
@@ -319,6 +318,13 @@ python scripts/build_runtime.py --check
 ```
 
 源码与生成物边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## v1.0.2 新增能力
+
+- `policy --base <ref>` 把多个松散的 PR 命令收成一个确定性的 `ledger-policy` 门禁。它根据真实 merge-base delta 选择 ordinary 或 derived-only；混合改动或手工伪造的派生内容无法证明策略时会 fail closed。
+- derived-only PR 只能包含生成索引、Context Manifest 和 README 受管区块，并且必须与内存中重新执行一次 `sync --derived` 的计划完全一致，同时 adapter、Manifest 和两份已安装 runtime 保持 current。
+- `audit --history --policy as-recorded` 保留原始 Change 的验证结果。可选的 `historical-disposition-v1` JSON 会把已知 finding 绑定到原 Change 的精确 SHA-256 和后续 completed Change；任何历史改写都会使 disposition 失效。
+- GitHub PR 统一显示一个 `ledger-policy` job；本版本进入 `main` 后即可把它设为分支保护的 required check。
 
 ## v1.0.1 新增能力
 

@@ -24,6 +24,8 @@ v1.0.0 does not change repository/private-state schema v8, private session owner
 
 v1.0.1 does not change repository/private-state schema v8 or any published JSON schema. Re-run `init` to replace the standalone runtime and native adapters. Existing files retain their mode; newly created public repository files use `0644` on POSIX, while private session, state, cache, and preset-trust files use `0600`. Existing integrations may observe additive `--tool` arguments in `workflow-plan-v1.next_action.argv` when the caller supplied a tool.
 
+v1.0.2 does not change repository/private-state schema v8 or any published JSON schema. Re-run `init` to replace the standalone runtime and native adapters. PR workflows may replace separate `team-check`, changed-scope `check`, and `git diff --check` steps with `policy --base <ref>`. Historical dispositions are optional Git-tracked JSON records under `docs/audit-dispositions/`; they never mutate or replace the referenced completed Change.
+
 ## Rollback
 
 Keep the prior Skill installation or release artifact until the upgraded repository passes its checks. Repository file changes are ordinary Git changes and should be reviewed or reverted through Git. Private state is not committed; back it up separately before a state-schema migration when an active task cannot be recreated safely.

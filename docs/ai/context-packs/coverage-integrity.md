@@ -6,10 +6,10 @@ Aliases: none
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: 4800d58e9bde70c8f0b55a9afe0f6e7df90480d2
+Source commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
 Base branch: main
-Base commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
-Last refreshed: 2026-08-27T21:54:15+08:00
+Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
+Last refreshed: 2026-08-28T00:07:40+08:00
 
 ## Purpose
 
@@ -30,18 +30,19 @@ Last refreshed: 2026-08-27T21:54:15+08:00
 | `skills/repo-context-ledger/scripts/ledger.py::is_implementation_path` | 判定路径是否属于需要语义记录的生产实现。 |
 | `skills/repo-context-ledger/scripts/ledger.py::relevant_private_handoff_texts`, `coverage_validation_errors` | 只采信 evidence 与本次生产实现相交的私有 session，再将变更与 handoff、spec 和 current Pack 对齐。 |
 | `skills/repo-context-ledger/scripts/ledger.py::related_context_documents`, `check_changed_repo` | 校验 merge-base delta 及其直接关联 current Pack/spec、链接和 adapter。 |
+| `skills/repo-context-ledger/scripts/ledger.py::derived_only_changes`, `ledger_policy` | 从实际 Git 内容判断 ordinary/derived-only，并聚合 PR 所需的确定性门禁。 |
 | `skills/repo-context-ledger/scripts/ledger.py::task_session_finish_errors` | 只核验当前 session 的 evidence、明确 spec 与相关 Pack 指纹。 |
 | `tests/test_ledger.py` | 覆盖默认分类、配置覆盖、Pack 关联和绕过防护。 |
 
 ## Contracts and boundaries
 
-- Invariants and contracts: 私有 active draft 不进入正式历史或 Manifest；只有 evidence 与当前生产路径相交的 session 才能提供记录或 spec exception；普通实现路径只接受 current Pack 的精确 tracked file，rename 则要求 merge-base Pack 覆盖旧路径、同 feature 的 current Pack 覆盖新路径，并刷新 source/current Pack；无关 Pack 不能刷分。UTF-8 文本 LF/CRLF 共享指纹，Git `-text` 与真实二进制保持字节敏感。
+- Invariants and contracts: 私有 active draft 不进入正式历史或 Manifest；只有 evidence 与当前生产路径相交的 session 才能提供记录或 spec exception；普通实现路径只接受 current Pack 的精确 tracked file，rename 则要求 merge-base Pack 覆盖旧路径、同 feature 的 current Pack 覆盖新路径，并刷新 source/current Pack；无关 Pack 不能刷分。derived-only 只接受生成索引、Manifest 与 README 受管区块，且内存中的 `sync --derived` 必须零差异；分支名不能授予豁免。UTF-8 文本 LF/CRLF 共享指纹，Git `-text` 与真实二进制保持字节敏感。
 - Failure / recovery: 当前 session 引用未变更路径、遗漏相关 Pack 或相关 Pack 过期时，`finish` 保留草稿。PR 增量检查只修复当前 delta；旧债务留给所有者或定时全仓审计，不得据此干预另一个任务。base ref 不存在或本次新问题会明确失败。
 - Non-goals: 本功能不进行 LLM 语义判断，不引入 Light Mode，也不重构单文件运行时分发模型。
 
 ## Verification
 
-`python -m unittest discover -s tests -p "test_ledger.py" -v` 验证分类、可移植指纹、Pack 关联、session 隔离和 changed-scope 边界；PR 运行 `check --strict --coverage --changed-since origin/main`，定时全仓审计运行 `check --strict --coverage`。
+`python -m unittest discover -s tests -p "test_ledger.py" -v` 验证分类、可移植指纹、Pack 关联、session 隔离和 changed-scope 边界；`test_policy_and_audit.py` 验证 PR 分类。PR 运行 `policy --base origin/main`，定时全仓审计运行 `check --strict --coverage`。
 
 <!-- repo-context-ledger:pack-specs:start -->
 ## Stable context
@@ -52,8 +53,8 @@ Last refreshed: 2026-08-27T21:54:15+08:00
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:81a8fb3f2c0e857b28f88b9a6d75e31e6d40e485835517d7c50c95296ff5ed44`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:f00aafdd16ed109963ed90b5bc4d77b2fc2b0c4f230a09e4cba7e52b8fa45d49`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:fe008b1cafebdd774a0d1cb14e239cadf11038be0d99ec577d56cf1e9addc315`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:b39c63137f5eb8f1daf9a8a5dad0b46c1ede47ca0d4528df86af27a3f83304c2`
 - `.context-ledger/config.json` — `sha256:b70099d1d5911cc7edb1c3aefa182effb46314e5746f4b9c4318f9ed147cb4e8`
 - `tests/test_ledger.py` — `sha256:8f5041ab68473240b1e6cf571c3fe31df732a09110ccd48475a9236ca1cd3f70`
 <!-- repo-context-ledger:pack-files:end -->

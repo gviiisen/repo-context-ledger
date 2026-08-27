@@ -71,7 +71,7 @@ If several sessions are close matches, choose an explicit session. If only forei
 ## Integration and recovery
 
 - Use `doctor` first for bounded read-only diagnosis. It never deletes locks or mutates Packs/sessions.
-- At PR/integration time run `team-check --base <ref>` and `check --strict --coverage --changed-since <ref>`; do not use a repository-wide audit merely to unblock an unrelated session.
+- At PR/integration time run `policy --base <ref>`. It selects the ordinary or derived-only gate from the actual Git delta and includes team overlap, changed-scope Coverage, deterministic derived-output, and diff checks as applicable. Use `audit --history --policy as-recorded --fail-on unresolved` only for controlled historical/release audit; do not use it to unblock an unrelated session.
 - After merge, run `sync --derived` once on the configured default branch. Do not hand-edit generated indexes.
 - Keep unfinished drafts private. Publish only through `finish`; never persist secrets or machine-specific absolute paths.
 

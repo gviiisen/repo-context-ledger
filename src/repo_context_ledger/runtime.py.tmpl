@@ -1529,7 +1529,7 @@ For every feature, bug fix, refactor, interface change, or other ordinary behavi
 7. Update `{specs}/` and refresh affected Context Packs when current behavior, contracts, boundaries, code navigation, or tracked production paths change.
 8. Finish with `finish --spec <affected-spec>`, or use `--no-spec --reason \"...\"` only when no stable behavior exists.
 9. Let `finish` enforce this session's evidence, specs, and relevant Context Pack fingerprints. Run repository-wide `check --strict --coverage` only at integration or PR time, when foreign sessions are not actively changing the shared worktree.
-10. Before opening or updating a pull request, update the base ref and run `team-check --base origin/{config.get('team', {}).get('default_branch', 'main')}`.
+10. Before opening or updating a pull request, update the base ref and run `policy --base origin/{config.get('team', {}).get('default_branch', 'main')}`. The policy classifies the actual Git delta as ordinary or derived-only; it never trusts a branch name. Use `audit --history --policy as-recorded --fail-on unresolved` for controlled release history audits.
 
 Active and paused drafts are stored in Git worktree metadata and must not be committed. Only `finish` may publish a validated draft into `{changes}/`. On feature branches, do not regenerate shared README or monthly index blocks. After merging on `{config.get('team', {}).get('default_branch', 'main')}`, run `python .context-ledger/ledger.py sync --derived` once.
 
@@ -5030,6 +5030,10 @@ def glob_path_matches(raw: str, pattern: str) -> bool:
 def coverage_path_kind(config: dict, raw: str) -> str:
     normalized = normalize_git_path(raw)
     doc_roots = [config["docs"][key].rstrip("/") + "/" for key in ("ai", "specs", "changes")]
+    changes_root = config["docs"]["changes"].rstrip("/")
+    docs_parent = changes_root.rsplit("/", 1)[0] if "/" in changes_root else ""
+    dispositions_root = f"{docs_parent + '/' if docs_parent else ''}audit-dispositions/"
+    doc_roots.append(dispositions_root)
     if any(normalized.startswith(prefix) for prefix in doc_roots):
         return "docs"
     managed_readmes = {
@@ -6136,6 +6140,86 @@ def is_generated_index(config: dict, raw: str) -> bool:
     ) or raw == changes_root + "/README.md"
 
 
+def managed_readme_paths(config: dict) -> set[str]:
+    paths = {"README.md"}
+    paths.update(
+        normalize_git_path(str(module["readme"]))
+        for module in config.get("modules", [])
+        if isinstance(module, dict) and isinstance(module.get("readme"), str)
+    )
+    return paths
+
+
+def without_managed_block(text: str) -> str:
+    pattern = re.compile(
+        rf"(?ms)^\s*{re.escape(BLOCK_START)}\s*$.*?^\s*{re.escape(BLOCK_END)}\s*$"
+    )
+    return pattern.sub("", text).replace("\r\n", "\n")
+
+
+def git_text_at_ref(repo: Path, ref: str, raw: str) -> str | None:
+    result = run_git(repo, "show", f"{ref}:{raw}")
+    if result.returncode != 0:
+        return None
+    try:
+        return result.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def managed_block_only_change(repo: Path, merge_base: str, raw: str) -> bool:
+    normalized = normalize_git_path(raw)
+    current = repo / normalized
+    before = git_text_at_ref(repo, merge_base, normalized)
+    if before is None or not current.is_file():
+        return False
+    try:
+        after = current.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return False
+    return without_managed_block(before) == without_managed_block(after)
+
+
+def managed_readme_only_change(repo: Path, config: dict, merge_base: str, raw: str) -> bool:
+    return normalize_git_path(raw) in managed_readme_paths(config) and managed_block_only_change(
+        repo, merge_base, raw
+    )
+
+
+def generated_index_only_change(repo: Path, config: dict, merge_base: str, raw: str) -> bool:
+    normalized = normalize_git_path(raw)
+    if not is_generated_index(config, normalized):
+        return False
+    manifest = config["docs"]["ai"].rstrip("/") + "/context-manifest.json"
+    if normalized == manifest:
+        return (repo / normalized).is_file()
+    before = git_text_at_ref(repo, merge_base, normalized)
+    if before is not None:
+        return managed_block_only_change(repo, merge_base, normalized)
+    current = repo / normalized
+    if not current.is_file():
+        return False
+    try:
+        unmanaged = without_managed_block(current.read_text(encoding="utf-8")).strip()
+    except (OSError, UnicodeError):
+        return False
+    specs_index = config["docs"]["specs"].rstrip("/") + "/README.md"
+    changes_root = config["docs"]["changes"].rstrip("/")
+    if normalized == specs_index:
+        return unmanaged == "# Stable feature context"
+    if normalized == changes_root + "/README.md":
+        return unmanaged == "# Change history"
+    return bool(re.fullmatch(r"# Changes in \d{4}-\d{2}", unmanaged))
+
+
+def derived_only_changes(repo: Path, config: dict, merge_base: str, changed: set[str]) -> bool:
+    return bool(changed) and all(
+        generated_index_only_change(repo, config, merge_base, raw)
+        or managed_readme_only_change(repo, config, merge_base, raw)
+        for raw in changed
+    )
+
+
 def tracked_context_packs(
     repo: Path,
     config: dict,
@@ -6333,20 +6417,21 @@ def coverage_validation_errors(
     return errors
 
 
-def team_check(repo: Path, raw_base: str) -> int:
-    config = load_config(repo)
+def team_check_report(
+    repo: Path,
+    config: dict,
+    raw_base: str,
+    allow_generated: bool = False,
+) -> tuple[str, str, str, set[str], set[str], list[str]]:
     if not is_git_repo(repo):
-        print("Team check requires a Git repository.", file=sys.stderr)
-        return 2
+        raise LedgerError("Team check requires a Git repository.")
     base = raw_base.strip() or configured_base_ref(repo, config)
     base_revision = git_revision(repo, base)
     if base_revision == "none":
-        print(f"Base ref does not exist locally: {base}", file=sys.stderr)
-        return 2
+        raise LedgerError(f"Base ref does not exist locally: {base}")
     merge_base = git_output(repo, "merge-base", "HEAD", base)
     if not merge_base:
-        print(f"Cannot determine a merge base with {base}.", file=sys.stderr)
-        return 2
+        raise LedgerError(f"Cannot determine a merge base with {base}.")
 
     local_changed = git_changed_paths(repo, f"{merge_base}..HEAD")
     local_changed.update(git_dirty_paths(repo))
@@ -6363,7 +6448,7 @@ def team_check(repo: Path, raw_base: str) -> int:
 
     current_branch = git_branch(repo)
     default_branch = config.get("team", {}).get("default_branch", "main")
-    if current_branch != default_branch:
+    if current_branch != default_branch and not allow_generated:
         for raw in sorted(path for path in local_changed if is_generated_index(config, path)):
             errors.append(
                 f"Feature branch modifies generated index {raw}; restore it and regenerate after merge."
@@ -6384,6 +6469,18 @@ def team_check(repo: Path, raw_base: str) -> int:
                     f"{pack_rel} was refreshed from base {recorded_base}, but {base} is {base_revision}."
                 )
 
+    return base, base_revision, current_branch, local_changed, upstream_changed, errors
+
+
+def team_check(repo: Path, raw_base: str) -> int:
+    config = load_config(repo)
+    try:
+        base, base_revision, current_branch, local_changed, upstream_changed, errors = (
+            team_check_report(repo, config, raw_base)
+        )
+    except LedgerError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     print(f"Team check base: {base} ({base_revision})")
     print(f"Current branch: {current_branch}")
     print(f"Branch changes: {len(local_changed)}; upstream changes: {len(upstream_changed)}")
@@ -6407,6 +6504,69 @@ def changed_scope_paths(repo: Path, raw_base: str) -> tuple[str, set[str]]:
     changed = git_changed_paths(repo, f"{merge_base}..HEAD")
     changed.update(git_dirty_paths(repo))
     return merge_base, changed
+
+
+def git_diff_check_errors(repo: Path, merge_base: str) -> list[str]:
+    errors: list[str] = []
+    for arguments in (("diff", "--check", f"{merge_base}..HEAD"), ("diff", "--check")):
+        result = run_git(repo, *arguments)
+        if result.returncode == 0:
+            continue
+        detail = (result.stderr or result.stdout).decode("utf-8", errors="replace").strip()
+        errors.append(detail or f"git {' '.join(arguments)} failed")
+    return errors
+
+
+def ledger_policy(repo: Path, raw_base: str) -> int:
+    """Apply one deterministic PR policy selected from the actual Git delta."""
+    config = load_config(repo)
+    base = raw_base.strip() or configured_base_ref(repo, config)
+    merge_base, changed = changed_scope_paths(repo, base)
+    derived_only = derived_only_changes(repo, config, merge_base, changed)
+    mode = "derived-only" if derived_only else "ordinary"
+    errors: list[str] = []
+
+    try:
+        _, _, _, _, _, team_errors = team_check_report(
+            repo, config, base, allow_generated=derived_only
+        )
+        errors.extend(team_errors)
+    except LedgerError as exc:
+        errors.append(str(exc))
+
+    if derived_only:
+        with capture_init_plan(repo) as plan:
+            sync_repo(repo, derived=True, config=config, quiet=True)
+        for change in plan.changes():
+            errors.append(
+                "Derived output is not current: "
+                f"{rel_posix(change.path, repo)} requires sync --derived action {change.action}."
+            )
+        errors.extend(context_manifest_errors(repo, config))
+        for name, (path, _, current) in adapter_states(repo, config).items():
+            if config.get("adapters", {}).get(name, True) and not current:
+                errors.append(f"Context adapter is missing or drifted: {rel_posix(path, repo)}")
+        runtime_paths = (
+            repo / ".context-ledger" / "ledger.py",
+            repo / "skills" / "repo-context-ledger" / "scripts" / "ledger.py",
+        )
+        if all(path.is_file() for path in runtime_paths):
+            if runtime_paths[0].read_bytes() != runtime_paths[1].read_bytes():
+                errors.append("Installed repository and Skill runtimes differ.")
+    else:
+        if check_changed_repo(repo, config, True, True, base, base) != 0:
+            errors.append("Changed-scope strict Coverage check failed.")
+
+    errors.extend(git_diff_check_errors(repo, merge_base))
+    print(f"Ledger policy mode: {mode}")
+    print(f"Ledger policy base: {base} ({merge_base})")
+    print(f"Changed paths: {len(changed)}")
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+    print("Ledger policy passed.")
+    return 0
 
 
 def check_changed_repo(
@@ -6526,6 +6686,130 @@ def check_changed_repo(
     return 0
 
 
+def historical_findings(text: str) -> set[str]:
+    checks = managed_text(text, CHECKS_START, CHECKS_END)
+    statuses = re.findall(r"(?m)^\s+- Status: (passed|failed)\s*$", checks)
+    findings: set[str] = set()
+    if statuses and statuses[-1] == "failed":
+        findings.add(FINDING_FINAL_VERIFICATION_FAILED)
+    return findings
+
+
+def historical_dispositions_root(repo: Path, config: dict) -> Path:
+    changes_root = safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes")
+    return changes_root.parent / "audit-dispositions"
+
+
+def completed_change_at(repo: Path, config: dict, raw: object, label: str) -> tuple[Path, str]:
+    if not isinstance(raw, str) or not raw.strip():
+        raise LedgerError(f"{label} must be a repository-relative Change path.")
+    target = safe_repo_path(repo, raw, label)
+    changes_root = safe_repo_path(repo, config["docs"]["changes"], "config.docs.changes")
+    try:
+        target.relative_to(changes_root)
+    except ValueError as exc:
+        raise LedgerError(f"{label} must be under {config['docs']['changes']}.") from exc
+    if not target.is_file() or is_change_index(target, changes_root):
+        raise LedgerError(f"{label} does not reference an existing Change: {raw}")
+    text = target.read_text(encoding="utf-8")
+    if field_value(text, "Status").casefold() != "completed":
+        raise LedgerError(f"{label} must reference a completed Change: {raw}")
+    return target, normalize_git_path(raw)
+
+
+def load_historical_dispositions(
+    repo: Path,
+    config: dict,
+) -> tuple[set[tuple[str, str]], list[str], int]:
+    root = historical_dispositions_root(repo, config)
+    accepted: set[tuple[str, str]] = set()
+    errors: list[str] = []
+    count = 0
+    if not root.exists():
+        return accepted, errors, count
+    allowed = {
+        "schema", "record", "record_sha256", "finding", "disposition",
+        "reason", "resolved_by", "approved_by", "approved_at",
+    }
+    for path in sorted(root.glob("*.json")):
+        count += 1
+        rel = rel_posix(path, repo)
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict) or set(raw) != allowed:
+                raise LedgerError("must contain exactly the historical-disposition-v1 fields")
+            if raw["schema"] != HISTORICAL_DISPOSITION_SCHEMA:
+                raise LedgerError(f"schema must be {HISTORICAL_DISPOSITION_SCHEMA}")
+            record, record_rel = completed_change_at(repo, config, raw["record"], "record")
+            digest = hashlib.sha256(record.read_bytes()).hexdigest()
+            if raw["record_sha256"] != f"sha256:{digest}":
+                raise LedgerError("record_sha256 does not match the current Change bytes")
+            finding = raw["finding"]
+            if finding not in historical_findings(record.read_text(encoding="utf-8")):
+                raise LedgerError(f"finding is not present in the referenced Change: {finding}")
+            if raw["disposition"] != "resolved-by-later-change":
+                raise LedgerError("disposition must be resolved-by-later-change")
+            if not isinstance(raw["reason"], str) or len(raw["reason"].strip()) < 20:
+                raise LedgerError("reason must contain at least 20 characters")
+            resolved, resolved_rel = completed_change_at(
+                repo, config, raw["resolved_by"], "resolved_by"
+            )
+            if resolved == record:
+                raise LedgerError("resolved_by must reference a later, different Change")
+            if not isinstance(raw["approved_by"], str) or len(raw["approved_by"].strip()) < 2:
+                raise LedgerError("approved_by must identify the approving maintainer")
+            if not isinstance(raw["approved_at"], str):
+                raise LedgerError("approved_at must be an ISO-8601 timestamp")
+            try:
+                approved_at = dt.datetime.fromisoformat(raw["approved_at"].replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise LedgerError("approved_at must be an ISO-8601 timestamp") from exc
+            record_started = field_value(record.read_text(encoding="utf-8"), "Started")
+            resolved_started = field_value(resolved.read_text(encoding="utf-8"), "Started")
+            if record_started and resolved_started and resolved_started <= record_started:
+                raise LedgerError(f"resolved_by is not later than record: {resolved_rel}")
+            if approved_at.tzinfo is None:
+                raise LedgerError("approved_at must include a timezone")
+            key = (record_rel, str(finding))
+            if key in accepted:
+                raise LedgerError("duplicates another disposition for the same record and finding")
+            accepted.add(key)
+        except (OSError, UnicodeError, json.JSONDecodeError, LedgerError) as exc:
+            errors.append(f"{rel}: {exc}")
+    return accepted, errors, count
+
+
+def audit_history(repo: Path, fail_on: str) -> int:
+    config = load_config(repo)
+    accepted, errors, disposition_count = load_historical_dispositions(repo, config)
+    unresolved: list[tuple[str, str]] = []
+    change_count = 0
+    for change in all_changes(repo, config):
+        text = change.read_text(encoding="utf-8")
+        if field_value(text, "Status").casefold() != "completed":
+            continue
+        change_count += 1
+        rel = rel_posix(change, repo)
+        for error in handoff_validation_errors(text, repo, config, expected_status="completed"):
+            if error == "Handoff latest verification failed; run a later passing verification.":
+                continue
+            errors.append(f"{rel}: {error}")
+        for finding in historical_findings(text):
+            if (rel, finding) not in accepted:
+                unresolved.append((rel, finding))
+    print(f"Historical Changes inspected: {change_count}")
+    print(f"Historical dispositions inspected: {disposition_count}")
+    print(f"Unresolved historical findings: {len(unresolved)}")
+    if fail_on == "unresolved":
+        errors.extend(f"{path}: unresolved {finding}" for path, finding in unresolved)
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+    print("Historical audit passed.")
+    return 0
+
+
 def check_repo(
     repo: Path,
     strict: bool,
@@ -6607,12 +6891,20 @@ def check_repo(
         errors.append(str(exc))
 
     if strict:
+        dispositions, disposition_errors, _ = load_historical_dispositions(repo, config)
+        errors.extend(disposition_errors)
         for change in all_changes(repo, config):
             change_text = change.read_text(encoding="utf-8")
             if is_evidence_quality(change_text) and field_value(change_text, "Status").casefold() == "completed":
                 for error in handoff_validation_errors(
                     change_text, repo, config, expected_status="completed"
                 ):
+                    if (
+                        error == "Handoff latest verification failed; run a later passing verification."
+                        and (rel_posix(change, repo), FINDING_FINAL_VERIFICATION_FAILED)
+                        in dispositions
+                    ):
+                        continue
                     errors.append(f"{rel_posix(change, repo)}: {error}")
         for path in changes_root.rglob("*.md"):
             if is_change_index(path, changes_root):
@@ -7028,6 +7320,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     team = sub.add_parser("team-check", help="Detect branch, feature, and generated-file conflicts")
     team.add_argument("--base", default="", help="Base ref (default: configured origin default branch)")
+    policy = sub.add_parser("policy", help="Apply the aggregate pull-request ledger policy")
+    policy.add_argument("--base", default="", help="Base ref (default: configured origin default branch)")
+    audit = sub.add_parser("audit", help="Audit immutable historical Change records and dispositions")
+    audit.add_argument("--history", action="store_true", help="Audit completed Change history")
+    audit.add_argument(
+        "--policy",
+        choices=("as-recorded",),
+        default="as-recorded",
+        help="Validate historical records without rewriting their recorded outcomes",
+    )
+    audit.add_argument(
+        "--fail-on",
+        choices=("none", "unresolved"),
+        default="none",
+        help="Fail when a historical finding lacks a valid disposition",
+    )
     status = sub.add_parser("status", help="Show ledger state")
     status.add_argument("--format", choices=("text", "json"), default="text")
     return parser
@@ -7278,6 +7586,12 @@ def run_main(argv: list[str] | None = None) -> int:
             return inspect_adapters(repo, load_config(repo), args.action == "check")
         if args.command == "team-check":
             return team_check(repo, args.base)
+        if args.command == "policy":
+            return ledger_policy(repo, args.base)
+        if args.command == "audit":
+            if not args.history:
+                raise LedgerError("audit currently requires --history.")
+            return audit_history(repo, args.fail_on)
         if args.command == "status":
             return show_status(repo, args.format)
         return 2
