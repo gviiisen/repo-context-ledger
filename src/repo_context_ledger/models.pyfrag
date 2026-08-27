@@ -44,3 +44,22 @@ class GitResult:
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
+
+
+class GitPathChange:
+    """One lossless Git path transition used by evidence and coverage."""
+
+    __slots__ = ("status", "old_path", "new_path")
+
+    def __init__(
+        self,
+        status: str,
+        old_path: str | None,
+        new_path: str | None,
+    ) -> None:
+        object.__setattr__(self, "status", status)
+        object.__setattr__(self, "old_path", old_path)
+        object.__setattr__(self, "new_path", new_path)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError("GitPathChange is immutable")

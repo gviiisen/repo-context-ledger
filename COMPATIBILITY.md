@@ -32,6 +32,8 @@ Starting in v0.8.0, an owned continuation may include an additive `resume-capsul
 
 Starting in v0.9.0, `plan --format json` publishes `workflow-plan-v1` with the stable modes `readonly`, `small-fix`, `ordinary-change`, and `resume`. Its `next_action.argv` is data, not a shell command, and the planner never executes it. When `requires_confirmation` is true, `next_action.kind` is `clarify` and `argv` is empty. `context-bundle-v1` additively includes the same object under `workflow`; existing consumers may ignore it.
 
+Starting in v1.0.1, automatic `small-fix` classification treats one-line wording as supporting evidence only when the named target is low-risk documentation, comment, copy, text, or example content. Explicit workflow intent and the published `workflow-plan-v1` shape remain unchanged.
+
 Expected JSON failures remain inside the requested schema and use stable machine codes: `LEDGER_ERROR`, `INVALID_ARGUMENT`, `UNSUPPORTED_SCHEMA`, `CONTEXT_NO_MATCH`, `CHECK_FAILED`, and `DOCTOR_FAILED`. Human messages may improve without changing the code. Unknown future repository/private-state schemas fail closed with `UNSUPPORTED_SCHEMA` rather than being normalized or rewritten.
 
 Starting in v0.8.1, a confirmed Git worktree that cannot answer a required status/diff query fails with `GIT_COMMAND_FAILED`. This is an additive error code within the existing schemas and exit class 2. Git path readers use NUL-delimited byte output, so filenames are interpreted by the operating-system filesystem codec rather than Git's display quoting. Genuine non-Git directories retain their local fallback behavior.
@@ -50,4 +52,4 @@ The initialized `.context-ledger/ledger.py` is a standalone artifact. Its versio
 
 Source contributors may edit ordered build fragments, but installed repositories continue to receive one byte-complete `ledger.py`. The schema files and source fragments are development/review assets and are not imported by that runtime.
 
-Atomic rewrites preserve the permission mode of an existing target on Unix-like systems. A newly created file still receives the platform and process defaults. This does not add a cross-platform promise for Windows ACL inheritance or ownership metadata.
+Atomic rewrites preserve the permission mode of an existing target on Unix-like systems. Newly created Git-tracked documents and configuration use `0644`; private session, state, cache, and preset-trust files use `0600`; copied runtime files preserve their source mode. This does not add a cross-platform promise for Windows ACL inheritance or ownership metadata.

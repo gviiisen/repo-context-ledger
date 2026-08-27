@@ -87,6 +87,21 @@ class WorkflowPlanTests(unittest.TestCase):
                 set(golden["next_action_fields"]).issubset(plan["next_action"])
             )
 
+    def test_next_action_preserves_the_calling_tool(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = self.initialized_repo(raw)
+            plan = self.plan(
+                repo,
+                "add a retry policy to the announcement API",
+                "--tool",
+                "codex",
+            )
+            self.assertEqual("ordinary-change", plan["mode"])
+            self.assertEqual(
+                ["--tool", "codex"],
+                plan["next_action"]["argv"][-2:],
+            )
+
     def test_skill_keeps_the_front_door_short_and_routes_detail_to_references(self):
         text = (ROOT / "skills/repo-context-ledger/SKILL.md").read_text(encoding="utf-8")
         self.assertLess(len(text), 12000)
@@ -151,11 +166,14 @@ class WorkflowPlanTests(unittest.TestCase):
                 "Implement the bounded retry and rerun focused tests.",
             )
 
-            plan = self.plan(repo, "continue announcement rate limiting")
+            plan = self.plan(repo, "continue announcement rate limiting", "--tool", "cursor")
             self.assertEqual("resume", plan["mode"])
             self.assertEqual(session, plan["session_id"])
             self.assertEqual("resume", plan["next_action"]["kind"])
-            self.assertEqual(["resume", "--session", session], plan["next_action"]["argv"])
+            self.assertEqual(
+                ["resume", "--session", session, "--tool", "cursor"],
+                plan["next_action"]["argv"],
+            )
             self.assertFalse(plan["requires_confirmation"])
 
             context = json.loads(self.run_ledger(

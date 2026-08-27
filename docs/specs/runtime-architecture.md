@@ -20,7 +20,7 @@ Runtime Architecture provides one editable source and a deterministic path to th
 | `src/repo_context_ledger/runtime.py.tmpl` | Owns the executable runtime body and build marker. |
 | `src/repo_context_ledger/constants.pyfrag` | Owns stable versions, schemas, exit classes, and constants. |
 | `src/repo_context_ledger/errors.pyfrag` | Owns `LedgerError` and stable machine error codes. |
-| `src/repo_context_ledger/models.pyfrag` | Owns typed result contracts such as `CommandResult` and raw-byte `GitResult`. |
+| `src/repo_context_ledger/models.pyfrag` | Owns typed result contracts such as `CommandResult`, raw-byte `GitResult`, and old/new `GitPathChange`. |
 | `src/repo_context_ledger/locks.pyfrag` | Owns bounded repository lock acquisition, identity/nonce ownership, and safe cleanup. |
 | `src/repo_context_ledger/git.pyfrag` | Owns core Git execution, fail-closed command errors, repository detection, revisions, branches, and actor lookup. |
 | `src/repo_context_ledger/workflow.pyfrag` | Owns deterministic `workflow-plan-v1` classification and rendering. |
@@ -35,8 +35,8 @@ Runtime Architecture provides one editable source and a deterministic path to th
 
 - Input: UTF-8 template and ordered fragment text plus either the two default repository outputs or explicit test outputs.
 - Flow: the builder normalizes CRLF/CR to LF, requires one marker for each ordered fragment, injects constants, errors, models, locks, Git, and Workflow Planning in declared order, terminates with one newline, compares or atomically writes each complete byte sequence, and reports repository-relative default paths.
-- Persistence / dependencies: the builder uses only Python 3.10+ standard library. Temporary files stay beside their target, inherit an existing target's mode before replacement, and are replaced atomically. Generated artifacts import no source package and keep all runtime dependencies embedded.
-- Repository state: Git path commands return NUL-delimited bytes, split before decoding, retain rename destinations, and use the operating-system filesystem codec. A confirmed worktree must answer required evidence, coverage, finish, and changed-scope queries; command failure is not equivalent to an empty change set.
+- Persistence / dependencies: the builder uses only Python 3.10+ standard library. Temporary files stay beside their target, inherit an existing target's mode before replacement, and are replaced atomically. New public repository files use `0644`; private session, state, cache, and preset-trust files use `0600`; copied runtime files preserve their source mode. Generated artifacts import no source package and keep all runtime dependencies embedded.
+- Repository state: Git path commands return NUL-delimited bytes, split before decoding, and use the operating-system filesystem codec. Destination-oriented callers retain the existing path-list view, while evidence and Coverage consume structured transitions. Rename Coverage resolves source ownership from committed Packs at the merge base and destination ownership from current same-feature Packs; deletion uses the old path, and copy uses only the new path. A confirmed worktree must answer required Git queries or fail closed.
 - Write coordination: the short repository lock records version, process, start time, command, and an ownership nonce. Cleanup requires the original file identity and nonce. `doctor` uses platform-safe read-only liveness checks and never removes a lock.
 - Preset trust: a normalized verification preset is hashed and must be trusted for the current local principal before first execution and after every change. Trust stays below Git metadata; direct verification commands and public repository schemas remain unchanged.
 - Output: `.context-ledger/ledger.py` and `skills/repo-context-ledger/scripts/ledger.py` are byte-identical standalone Python reporting the current release version from `constants.pyfrag`. Contributor-facing schemas remain separate Git files. `--check` returns 0 when current and 2 on drift or build-source failure without writing.
@@ -44,7 +44,7 @@ Runtime Architecture provides one editable source and a deterministic path to th
 ## Boundaries and failure modes
 
 - Invariants: generated artifacts are never the editable authority; builds contain no timestamp or absolute source path; Git checkout keeps the generation chain at LF even with `core.autocrlf=true`; two fresh builds are byte-identical; `init` continues copying one executable file; v1 public command/JSON/exit contracts remain compatible throughout the 1.x line.
-- Permissions / concurrency: atomic replacement prevents a reader from observing a partial generated file and preserves an existing target's Unix permission bits. New-file mode, ownership, ACLs, and platform-specific inheritance stay governed by the operating system. The builder does not lock source files or coordinate concurrent developers; Git/CI detects competing source changes and output drift.
+- Permissions / concurrency: atomic replacement prevents a reader from observing a partial generated file and preserves an existing target's Unix permission bits. POSIX new-file modes follow the public/private contract above; ownership, ACLs, and Windows inheritance remain operating-system concerns. The builder does not lock source files or coordinate concurrent developers; Git/CI detects competing source changes and output drift.
 - Failure / recovery: missing/invalid UTF-8 source, a missing/duplicate marker, stale output, a failed required Git query, or missing preset trust returns exit code 2. Required Git failures carry `GIT_COMMAND_FAILED`; preset trust failures carry `PRESET_TRUST_REQUIRED`. Diagnose locks before manual cleanup, repair repository/source state, and retry rather than inferring an empty change set or hand-editing one generated output.
 - Non-goals: v1.0 does not split every runtime subsystem, publish a Python package, add third-party dependencies, change the installed file shape, or redesign lifecycle/routing behavior.
 
@@ -55,6 +55,7 @@ Run `python -m unittest discover -s tests -p test_runtime_build.py`, `python -m 
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Harden v1.0.1 workflow and repository boundaries](../changes/2026/08/20260827202058-gviiisen-0e61ed5004-harden-v1-0-1-workflow-and-repository-boundaries.md)
 - [Modularize runtime source and stabilize protocols](../changes/2026/08/20260827185543-gviiisen-9afe5ba1c7-modularize-runtime-source-and-stabilize-protocol.md)
 - [Add lock diagnostics and preset trust](../changes/2026/08/20260827171514-gviiisen-5697daa67f-add-lock-diagnostics-and-preset-trust.md)
 - [Harden Git paths and file writes](../changes/2026/08/20260827165407-gviiisen-71a5a84051-harden-git-paths-and-file-writes.md)

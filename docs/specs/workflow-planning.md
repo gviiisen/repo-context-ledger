@@ -26,14 +26,14 @@ Workflow Planning gives a fresh Agent one deterministic, read-only front door be
 ## Data flow and contracts
 
 - Input: a human task query, optional explicit intent, calling Agent ID, optional baseline ref, current principal-private session metadata, and Git-tracked Pack metadata.
-- Decision order: explicit `resume` or a uniquely accessible matching session; explicit non-auto intent; change plus explicit small-scope signal; change signal; read-only signal; otherwise low-confidence read-only clarification.
-- Output: `workflow-plan-v1` with `mode`, `confidence`, `requires_confirmation`, deterministic reasons, selected feature/session when safe, a structured argv-array `next_action`, and non-mutation/privacy safety flags.
+- Decision order: explicit `resume` or a uniquely accessible matching session; explicit non-auto intent; change plus a strong small-scope signal with no risk veto; change signal; read-only signal; otherwise low-confidence read-only clarification. Quantity-only words never establish small scope, and uncertain changes default to `ordinary-change`.
+- Output: `workflow-plan-v1` with `mode`, `confidence`, `requires_confirmation`, deterministic reasons, selected feature/session when safe, a structured argv-array `next_action`, and non-mutation/privacy safety flags. When the caller supplies `--tool`, executable `start`, `resume`, and context actions preserve it in that array.
 - Flow: `plan` runs the existing bounded context/session preflight, builds one Workflow Plan, and renders text or JSON without executing its next action. `context` embeds the same object in its additive `workflow` field. `resume --query` uses the same session route. `start --workflow` refuses read-only/resume modes before private state creation.
 - Persistence / dependencies: the planner uses the existing Python standard-library runtime, Git-tracked Pack metadata, and current-principal private session index. It creates no cache, lock, draft, Capsule file, repository document, or continuation epoch; the only new persisted artifacts are the Git-tracked schema/evaluation fixtures maintained by this project.
 
 ## Boundaries and failure modes
 
-- Invariants: planning is read-only; it never executes the next action, reads foreign private drafts, invents task progress, or limits later behavior-relevant code inspection. Structured argv arrays are guidance, not shell command strings.
+- Invariants: planning is read-only; it never executes the next action, reads foreign private drafts, invents task progress, or limits later behavior-relevant code inspection. Structured argv arrays are guidance, not shell command strings. Automatic `small-fix` classification is fail-safe: typo, spelling, or comment-only scope may qualify directly; one-line wording qualifies only with an explicit low-risk documentation/comment/copy/text/example target. Code risk remains `ordinary-change` when scope is uncertain.
 - Ambiguity: multiple near resume matches, explicit resume without an accessible match, or an unclassified auto query sets `requires_confirmation=true` and returns `next_action.kind=clarify` with an empty argv array.
 - Privacy: foreign overlap may influence a bounded warning in context routing but cannot populate a session ID, Capsule, summary, evidence, verification, tool, or epoch.
 - Permissions / concurrency: planning inherits existing principal-scoped session visibility and performs no write-lock operation. Concurrent plans may read the same Pack metadata safely; a returned session is still revalidated by `resume`, and only lifecycle commands may acquire mutation authority.
@@ -43,10 +43,11 @@ Workflow Planning gives a fresh Agent one deterministic, read-only front door be
 
 ## Verification
 
-Run `python -m unittest discover -s tests -p test_workflow_plan.py -v`, `python -m unittest discover -s tests -p test_contract_stability.py -v`, the Skill validator, runtime build drift check, and the complete unit suite.
+Run `python -m unittest discover -s tests -p test_workflow_plan.py -v`, `python -m unittest discover -s tests -p test_contract_stability.py -v`, the bilingual positive/negative evaluation corpus, the Skill validator, runtime build drift check, and the complete unit suite.
 
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Harden v1.0.1 workflow and repository boundaries](../changes/2026/08/20260827202058-gviiisen-0e61ed5004-harden-v1-0-1-workflow-and-repository-boundaries.md)
 - [Add deterministic Workflow Plan](../changes/2026/08/20260827183113-gviiisen-f737fa1ffb-add-deterministic-workflow-plan.md)
 <!-- repo-context-ledger:changes:end -->

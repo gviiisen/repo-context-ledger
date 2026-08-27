@@ -22,6 +22,8 @@ v0.9.0 does not change repository/private-state schema v8. Re-run `init` to refr
 
 v1.0.0 does not change repository/private-state schema v8, private session ownership, or the installed single-file shape. Re-run `init` to replace the repository runtime. Source-only fragment paths and `schemas/*.schema.json` are contributor/integration assets; initialized application repositories do not need to copy them. Integrations already using the documented v1 schemas require no payload migration and must continue to ignore unknown optional fields.
 
+v1.0.1 does not change repository/private-state schema v8 or any published JSON schema. Re-run `init` to replace the standalone runtime and native adapters. Existing files retain their mode; newly created public repository files use `0644` on POSIX, while private session, state, cache, and preset-trust files use `0600`. Existing integrations may observe additive `--tool` arguments in `workflow-plan-v1.next_action.argv` when the caller supplied a tool.
+
 ## Rollback
 
 Keep the prior Skill installation or release artifact until the upgraded repository passes its checks. Repository file changes are ordinary Git changes and should be reviewed or reverted through Git. Private state is not committed; back it up separately before a state-schema migration when an active task cannot be recreated safely.

@@ -22,7 +22,7 @@ Contract Stability keeps automation and initialized repositories safe across the
 | `tests/golden/v0.6.2-cli-contract.json` | Records public schema names, required fields, and exit classes. |
 | `schemas/*.schema.json` | Publishes the stable top-level required fields, scalar types, enums, and open extension boundaries for every public JSON protocol. |
 | `tests/test_protocol_schemas.py` | Executes real CLI reports and checks them against the published protocol declarations. |
-| `.github/workflows/test.yml` | Exercises Windows/Ubuntu on pushes and PRs plus macOS on releases, schedules, and manual runs. |
+| `.github/workflows/test.yml` | Exercises Windows/Ubuntu on pushes and PRs, runs PR-specific Ledger team/Coverage/diff gates from full Git history, and runs macOS on releases, schedules, and manual dispatch. |
 
 ## Data flow and contracts
 

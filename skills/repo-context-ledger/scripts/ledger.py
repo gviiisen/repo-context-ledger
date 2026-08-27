@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 VERSION = 8
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "1.0.1"
 MANIFEST_VERSION = 1
 ROUTER_CACHE_SCHEMA = 2
 CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
@@ -181,9 +181,32 @@ class GitResult:
         self.stderr = stderr
 
 
+class GitPathChange:
+    """One lossless Git path transition used by evidence and coverage."""
+
+    __slots__ = ("status", "old_path", "new_path")
+
+    def __init__(
+        self,
+        status: str,
+        old_path: str | None,
+        new_path: str | None,
+    ) -> None:
+        object.__setattr__(self, "status", status)
+        object.__setattr__(self, "old_path", old_path)
+        object.__setattr__(self, "new_path", new_path)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError("GitPathChange is immutable")
+
+
 _COMMAND_TIMINGS: dict[str, object] | None = None
 _CONTEXT_STATE_PATH_CACHE: dict[str, Path] = {}
 WRITE_LOCK_WAIT_SECONDS = 2.0
+
+
+def default_write_mode(kind: str) -> int:
+    return 0o600 if kind.casefold().startswith("private ") else 0o644
 
 
 def begin_command_timings(command: str, enabled: bool) -> None:
@@ -347,7 +370,7 @@ class InitPlan:
             existing_mode = (
                 stat.S_IMODE(change.path.stat().st_mode)
                 if change.path.exists()
-                else change.mode
+                else change.mode if change.mode is not None else default_write_mode(change.kind)
             )
             descriptor, raw_temp = tempfile.mkstemp(
                 prefix=f".{change.path.name}.", suffix=".tmp", dir=change.path.parent
@@ -469,8 +492,14 @@ def write_if_missing(path: Path, content: str, kind: str = "file") -> bool:
         return True
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with path.open("x", encoding="utf-8") as handle:
+        mode = default_write_mode(kind)
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
             handle.write(normalized)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if os.name != "nt":
+            os.chmod(path, mode)
         return True
     except FileExistsError:
         return False
@@ -481,7 +510,11 @@ def atomic_write(path: Path, content: str, kind: str = "file") -> None:
         _ACTIVE_INIT_PLAN.write_text(path, content, kind)
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    existing_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
+    existing_mode = (
+        stat.S_IMODE(path.stat().st_mode)
+        if path.exists()
+        else default_write_mode(kind)
+    )
     descriptor, raw_temp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temp_path = Path(raw_temp)
     try:
@@ -489,8 +522,7 @@ def atomic_write(path: Path, content: str, kind: str = "file") -> None:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        if existing_mode is not None:
-            os.chmod(temp_path, existing_mode)
+        os.chmod(temp_path, existing_mode)
         os.replace(temp_path, path)
     finally:
         if temp_path.exists():
@@ -773,7 +805,20 @@ def decode_git_path(raw: bytes) -> str:
     return decoded.replace(os.sep, "/") if os.sep != "/" else decoded
 
 
-def git_dirty_paths(repo: Path, required: bool = True) -> list[str]:
+def git_change_paths(changes: list[GitPathChange], include_rename_sources: bool) -> set[str]:
+    paths: set[str] = set()
+    for change in changes:
+        if change.new_path:
+            paths.add(change.new_path)
+        if change.old_path and (
+            change.status == "D"
+            or (change.status == "R" and include_rename_sources)
+        ):
+            paths.add(change.old_path)
+    return paths
+
+
+def git_dirty_path_changes(repo: Path, required: bool = True) -> list[GitPathChange]:
     if not git_repository_detected(repo, required=required):
         return []
     result = run_git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all")
@@ -781,7 +826,7 @@ def git_dirty_paths(repo: Path, required: bool = True) -> list[str]:
         if required:
             raise git_command_error(repo, result)
         return []
-    paths: list[str] = []
+    changes: list[GitPathChange] = []
     records = result.stdout.split(b"\0")
     index = 0
     while index < len(records):
@@ -796,9 +841,19 @@ def git_dirty_paths(repo: Path, required: bool = True) -> list[str]:
                     ERROR_GIT_COMMAND_FAILED,
                 )
             continue
-        status = record[:2]
-        raw = decode_git_path(record[3:])
-        if b"R" in status or b"C" in status:
+        raw_status = record[:2]
+        current_path = decode_git_path(record[3:])
+        kind = next(
+            (
+                candidate
+                for candidate in ("R", "C", "D", "A", "M", "T", "U", "?")
+                if candidate.encode() in raw_status
+            ),
+            "M",
+        )
+        old_path: str | None = None
+        new_path: str | None = current_path
+        if kind in {"R", "C"}:
             if index >= len(records) or not records[index]:
                 if required:
                     raise LedgerError(
@@ -806,12 +861,23 @@ def git_dirty_paths(repo: Path, required: bool = True) -> list[str]:
                         ERROR_GIT_COMMAND_FAILED,
                     )
             else:
+                old_path = decode_git_path(records[index])
                 index += 1
-        if raw == ".context-ledger/.write.lock":
+        elif kind == "D":
+            old_path, new_path = current_path, None
+        if (new_path or old_path) == ".context-ledger/.write.lock":
             continue
-        if raw:
-            paths.append(raw)
-    return sorted(dict.fromkeys(paths))
+        if new_path or old_path:
+            changes.append(GitPathChange(kind, old_path, new_path))
+    return changes
+
+
+def git_dirty_paths(repo: Path, required: bool = True) -> list[str]:
+    return sorted(git_change_paths(git_dirty_path_changes(repo, required), False))
+
+
+def git_dirty_behavior_paths(repo: Path, required: bool = True) -> set[str]:
+    return git_change_paths(git_dirty_path_changes(repo, required), True)
 
 
 def git_text_mode(repo: Path | None, path: Path) -> bool | None:
@@ -1473,7 +1539,11 @@ def load_preset_trust(repo: Path) -> dict[str, object]:
 
 def save_preset_trust(repo: Path, trust: dict[str, object]) -> None:
     path = preset_trust_path(repo)
-    atomic_write(path, json.dumps(trust, indent=2, ensure_ascii=False) + "\n")
+    atomic_write(
+        path,
+        json.dumps(trust, indent=2, ensure_ascii=False) + "\n",
+        "private preset trust",
+    )
     if os.name != "nt":
         os.chmod(path, 0o600)
 
@@ -2243,8 +2313,8 @@ def start_change(
         publish_path = publish_folder / f"{stem}-{counter}.md"
     draft = task_session_draft_path(repo, handoff_id)
     draft.parent.mkdir(parents=True, exist_ok=True)
-    with draft.open("x", encoding="utf-8") as handle:
-        handle.write(content.rstrip() + "\n")
+    if not write_if_missing(draft, content, "private task state"):
+        raise LedgerError(f"Private task draft already exists: {draft}")
     state = load_context_state(repo)
     state.setdefault("task_sessions", {})[handoff_id] = {
         "draft": session_draft_ref(repo, draft),
@@ -2582,7 +2652,11 @@ class ContextRouterCache:
         if self.path is None or not self.dirty:
             return
         try:
-            atomic_write(self.path, json.dumps(self.data, indent=2, ensure_ascii=False) + "\n")
+            atomic_write(
+                self.path,
+                json.dumps(self.data, indent=2, ensure_ascii=False) + "\n",
+                "private context cache",
+            )
         except OSError:
             self.metrics["state"] = "unavailable"
             return
@@ -3385,6 +3459,7 @@ def build_workflow_plan(
     intent: str,
     resume_route: dict[str, object],
     feature: str = "",
+    tool: str = "",
 ) -> dict[str, object]:
     requested = intent or "auto"
     if requested not in {"auto", "readonly", "small-fix", "ordinary-change", "resume"}:
@@ -3392,8 +3467,8 @@ def build_workflow_plan(
     lowered = query.casefold().strip()
     tokens = set(query_tokens(query))
     change_signal = bool(re.search(
-        r"\b(add|change|create|fix|implement|remove|rename|repair|update)\b|"
-        r"新增|修改|创建|修复|实现|删除|重命名|更新|优化",
+        r"\b(add|change|correct|create|edit|fix|implement|refactor|remove|rename|repair|update)\b|"
+        r"新增|增加|修改|创建|修复|实现|删除|重命名|更新|优化|改正|只改",
         lowered,
     ))
     readonly_signal = bool(re.search(
@@ -3401,8 +3476,20 @@ def build_workflow_plan(
         r"分析|审查|解释|如何|看看|查看|状态|了解|是什么|为什么",
         lowered,
     )) or lowered.endswith(("?", "？"))
-    small_signal = bool(re.search(
-        r"\b(minor|one|single|small|tiny|typo)\b|小修|很小|一个|错别字|拼写",
+    textual_small_signal = bool(re.search(
+        r"\b(comment[- ]only|spelling|typo)\b|仅修改注释|错别字|拼写",
+        lowered,
+    ))
+    one_line_signal = bool(re.search(r"\bone[- ]line\b|只改一行", lowered))
+    low_risk_target = bool(re.search(
+        r"\b(comment|copy|docs?|documentation|example|readme|text)\b|注释|文案|文档|示例|说明",
+        lowered,
+    ))
+    strong_small_signal = textual_small_signal or (one_line_signal and low_risk_target)
+    risk_signal = bool(re.search(
+        r"\b(authentication|authorization|concurren(?:cy|t)|database|distributed|funds?|migration|"
+        r"payment|permission|protocol|public api|schema|security|settlement|transaction|vulnerabilit(?:y|ies))\b|"
+        r"并发|事务|迁移|鉴权|认证|授权|权限|分布式|数据库|协议|公开接口|公共接口|安全|资金|支付|结算|漏洞",
         lowered,
     ))
     capsule = resume_route.get("capsule")
@@ -3431,7 +3518,7 @@ def build_workflow_plan(
         mode = requested
         confidence = "high"
         reasons.append(f"the caller explicitly selected {requested}")
-    elif change_signal and small_signal:
+    elif change_signal and strong_small_signal and not risk_signal:
         mode = "small-fix"
         reasons.extend(["the request asks for a change", "the request explicitly bounds it as small"])
     elif change_signal:
@@ -3447,6 +3534,7 @@ def build_workflow_plan(
         reasons.append("the query contains no reliable change or resume signal")
 
     session_id = str(capsule.get("session_id", "")) if isinstance(capsule, dict) else ""
+    tool_argv = ["--tool", normalize_tool_id(tool)] if tool else []
     if requires_confirmation:
         next_action = {
             "kind": "clarify",
@@ -3456,13 +3544,17 @@ def build_workflow_plan(
     elif mode == "resume":
         next_action = {
             "kind": "resume",
-            "argv": ["resume", "--session", session_id],
+            "argv": ["resume", "--session", session_id, *tool_argv],
             "description": "Resume the selected private task and keep the returned continuation epoch.",
         }
     elif mode == "readonly":
         next_action = {
             "kind": "focus" if feature else "context",
-            "argv": (["focus", "--feature", feature] if feature else ["context", "--query", query]),
+            "argv": (
+                ["focus", "--feature", feature]
+                if feature
+                else ["context", "--query", query, *tool_argv]
+            ),
             "description": "Load only the bounded read-only route; do not create a task session.",
         }
     else:
@@ -3470,6 +3562,7 @@ def build_workflow_plan(
         argv = ["start", "--title", title, "--workflow", mode]
         if feature:
             argv.extend(["--feature", feature])
+        argv.extend(tool_argv)
         next_action = {
             "kind": "start",
             "argv": argv,
@@ -3605,7 +3698,7 @@ def context_search(
         best_score, primary, reasons = 0, None, ["private checkpoint without current Pack"]
     else:
         if output_format == "json":
-            workflow = build_workflow_plan(repo, query, intent, resume_route)
+            workflow = build_workflow_plan(repo, query, intent, resume_route, tool=tool)
             print(json.dumps({
                 "schema": CONTEXT_BUNDLE_SCHEMA,
                 "tool_version": TOOL_VERSION,
@@ -3722,7 +3815,7 @@ def context_search(
             ),
         },
         "resume": resume_route,
-        "workflow": build_workflow_plan(repo, query, intent, resume_route, feature),
+        "workflow": build_workflow_plan(repo, query, intent, resume_route, feature, tool),
         "baseline": baseline,
         "required_reads": [
             {"kind": kind, "path": path, "characters": characters}
@@ -4636,7 +4729,7 @@ def pause_change(
     text = set_field(text, "Next step", next_step.strip(), after="Resume summary")
     dirty = git_dirty_paths(repo)
     text = set_field(text, "Dirty paths", ", ".join(dirty) if dirty else "none", after="Base commit")
-    atomic_write(handoff, text.rstrip() + "\n")
+    atomic_write(handoff, text.rstrip() + "\n", "private task state")
     state = load_context_state(repo)
     state["task_sessions"][session_id] = {
         **record,
@@ -4672,7 +4765,7 @@ def checkpoint_change(
     text = set_field(text, "Next step", next_step.strip(), after="Resume summary")
     dirty = git_dirty_paths(repo)
     text = set_field(text, "Dirty paths", ", ".join(dirty) if dirty else "none", after="Base commit")
-    atomic_write(handoff, text.rstrip() + "\n")
+    atomic_write(handoff, text.rstrip() + "\n", "private task state")
     refresh_handoff_evidence(repo, handoff)
     state = load_context_state(repo)
     state["task_sessions"][session_id] = {
@@ -4852,8 +4945,8 @@ def fork_granted_session(
     publish_path = publish_folder / f"{stem}.md"
     draft = task_session_draft_path(repo, handoff_id)
     draft.parent.mkdir(parents=True, exist_ok=True)
-    with draft.open("x", encoding="utf-8") as handle:
-        handle.write(content.rstrip() + "\n")
+    if not write_if_missing(draft, content, "private task state"):
+        raise LedgerError(f"Private task draft already exists: {draft}")
     record = {
         "draft": session_draft_ref(repo, draft),
         "publish_path": rel_posix(publish_path, repo),
@@ -4915,7 +5008,7 @@ def resume_change(
     text = set_field(text, "Feature", feature, after="Status")
     text = set_field(text, "Status", "active")
     text = set_field(text, "Resumed", now().isoformat(timespec="seconds"), after="Paused")
-    atomic_write(handoff, text.rstrip() + "\n")
+    atomic_write(handoff, text.rstrip() + "\n", "private task state")
     next_epoch = int(record.get("resume_epoch", 1)) + 1
     remaining_grants = [] if access == "transfer" else list(record.get("grants", []))
     state["task_sessions"][session_id] = {
@@ -5886,19 +5979,76 @@ def local_links(path: Path) -> list[str]:
     return re.findall(r"(?<!!)\[[^\]]*\]\(([^)]+)\)", text)
 
 
-def git_changed_paths(repo: Path, *args: str, required: bool = True) -> set[str]:
+def git_changed_path_changes(
+    repo: Path,
+    *args: str,
+    required: bool = True,
+) -> list[GitPathChange]:
     if not git_repository_detected(repo, required=required):
-        return set()
-    result = run_git(repo, "diff", "--name-only", "-z", "--diff-filter=ACMRD", *args)
+        return []
+    result = run_git(
+        repo,
+        "diff",
+        "--name-status",
+        "-z",
+        "--find-renames",
+        "--diff-filter=ACMRD",
+        *args,
+    )
     if result.returncode != 0:
         if required:
             raise git_command_error(repo, result)
-        return set()
-    return {
-        decode_git_path(raw)
-        for raw in result.stdout.split(b"\0")
-        if raw
-    }
+        return []
+    records = result.stdout.split(b"\0")
+    changes: list[GitPathChange] = []
+    index = 0
+    while index < len(records):
+        raw_status = records[index]
+        index += 1
+        if not raw_status:
+            continue
+        try:
+            status_text = raw_status.decode("ascii")
+        except UnicodeDecodeError as exc:
+            raise LedgerError(
+                "Git diff returned an invalid name-status record.",
+                ERROR_GIT_COMMAND_FAILED,
+            ) from exc
+        kind = status_text[:1]
+        required_paths = 2 if kind in {"R", "C"} else 1
+        if index + required_paths > len(records) or any(
+            not records[index + offset] for offset in range(required_paths)
+        ):
+            if required:
+                raise LedgerError(
+                    "Git diff returned an incomplete name-status record.",
+                    ERROR_GIT_COMMAND_FAILED,
+                )
+            return []
+        if kind in {"R", "C"}:
+            old_path = decode_git_path(records[index])
+            new_path = decode_git_path(records[index + 1])
+            index += 2
+        else:
+            path = decode_git_path(records[index])
+            index += 1
+            old_path, new_path = (path, None) if kind == "D" else (None, path)
+        changes.append(GitPathChange(kind, old_path, new_path))
+    return changes
+
+
+def git_changed_paths(repo: Path, *args: str, required: bool = True) -> set[str]:
+    return git_change_paths(
+        git_changed_path_changes(repo, *args, required=required),
+        False,
+    )
+
+
+def git_changed_behavior_paths(repo: Path, *args: str, required: bool = True) -> set[str]:
+    return git_change_paths(
+        git_changed_path_changes(repo, *args, required=required),
+        True,
+    )
 
 
 def handoff_evidence_paths(
@@ -5906,10 +6056,11 @@ def handoff_evidence_paths(
     handoff_text: str,
     raw_paths: list[str] | None = None,
 ) -> list[str]:
-    paths: set[str] = set(git_dirty_paths(repo))
+    path_changes = git_dirty_path_changes(repo)
     base = field_value(handoff_text, "Base commit")
     if is_git_repo(repo) and base not in {"", "none"} and git_revision(repo, base) != "none":
-        paths.update(git_changed_paths(repo, f"{base}..HEAD"))
+        path_changes.extend(git_changed_path_changes(repo, f"{base}..HEAD"))
+    paths = git_change_paths(path_changes, True)
     if raw_paths is None:
         return sorted(paths)
     selected: set[str] = set()
@@ -5919,6 +6070,13 @@ def handoff_evidence_paths(
         if normalized not in paths:
             raise LedgerError(f"Evidence path is not changed from this session base: {normalized}")
         selected.add(normalized)
+        for change in path_changes:
+            if change.status == "R" and normalized in {change.old_path, change.new_path}:
+                selected.update(
+                    path
+                    for path in (change.old_path, change.new_path)
+                    if path
+                )
     return sorted(selected)
 
 
@@ -5969,7 +6127,7 @@ def refresh_handoff_evidence(
     config = load_config(repo)
     text = handoff.read_text(encoding="utf-8")
     updated, paths = render_handoff_evidence(repo, config, text, raw_paths)
-    atomic_write(handoff, updated.rstrip() + "\n")
+    atomic_write(handoff, updated.rstrip() + "\n", "private task state")
     return paths
 
 
@@ -6300,7 +6458,7 @@ def record_verification(
             entry = f"- Not run — {safe_reason}\n  - Recorded: {now().isoformat(timespec='seconds')}"
             checks = "\n".join(item for item in (checks, entry) if item).strip()
             updated = replace_managed_text(text, CHECKS_START, CHECKS_END, checks)
-            atomic_write(handoff, updated.rstrip() + "\n")
+            atomic_write(handoff, updated.rstrip() + "\n", "private task state")
         print(f"Recorded verification exception for session {session_id} -> {record['publish_path']}")
         return 0
     command = [item for item in command if item != "--"]
@@ -6384,7 +6542,7 @@ def record_verification(
                 checks = ""
             checks = "\n".join(item for item in (checks, entry) if item).strip()
             updated = replace_managed_text(text, CHECKS_START, CHECKS_END, checks)
-            atomic_write(latest_handoff, updated.rstrip() + "\n")
+            atomic_write(latest_handoff, updated.rstrip() + "\n", "private task state")
     except LedgerError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         print("Verification command finished, but its result was not written.", file=sys.stderr)
@@ -6446,6 +6604,38 @@ def tracked_context_packs(
     return tracked
 
 
+def tracked_context_packs_at_ref(
+    repo: Path,
+    config: dict,
+    ref: str,
+) -> dict[str, list[tuple[str, str]]]:
+    """Return tracked paths and feature identity from committed Packs at one ref."""
+    packs_prefix = config["docs"]["ai"].rstrip("/") + "/context-packs"
+    listed = run_git(repo, "ls-tree", "-r", "--name-only", "-z", ref, "--", packs_prefix)
+    if listed.returncode != 0:
+        raise git_command_error(repo, listed)
+    tracked: dict[str, list[tuple[str, str]]] = {}
+    for raw in listed.stdout.split(b"\0"):
+        if not raw:
+            continue
+        pack_rel = decode_git_path(raw)
+        if not pack_rel.endswith(".md") or pack_rel.casefold().endswith("/readme.md"):
+            continue
+        loaded = run_git(repo, "show", f"{ref}:{pack_rel}")
+        if loaded.returncode != 0:
+            raise git_command_error(repo, loaded)
+        try:
+            text = loaded.stdout.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise LedgerError(f"Context Pack is not valid UTF-8 at {ref}: {pack_rel}") from exc
+        if field_value(text, "Status").casefold() != "current" or field_value(text, "Superseded by"):
+            continue
+        feature = feature_slug(field_value(text, "Feature") or Path(pack_rel).stem)
+        for path, _ in pack_file_entries(text):
+            tracked.setdefault(normalize_git_path(path), []).append((pack_rel, feature))
+    return tracked
+
+
 def related_context_documents(
     changed: set[str],
     packs: list[dict[str, object]],
@@ -6466,6 +6656,7 @@ def coverage_validation_errors(
     config: dict,
     raw_base: str = "",
     packs_by_path: dict[str, list[str]] | None = None,
+    current_packs: list[dict[str, object]] | None = None,
 ) -> list[str]:
     if not is_git_repo(repo):
         return ["Change coverage requires a Git repository."]
@@ -6473,8 +6664,9 @@ def coverage_validation_errors(
     if git_revision(repo, base) == "none":
         return [f"Coverage base ref does not exist locally: {base}"]
     merge_base = git_output(repo, "merge-base", "HEAD", base) or git_revision(repo, base)
-    changed = git_changed_paths(repo, f"{merge_base}..HEAD")
-    changed.update(git_dirty_paths(repo))
+    path_changes = git_changed_path_changes(repo, f"{merge_base}..HEAD")
+    path_changes.extend(git_dirty_path_changes(repo))
+    changed = git_change_paths(path_changes, True)
     implementation = sorted(path for path in changed if is_implementation_path(config, path))
     if not implementation:
         return []
@@ -6524,9 +6716,64 @@ def coverage_validation_errors(
     changed_packs = {
         path for path in changed if path.startswith(packs_prefix) and path.endswith(".md")
     }
+    if current_packs is None:
+        current_packs = load_live_context_packs(repo, config)
     if packs_by_path is None:
-        packs_by_path = tracked_context_packs(repo, config)
-    for raw in implementation:
+        packs_by_path = tracked_context_packs(repo, config, current_packs)
+    current_features = {
+        str(pack["rel"]): feature_slug(str(pack["feature"])) for pack in current_packs
+    }
+    base_packs_by_path = tracked_context_packs_at_ref(repo, config, merge_base)
+    transition_paths: set[str] = set()
+    for transition in path_changes:
+        if transition.status != "R" or not transition.old_path or not transition.new_path:
+            continue
+        old_path = normalize_git_path(transition.old_path)
+        new_path = normalize_git_path(transition.new_path)
+        old_implementation = is_implementation_path(config, old_path)
+        new_implementation = is_implementation_path(config, new_path)
+        if not old_implementation and not new_implementation:
+            continue
+        transition_paths.update(
+            path for path, required in (
+                (old_path, old_implementation),
+                (new_path, new_implementation),
+            ) if required
+        )
+        base_related = base_packs_by_path.get(old_path, []) if old_implementation else []
+        current_related = packs_by_path.get(new_path, []) if new_implementation else []
+        if old_implementation and not base_related:
+            errors.append(
+                f"Renamed implementation path had no Context Pack at the coverage base: {old_path}"
+            )
+        if new_implementation and not current_related:
+            errors.append(
+                f"Renamed implementation path has no current Context Pack tracked file: {new_path}"
+            )
+        if old_implementation and new_implementation and base_related and current_related:
+            base_features = {feature for _, feature in base_related}
+            current_matching = [
+                pack for pack in current_related
+                if current_features.get(pack, "") in base_features
+            ]
+            if not current_matching:
+                errors.append(
+                    "Renamed implementation path is not covered by the same Context Pack feature: "
+                    f"{old_path} -> {new_path}"
+                )
+        if old_implementation:
+            for pack, _ in base_related:
+                if pack not in changed_packs:
+                    errors.append(
+                        f"Source Context Pack was not changed for renamed path {old_path}: {pack}"
+                    )
+        if new_implementation:
+            for pack in current_related:
+                if pack not in changed_packs:
+                    errors.append(
+                        f"Related Context Pack was not changed for behavior-changing path {new_path}: {pack}"
+                    )
+    for raw in (path for path in implementation if path not in transition_paths):
         related = packs_by_path.get(normalize_git_path(raw), [])
         if not related:
             errors.append(
@@ -6719,6 +6966,7 @@ def check_changed_repo(
                 config,
                 coverage_base or changed_since,
                 packs_by_path=packs_by_path,
+                current_packs=current_packs,
             )
         )
 

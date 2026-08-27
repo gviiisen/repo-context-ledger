@@ -320,6 +320,13 @@ python scripts/build_runtime.py --check
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
 
+## What's new in v1.0.1
+
+- Automatic planning treats explicit typo, spelling, and comment-only work as `small-fix`. A one-line request is only supporting evidence when it also names a low-risk README, documentation, comment, copy, text, or example target; code risk remains `ordinary-change` even when the proposed edit is one line.
+- Workflow actions preserve an explicitly supplied `--tool`, so a planned `start`, `resume`, or context route keeps its Agent source in continuation records.
+- Rename-aware Git evidence and Coverage retain both the old and new path. Coverage requires the old implementation path to be owned by a Pack at the merge base, the new implementation path to be owned by a current Pack of the same feature, and the affected Packs to be refreshed. Moving production code into a test or generated directory cannot hide the removed boundary; copy sources remain informational.
+- New Git-tracked documents and configuration use mode `0644` on POSIX, while private sessions, state, cache, and preset trust use `0600`. Existing targets and copied runtime modes remain preserved.
+
 ## What's new in v1.0.0
 
 - The editable runtime is now split at tested boundaries for constants, errors, result models, repository locks, core Git access, and Workflow Planning. A deterministic builder still emits one zero-dependency `ledger.py`, so installation and `init` do not gain a package dependency.
@@ -532,5 +539,5 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
 - [Change history](docs/changes/README.md)
 - [Feature Context Packs](docs/ai/context-packs)
 - Relevant specs: [Compact local configuration workflow](docs/specs/compact-local-config-workflow.md), [Context Routing Performance](docs/specs/context-routing-performance.md), [Continuation Quality](docs/specs/continuation-quality.md), [Contract Stability](docs/specs/contract-stability.md), [Coverage Integrity](docs/specs/coverage-integrity.md)
-- Latest recorded change: [Cover public protocol error shapes](docs/changes/2026/08/20260827191239-gviiisen-eaffca7e21-cover-public-protocol-error-shapes.md)
+- Latest recorded change: [Harden v1.0.1 workflow and repository boundaries](docs/changes/2026/08/20260827202058-gviiisen-0e61ed5004-harden-v1-0-1-workflow-and-repository-boundaries.md)
 <!-- repo-context-ledger:end -->

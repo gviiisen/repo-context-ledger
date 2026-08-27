@@ -6,10 +6,10 @@ Aliases: 跨窗口续接 | cross-agent continuation | resume task session
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 2c5ea2f81b7b8f8939ad274f44094a6b937faca5
+Source commit: 4800d58e9bde70c8f0b55a9afe0f6e7df90480d2
 Base branch: main
-Base commit: 0d7e1f289e726edc4ae2b621361f89c621de5623
-Last refreshed: 2026-08-27T19:05:07+08:00
+Base commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
+Last refreshed: 2026-08-27T21:54:18+08:00
 
 ## Purpose
 
@@ -42,7 +42,7 @@ Routes fresh Agent windows to the private draft state model, principal ownership
 
 ## Contracts and boundaries
 
-- Invariants and contracts: Each unfinished draft has one principal owner and remains outside formal history; keyword routing considers only available active/paused sessions; ambiguous matches fail; Resume Capsule data is bounded and private; resume rotates an epoch/tool on the same session; foreign principals receive only an overlap signal; fork preserves the source and transfer requires a paused source; parallel evidence remains explicit; finish publishes at most once; verification runs unlocked; transient short writers wait for a bounded interval; finish validation does not hold the repository lock; persisted checks redact credentials and machine roots; `--timings` remains private and path-free.
+- Invariants and contracts: Each unfinished draft has one principal owner and remains outside formal history; new private drafts, state, router cache, and preset trust use `0600` on POSIX; keyword routing considers only available active/paused sessions; ambiguous matches fail; Resume Capsule data is bounded and private; resume rotates an epoch/tool on the same session; foreign principals receive only an overlap signal; fork preserves the source and transfer requires a paused source; parallel evidence remains explicit; finish publishes at most once; verification runs unlocked; transient short writers wait for a bounded interval; finish validation does not hold the repository lock; persisted checks redact credentials and machine roots; `--timings` remains private and path-free.
 - Failure / recovery: Invalid drafts, stale epochs, expired grants, unauthorized mutations, persistent lock contention, and bounded inputs changed during finish preparation fail closed without changing the source task. Another clone can continue only from Git-tracked context. `finish` sanitizes legacy checks; interrupted publication retries by Session ID without duplicating history; a post-publication derived-sync failure is repaired by a later sync; legacy unfinished records bind conservatively without rewriting completed history.
 - Non-goals: A Capsule does not prove full code-boundary understanding or infer task progress, diffs, translations, or symbols. Sessions do not persist chats, provide filesystem security, synchronize private state through Git, copy or merge source code, or authorize messages to another task.
 
@@ -59,11 +59,11 @@ Run `python -m unittest discover -s tests -p test_ledger.py` for v8 migration, s
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:0bfead16d1f3312ac8a0eacbb907905be4159c123f85f96dab4bc7ed4e0c985a`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:f00aafdd16ed109963ed90b5bc4d77b2fc2b0c4f230a09e4cba7e52b8fa45d49`
 - `skills/repo-context-ledger/SKILL.md` — `sha256:c49a692005ff85c62c4fc3ebb5617af4725c55bba3857a3413b5c4d8bba4e12a`
 - `skills/repo-context-ledger/references/production-workflow.md` — `sha256:61b308e7b737e2677cf0f4c8740ad281710bc6e33740098cee5e17beb2b36d48`
 - `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:dd1e26e29993ac93d5f52de315df130b270982125b4037dc01c17d9cb63f9a52`
-- `tests/test_ledger.py` — `sha256:7944c012f406e8c8dabe7946a07f6477a886515104e53b2de9c8497162bfc65e`
+- `tests/test_ledger.py` — `sha256:8f5041ab68473240b1e6cf571c3fe31df732a09110ccd48475a9236ca1cd3f70`
 - `benchmarks/closeout_workflow_benchmark.py` — `sha256:33fb3dc82c2acd29e5bab6d3870046868a5d79858c2ac7641bb0a8102c089d6c`
 - `benchmarks/README.md` — `sha256:9244091fc1202a9c40c54f2fb7f81d7e708dacd3d619f8e68e70f70ee633088a`
 <!-- repo-context-ledger:pack-files:end -->
