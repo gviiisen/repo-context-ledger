@@ -3,6 +3,7 @@
 <!-- repo-context-ledger:start -->
 ## Changes in 2026-08
 
+- [Build continuation quality engine](20260827075252-gviiisen-c783c8332f-build-continuation-quality-engine.md) — completed
 - [Add safe verification presets](20260827065951-gviiisen-6daa4a6c38-add-safe-verification-presets.md) — completed
 - [Accelerate small-task closeout](20260827060627-gviiisen-2e52131353-accelerate-small-task-closeout.md) — completed
 - [Close compact workflow review gaps](20260827031910-gviiisen-bb7acfb439-close-compact-workflow-review-gaps.md) — completed
