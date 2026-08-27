@@ -1,0 +1,11 @@
+{
+  "schema": "historical-disposition-v1",
+  "record": "docs/changes/2026/08/20260822003651-gviiisen-9d9c476d8a-pin-standalone-runtime-checkout-line-endings.md",
+  "record_sha256": "sha256:54b12a076c9d33e5f710e34b65e8c0ef2fc1a2d9893aa2d67cc41b900c564e63",
+  "finding": "FINAL_VERIFICATION_FAILED",
+  "disposition": "resolved-by-later-change",
+  "reason": "The failure exposed that .gitattributes was classified as implementation code. The later Change added it to coverage.config_globs and passed the focused and full verification suites.",
+  "resolved_by": "docs/changes/2026/08/20260822003911-gviiisen-e688fa6347-classify-git-attributes-as-repository-configurat.md",
+  "approved_by": "gviiisen",
+  "approved_at": "2026-08-27T23:55:00+08:00"
+}

@@ -34,6 +34,8 @@ Starting in v0.9.0, `plan --format json` publishes `workflow-plan-v1` with the s
 
 Starting in v1.0.1, automatic `small-fix` classification treats one-line wording as supporting evidence only when the named target is low-risk documentation, comment, copy, text, or example content. Explicit workflow intent and the published `workflow-plan-v1` shape remain unchanged.
 
+Starting in v1.0.2, `policy --base <ref>` is the aggregate text-mode PR gate. It deterministically selects ordinary or derived-only behavior from the actual merge-base delta. `audit --history --policy as-recorded` separates immutable recorded verification outcomes from hash-bound maintainer dispositions. Both commands use the existing text-mode exit classes and add no new public JSON schema.
+
 Expected JSON failures remain inside the requested schema and use stable machine codes: `LEDGER_ERROR`, `INVALID_ARGUMENT`, `UNSUPPORTED_SCHEMA`, `CONTEXT_NO_MATCH`, `CHECK_FAILED`, and `DOCTOR_FAILED`. Human messages may improve without changing the code. Unknown future repository/private-state schemas fail closed with `UNSUPPORTED_SCHEMA` rather than being normalized or rewritten.
 
 Starting in v0.8.1, a confirmed Git worktree that cannot answer a required status/diff query fails with `GIT_COMMAND_FAILED`. This is an additive error code within the existing schemas and exit class 2. Git path readers use NUL-delimited byte output, so filenames are interpreted by the operating-system filesystem codec rather than Git's display quoting. Genuine non-Git directories retain their local fallback behavior.

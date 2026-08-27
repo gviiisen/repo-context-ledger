@@ -235,14 +235,13 @@ Another principal cannot see or take over the private Capsule by default. Teamma
 
 Each person should work on a suitable Git branch or worktree. Codex, Cursor, Claude, Copilot, and Grok may share that person's principal, while another person has a different principal. Active and paused task state stays private; completed handoffs, stable specs, Context Packs, and code remain reviewable and mergeable through Git.
 
-Before opening or updating a pull request, the agent should update the base ref and run:
+Before opening or updating a pull request, the agent should update the base ref and run one aggregate policy:
 
 ```text
-python .context-ledger/ledger.py team-check --base origin/main
-python .context-ledger/ledger.py check --strict --coverage --changed-since origin/main
+python .context-ledger/ledger.py policy --base origin/main
 ```
 
-If another branch changed the same files or feature, coordinate and resolve that overlap before merging. After the pull request is merged, the agent runs this once on the configured default branch:
+The policy uses the actual Git delta rather than the branch name. Ordinary changes receive team-overlap, changed-scope Coverage, and whitespace gates. A PR containing only deterministic indexes, the Manifest, or managed README blocks instead proves `sync --derived` is already idempotent. If another branch changed the same files or feature, coordinate and resolve that overlap before merging. After the pull request is merged, the agent runs this once on the configured default branch:
 
 ```text
 python .context-ledger/ledger.py sync --derived
@@ -319,6 +318,13 @@ python scripts/build_runtime.py --check
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
+
+## What's new in v1.0.2
+
+- `policy --base <ref>` replaces several loosely coordinated PR commands with one deterministic `ledger-policy` gate. It classifies the real merge-base delta as ordinary or derived-only and fails closed when a mixed or hand-edited delta cannot prove either policy.
+- Derived-only PRs may contain generated indexes, the Context Manifest, and managed README blocks only. They must already equal a fresh in-memory `sync --derived` plan, with current adapters, Manifest, and installed runtime copies.
+- `audit --history --policy as-recorded` preserves original Change verification outcomes. Optional `historical-disposition-v1` JSON records bind a known finding to the exact Change SHA-256 and a later completed resolution; changing history invalidates the disposition.
+- GitHub exposes the aggregate PR gate as the single `ledger-policy` job, ready to become the required branch-protection check after this version reaches `main`.
 
 ## What's new in v1.0.1
 

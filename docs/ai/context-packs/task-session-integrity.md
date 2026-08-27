@@ -6,10 +6,10 @@ Aliases: 跨窗口续接 | cross-agent continuation | resume task session
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 4800d58e9bde70c8f0b55a9afe0f6e7df90480d2
+Source commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
 Base branch: main
-Base commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
-Last refreshed: 2026-08-27T21:54:18+08:00
+Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
+Last refreshed: 2026-08-28T00:07:43+08:00
 
 ## Purpose
 
@@ -59,9 +59,9 @@ Run `python -m unittest discover -s tests -p test_ledger.py` for v8 migration, s
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:f00aafdd16ed109963ed90b5bc4d77b2fc2b0c4f230a09e4cba7e52b8fa45d49`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:c49a692005ff85c62c4fc3ebb5617af4725c55bba3857a3413b5c4d8bba4e12a`
-- `skills/repo-context-ledger/references/production-workflow.md` — `sha256:61b308e7b737e2677cf0f4c8740ad281710bc6e33740098cee5e17beb2b36d48`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:b39c63137f5eb8f1daf9a8a5dad0b46c1ede47ca0d4528df86af27a3f83304c2`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:c63b2a91a103321129a819986d4e778c974d57a421fad6f157f8e7aa3217c893`
+- `skills/repo-context-ledger/references/production-workflow.md` — `sha256:bffa98610d841a753bf44a4eb2efed51752e428a6cfddaf5ffb07f730fb3db69`
 - `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:dd1e26e29993ac93d5f52de315df130b270982125b4037dc01c17d9cb63f9a52`
 - `tests/test_ledger.py` — `sha256:8f5041ab68473240b1e6cf571c3fe31df732a09110ccd48475a9236ca1cd3f70`
 - `benchmarks/closeout_workflow_benchmark.py` — `sha256:33fb3dc82c2acd29e5bab6d3870046868a5d79858c2ac7641bb0a8102c089d6c`

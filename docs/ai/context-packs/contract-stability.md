@@ -6,10 +6,10 @@ Aliases: none
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 4800d58e9bde70c8f0b55a9afe0f6e7df90480d2
+Source commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
 Base branch: main
-Base commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
-Last refreshed: 2026-08-27T21:54:13+08:00
+Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
+Last refreshed: 2026-08-28T00:07:38+08:00
 
 ## Purpose
 
@@ -33,16 +33,17 @@ Routes compatibility work to the public CLI schemas, golden fixtures, routing co
 | `scripts/evaluate_routing.py` | Produces the synthetic routing quality and latency report. |
 | `tests/test_routing_evaluation.py` | Protects labeled routing, ambiguity/fallback, lifecycle selection, and read budget metrics. |
 | `.github/workflows/test.yml` | Runs the complete supported OS/Python suite plus PR-only Ledger team, changed-scope Coverage, runtime-build, and diff gates; macOS remains release/nightly/manual. |
+| `skills/repo-context-ledger/scripts/ledger.py::load_historical_dispositions`, `audit_history` | Separate immutable recorded verification outcomes from exact-hash, maintainer-approved resolutions. |
 
 ## Contracts and boundaries
 
-- Invariants and contracts: 1.x minor versions preserve commands, required fields, scalar types, meanings, privacy, and exit classes; incompatible changes require a new schema and major project version.
+- Invariants and contracts: 1.x minor versions preserve commands, required fields, scalar types, meanings, privacy, and exit classes; incompatible changes require a new schema and major project version. Historical dispositions cannot rewrite a Change and become invalid when its bound SHA-256 changes.
 - Failure / recovery: golden or routing failures block release until the change is additive or receives an explicit new schema and migration; human text output remains available for recovery.
 - Non-goals: compatibility does not freeze timing values or every prose line, import production data, support Python below 3.10, or expose foreign private session details.
 
 ## Verification
 
-`python tests/test_protocol_schemas.py` checks real success, no-match, error, and Resume Capsule reports against published schemas. `python -m unittest discover -s tests -p test_contract_stability.py` verifies privacy, stable errors, and exit codes. `python -m unittest discover -s tests -p test_routing_evaluation.py` verifies the synthetic routing corpus. The GitHub Actions matrix runs `python -m unittest discover -s tests -v` on Windows/Ubuntu and Python 3.10/3.12, plus release/nightly/manual macOS.
+`python tests/test_protocol_schemas.py` checks real success, no-match, error, and Resume Capsule reports against published schemas. `test_contract_stability.py` verifies privacy, stable errors, and exit codes; `test_policy_and_audit.py` verifies hash-bound historical resolution and aggregate policy behavior. `test_routing_evaluation.py` verifies the synthetic routing corpus. The GitHub Actions matrix runs the full suite on Windows/Ubuntu and Python 3.10/3.12, plus release/nightly/manual macOS.
 
 <!-- repo-context-ledger:pack-specs:start -->
 ## Stable context
@@ -53,11 +54,11 @@ Routes compatibility work to the public CLI schemas, golden fixtures, routing co
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:81a8fb3f2c0e857b28f88b9a6d75e31e6d40e485835517d7c50c95296ff5ed44`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:fe008b1cafebdd774a0d1cb14e239cadf11038be0d99ec577d56cf1e9addc315`
 - `src/repo_context_ledger/errors.pyfrag` — `sha256:7cd76293bd376f12cf7e13ba747159820667919afcc720098e7958ee05bb9717`
 - `src/repo_context_ledger/models.pyfrag` — `sha256:a22d3de153c2deff0417d79af5e90dbb907ec2820d475fc7d9be7ed9fc06893a`
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:aabb91b17f8a9bae7d42d2932d20eeb5b37819e6c358a0b517c253d71c8c6a39`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:f00aafdd16ed109963ed90b5bc4d77b2fc2b0c4f230a09e4cba7e52b8fa45d49`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:288d4092f23898a34866d4769bd21d25a2276a44809fdcb8346a330f4d50f9cf`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:b39c63137f5eb8f1daf9a8a5dad0b46c1ede47ca0d4528df86af27a3f83304c2`
 - `schemas/README.md` — `sha256:edfc6ed9e01236021278fbd276092a8acd8fb44c140cd81be4170006278ffb29`
 - `schemas/workflow-plan-v1.schema.json` — `sha256:8e298fa8bd11aaeab1a89b322b2b4f63541b8137ebc7f492b526e4ba802f7ebe`
 - `schemas/context-bundle-v1.schema.json` — `sha256:bba40cd2f4e0d8a630b82cc3372fc820a110f2a0433741aec766da84a903806d`
@@ -75,7 +76,7 @@ Routes compatibility work to the public CLI schemas, golden fixtures, routing co
 - `scripts/evaluate_routing.py` — `sha256:d798030a684e81e0f8d298136abf3a72309da3f4c51384fcebdc251210137833`
 - `tests/test_routing_evaluation.py` — `sha256:4bee2325cc493db7fedc8c77b637806cf84cabb2e513f424b64f51da61f6f53d`
 - `tests/fixtures/routing-eval-v1.json` — `sha256:6eaf30268655247499174dfa9913969f4b1915aa98b02c0587f5ff9a7e53c4cc`
-- `.github/workflows/test.yml` — `sha256:50080dc86a7cbcf0c17fefe15766a65dc73fd78935ccd576c48116709f1add11`
-- `COMPATIBILITY.md` — `sha256:5688484d4886d09f7aa34fa064eff2c562fd88ac16c5b85da46525e0efe398d3`
-- `MIGRATIONS.md` — `sha256:3883ad8ec72e7ddda2e05d04fef4c851083d85bb511667e70fe84cec7b72ab48`
+- `.github/workflows/test.yml` — `sha256:8e42b4c3232a03caf55b93190a8f7667729978aba6d3306a3592a94207a2dcee`
+- `COMPATIBILITY.md` — `sha256:72cabf6ff215ffef67d9bd298ed83884e027de2e3dc76830c823d3984c444a6c`
+- `MIGRATIONS.md` — `sha256:53fee725866ac7afec0a278736179e4506cfcf3452e58f1d0b87ec6d297befdb`
 <!-- repo-context-ledger:pack-files:end -->

@@ -52,13 +52,13 @@ Use `--timings` before the command when diagnosing lifecycle overhead. It emits 
 
 For repeated project checks, prefer reviewed `verification.presets` over shell strings assembled by each Agent. Presets store executable arguments as JSON arrays, may constrain the repository-relative working directory and platform, and are executed only after an explicit `verify --preset <name>`. Keep one-off commands direct. See [verification-presets.md](verification-presets.md) for the schema and safe Windows/Linux examples.
 
-Before a pull request, use a merge-base delta:
+Before a pull request, use the aggregate merge-base policy:
 
 ```text
-python .context-ledger/ledger.py check --strict --coverage --changed-since origin/main
+python .context-ledger/ledger.py policy --base origin/main
 ```
 
-This checks changed handoffs, specs, Packs, Markdown links, adapter drift, directly related current Packs/specs, and Coverage without letting unrelated historical debt block the pull request. A source change that makes its related Pack stale still fails. Coverage accepts private task evidence or a spec exception only from a session whose recorded evidence intersects the changed implementation paths.
+The runtime classifies the actual Git delta, not the branch name. Ordinary changes receive team-overlap, strict changed-scope Coverage, and `git diff --check` gates. A delta containing only deterministic indexes, the Manifest, or managed README blocks receives a derived-only gate that requires `sync --derived` to be idempotent and adapters/runtime/Manifest to be current. Any source, Pack, spec body, Change body, or README prose change switches back to the ordinary policy.
 
 Keep the full audit explicit:
 
@@ -67,6 +67,14 @@ python .context-ledger/ledger.py check --strict --coverage
 ```
 
 Run it for scheduled repository health work, controlled integration, or release readiness. Do not run it merely to finish an unrelated parallel task.
+
+Historical verification outcomes are immutable. Record a maintainer-reviewed, hash-bound JSON disposition under `docs/audit-dispositions/` when a later completed Change resolves a recorded finding, then run:
+
+```text
+python .context-ledger/ledger.py audit --history --policy as-recorded --fail-on unresolved
+```
+
+Changing the original Change bytes invalidates the disposition instead of silently rewriting history.
 
 ## Configuration
 

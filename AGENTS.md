@@ -16,7 +16,7 @@ For every feature, bug fix, refactor, interface change, or other ordinary behavi
 7. Update `docs/specs/` and refresh affected Context Packs when current behavior, contracts, boundaries, code navigation, or tracked production paths change.
 8. Finish with `finish --spec <affected-spec>`, or use `--no-spec --reason "..."` only when no stable behavior exists.
 9. Let `finish` enforce this session's evidence, specs, and relevant Context Pack fingerprints. Run repository-wide `check --strict --coverage` only at integration or PR time, when foreign sessions are not actively changing the shared worktree.
-10. Before opening or updating a pull request, update the base ref and run `team-check --base origin/main`.
+10. Before opening or updating a pull request, update the base ref and run `policy --base origin/main`. The policy classifies the actual Git delta as ordinary or derived-only; it never trusts a branch name. Use `audit --history --policy as-recorded --fail-on unresolved` for controlled release history audits.
 
 Active and paused drafts are stored in Git worktree metadata and must not be committed. Only `finish` may publish a validated draft into `docs/changes/`. On feature branches, do not regenerate shared README or monthly index blocks. After merging on `main`, run `python .context-ledger/ledger.py sync --derived` once.
 
