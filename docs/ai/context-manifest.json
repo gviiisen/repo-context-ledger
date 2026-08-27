@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "tool_version": "1.0.0",
+  "tool_version": "1.0.1",
   "default_branch": "main",
   "project_context": "docs/ai/project-context.md",
   "docs": {
@@ -14,8 +14,8 @@
       "title": "Compact Local Configuration Workflow",
       "context_pack": "docs/ai/context-packs/compact-local-config-workflow.md",
       "status": "current",
-      "source_commit": "2c5ea2f81b7b8f8939ad274f44094a6b937faca5",
-      "last_refreshed": "2026-08-27T19:05:00+08:00",
+      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
+      "last_refreshed": "2026-08-27T21:54:11+08:00",
       "stable_specs": [
         "docs/specs/compact-local-config-workflow.md"
       ],
@@ -101,8 +101,8 @@
       "title": "Context Routing Performance",
       "context_pack": "docs/ai/context-packs/context-routing-performance.md",
       "status": "current",
-      "source_commit": "2c5ea2f81b7b8f8939ad274f44094a6b937faca5",
-      "last_refreshed": "2026-08-27T19:05:01+08:00",
+      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
+      "last_refreshed": "2026-08-27T21:54:12+08:00",
       "stable_specs": [
         "docs/specs/context-routing-performance.md"
       ],
@@ -152,8 +152,8 @@
       "title": "Continuation Quality",
       "context_pack": "docs/ai/context-packs/continuation-quality.md",
       "status": "current",
-      "source_commit": "2c5ea2f81b7b8f8939ad274f44094a6b937faca5",
-      "last_refreshed": "2026-08-27T19:05:01+08:00",
+      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
+      "last_refreshed": "2026-08-27T21:54:12+08:00",
       "stable_specs": [
         "docs/specs/continuation-quality.md"
       ],
@@ -213,8 +213,8 @@
       "title": "Contract Stability",
       "context_pack": "docs/ai/context-packs/contract-stability.md",
       "status": "current",
-      "source_commit": "2c5ea2f81b7b8f8939ad274f44094a6b937faca5",
-      "last_refreshed": "2026-08-27T19:25:29+08:00",
+      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
+      "last_refreshed": "2026-08-27T21:54:13+08:00",
       "stable_specs": [
         "docs/specs/contract-stability.md"
       ],
@@ -384,8 +384,8 @@
       "title": "Coverage Integrity",
       "context_pack": "docs/ai/context-packs/coverage-integrity.md",
       "status": "current",
-      "source_commit": "2c5ea2f81b7b8f8939ad274f44094a6b937faca5",
-      "last_refreshed": "2026-08-27T19:05:04+08:00",
+      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
+      "last_refreshed": "2026-08-27T21:54:15+08:00",
       "stable_specs": [
         "docs/specs/coverage-integrity.md"
       ],
@@ -396,6 +396,43 @@
         "tests/test_ledger.py"
       ],
       "recent_changes": [
+        {
+          "id": "20260827214039-gviiisen-c84859e7d8",
+          "path": "docs/changes/2026/08/20260827214039-gviiisen-c84859e7d8-address-pr-25-review-blockers.md",
+          "title": "Address PR 25 review blockers",
+          "feature": "coverage-integrity",
+          "date": "2026-08-27",
+          "summary": "Coverage 保留 rename transition，从 merge base 读取旧路径 Pack 所有权，从当前工作区读取新路径同 feature Pack 所有权，并要求 source/current Pack 进入本次变更；one-line 只有同时命中低风险文档/注释/文案/示例目标才辅助选择 `small-fix`；PR 新增独立 `ledger-gates`，三个派生索引恢复为 `origin/main` 内容并延后到合并后生成。",
+          "evidence_paths": [
+            ".github/workflows/test.yml",
+            "ARCHITECTURE.md",
+            "COMPATIBILITY.md",
+            "docs/ai/context-manifest.json",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/continuation-quality.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/ai/context-packs/verification-presets.md",
+            "docs/ai/context-packs/workflow-planning.md",
+            "docs/changes/2026/08/README.md",
+            "docs/changes/README.md",
+            "docs/specs/contract-stability.md",
+            "docs/specs/coverage-integrity.md",
+            "docs/specs/runtime-architecture.md",
+            "docs/specs/workflow-planning.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "src/repo_context_ledger/workflow.pyfrag",
+            "tests/fixtures/workflow-plan-eval-v1.json",
+            "tests/test_ledger.py"
+          ],
+          "status": "completed"
+        },
         {
           "id": "20260822003911-gviiisen-e688fa6347",
           "path": "docs/changes/2026/08/20260822003911-gviiisen-e688fa6347-classify-git-attributes-as-repository-configurat.md",
@@ -533,8 +570,8 @@
       "title": "Native Context Bridge",
       "context_pack": "docs/ai/context-packs/native-context-bridge.md",
       "status": "current",
-      "source_commit": "2c5ea2f81b7b8f8939ad274f44094a6b937faca5",
-      "last_refreshed": "2026-08-27T19:05:04+08:00",
+      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
+      "last_refreshed": "2026-08-27T21:54:15+08:00",
       "stable_specs": [
         "docs/specs/native-context-bridge.md"
       ],
@@ -649,8 +686,8 @@
       "title": "Pack Health and Doctor",
       "context_pack": "docs/ai/context-packs/pack-health-doctor.md",
       "status": "current",
-      "source_commit": "2c5ea2f81b7b8f8939ad274f44094a6b937faca5",
-      "last_refreshed": "2026-08-27T19:05:05+08:00",
+      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
+      "last_refreshed": "2026-08-27T21:54:16+08:00",
       "stable_specs": [
         "docs/specs/pack-health-doctor.md"
       ],
@@ -691,8 +728,8 @@
       "title": "Runtime Architecture",
       "context_pack": "docs/ai/context-packs/runtime-architecture.md",
       "status": "current",
-      "source_commit": "2c5ea2f81b7b8f8939ad274f44094a6b937faca5",
-      "last_refreshed": "2026-08-27T19:19:05+08:00",
+      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
+      "last_refreshed": "2026-08-27T21:54:17+08:00",
       "stable_specs": [
         "docs/specs/runtime-architecture.md"
       ],
@@ -722,6 +759,47 @@
         ".github/workflows/test.yml"
       ],
       "recent_changes": [
+        {
+          "id": "20260827202058-gviiisen-0e61ed5004",
+          "path": "docs/changes/2026/08/20260827202058-gviiisen-0e61ed5004-harden-v1-0-1-workflow-and-repository-boundaries.md",
+          "title": "Harden v1.0.1 workflow and repository boundaries",
+          "feature": "runtime-architecture",
+          "date": "2026-08-27",
+          "summary": "Only explicit typo, spelling, comment-only, or one-line scope can select `small-fix`, and risk vocabulary vetoes it. Planned executable actions preserve an explicit tool. Structured Git transitions feed both rename paths into evidence and Coverage while copies count only their destination. New public repository files use `0644` and private task/state/cache/trust files use `0600` on POSIX; replacement retains an existing mode.",
+          "evidence_paths": [
+            ".context-ledger/ledger.py",
+            "ARCHITECTURE.md",
+            "COMPATIBILITY.md",
+            "MIGRATIONS.md",
+            "README.md",
+            "README.zh-CN.md",
+            "docs/ai/context-manifest.json",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/continuation-quality.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/ai/context-packs/verification-presets.md",
+            "docs/ai/context-packs/workflow-planning.md",
+            "docs/specs/runtime-architecture.md",
+            "docs/specs/task-session-integrity.md",
+            "docs/specs/workflow-planning.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/constants.pyfrag",
+            "src/repo_context_ledger/models.pyfrag",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "src/repo_context_ledger/workflow.pyfrag",
+            "tests/fixtures/workflow-plan-eval-v1.json",
+            "tests/test_repository_reliability.py",
+            "tests/test_runtime_build.py",
+            "tests/test_workflow_plan.py"
+          ],
+          "status": "completed"
+        },
         {
           "id": "20260827185543-gviiisen-9afe5ba1c7",
           "path": "docs/changes/2026/08/20260827185543-gviiisen-9afe5ba1c7-modularize-runtime-source-and-stabilize-protocol.md",
@@ -821,34 +899,6 @@
             "tests/test_runtime_build.py"
           ],
           "status": "completed"
-        },
-        {
-          "id": "20260821233623-gviiisen-a1d83814d8",
-          "path": "docs/changes/2026/08/20260821233623-gviiisen-a1d83814d8-build-deterministic-standalone-runtime-architect.md",
-          "title": "Build deterministic standalone runtime architecture",
-          "feature": "runtime-architecture",
-          "date": "2026-08-21",
-          "summary": "one template plus a contracts fragment generates both standalone files deterministically; version/schema/exit/error and typed result contracts are extracted first, CI rejects drift, and `init` still distributes one zero-dependency runtime.",
-          "evidence_paths": [
-            ".github/workflows/test.yml",
-            "ARCHITECTURE.md",
-            "docs/ai/context-packs/context-routing-performance.md",
-            "docs/ai/context-packs/contract-stability.md",
-            "docs/ai/context-packs/coverage-integrity.md",
-            "docs/ai/context-packs/native-context-bridge.md",
-            "docs/ai/context-packs/pack-health-doctor.md",
-            "docs/ai/context-packs/runtime-architecture.md",
-            "docs/ai/context-packs/task-session-integrity.md",
-            "docs/specs/runtime-architecture.md",
-            "scripts/build_runtime.py",
-            "skills/repo-context-ledger/SKILL.md",
-            "skills/repo-context-ledger/scripts/ledger.py",
-            "src/repo_context_ledger/__init__.py",
-            "src/repo_context_ledger/contracts.pyfrag",
-            "src/repo_context_ledger/runtime.py.tmpl",
-            "tests/test_runtime_build.py"
-          ],
-          "status": "completed"
         }
       ]
     },
@@ -857,8 +907,8 @@
       "title": "Task Session Integrity",
       "context_pack": "docs/ai/context-packs/task-session-integrity.md",
       "status": "current",
-      "source_commit": "2c5ea2f81b7b8f8939ad274f44094a6b937faca5",
-      "last_refreshed": "2026-08-27T19:05:07+08:00",
+      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
+      "last_refreshed": "2026-08-27T21:54:18+08:00",
       "stable_specs": [
         "docs/specs/task-session-integrity.md"
       ],
@@ -1012,8 +1062,8 @@
       "title": "Verification presets",
       "context_pack": "docs/ai/context-packs/verification-presets.md",
       "status": "current",
-      "source_commit": "2c5ea2f81b7b8f8939ad274f44094a6b937faca5",
-      "last_refreshed": "2026-08-27T19:05:08+08:00",
+      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
+      "last_refreshed": "2026-08-27T21:54:19+08:00",
       "stable_specs": [
         "docs/specs/verification-presets.md"
       ],
@@ -1068,8 +1118,8 @@
       "title": "Workflow Planning",
       "context_pack": "docs/ai/context-packs/workflow-planning.md",
       "status": "current",
-      "source_commit": "2c5ea2f81b7b8f8939ad274f44094a6b937faca5",
-      "last_refreshed": "2026-08-27T19:19:45+08:00",
+      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
+      "last_refreshed": "2026-08-27T21:54:20+08:00",
       "stable_specs": [
         "docs/specs/workflow-planning.md"
       ],
