@@ -21,10 +21,16 @@ def build_workflow_plan(
         r"分析|审查|解释|如何|看看|查看|状态|了解|是什么|为什么",
         lowered,
     )) or lowered.endswith(("?", "？"))
-    strong_small_signal = bool(re.search(
-        r"\b(comment[- ]only|one[- ]line|spelling|typo)\b|仅修改注释|只改一行|错别字|拼写",
+    textual_small_signal = bool(re.search(
+        r"\b(comment[- ]only|spelling|typo)\b|仅修改注释|错别字|拼写",
         lowered,
     ))
+    one_line_signal = bool(re.search(r"\bone[- ]line\b|只改一行", lowered))
+    low_risk_target = bool(re.search(
+        r"\b(comment|copy|docs?|documentation|example|readme|text)\b|注释|文案|文档|示例|说明",
+        lowered,
+    ))
+    strong_small_signal = textual_small_signal or (one_line_signal and low_risk_target)
     risk_signal = bool(re.search(
         r"\b(authentication|authorization|concurren(?:cy|t)|database|distributed|funds?|migration|"
         r"payment|permission|protocol|public api|schema|security|settlement|transaction|vulnerabilit(?:y|ies))\b|"

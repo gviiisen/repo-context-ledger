@@ -322,9 +322,9 @@ python scripts/build_runtime.py --check
 
 ## v1.0.1 新增能力
 
-- 自动规划现在只有在请求明确属于错别字、拼写、仅改注释或只改一行时才选择 `small-fix`。“一个”“single”等数量词不再代表工作简单；涉及安全、并发、事务、迁移、数据库、协议、支付或公开接口时始终按普通修改处理。
+- 自动规划只有在明确属于错别字、拼写或仅改注释时才直接选择 `small-fix`。“只改一行”只能作为辅助信号，并且还必须指向 README、文档、注释、文案、文本或示例等低风险目标；代码风险不会因为只改一行而降级。
 - Workflow Plan 会把显式传入的 `--tool` 继续带入建议的 `start`、`resume` 或 context 命令，使跨 Agent 续接记录保留真实工具来源。
-- Git evidence 与 Coverage 会同时保留 rename 的旧路径和新路径。把生产实现移动到测试或生成目录时，旧的实现边界不会再从质量门禁中消失；copy 的来源路径仍只作为来源信息，不算作被修改的实现。
+- Git evidence 与 Coverage 会同时保留 rename 的旧路径和新路径。Coverage 要求旧实现路径在 merge base 中有 Pack、新实现路径由同一 feature 的 current Pack 跟踪，并且相关 Pack 已刷新；把生产实现移动到测试或生成目录时也不能隐藏旧边界。copy 来源仍只作为来源信息。
 - POSIX 上新建的 Git 文档与配置默认使用 `0644`，私有 session、状态、缓存和 preset trust 使用 `0600`；已有目标权限及复制运行时的模式仍会保留。
 
 ## v1.0.0 新增能力

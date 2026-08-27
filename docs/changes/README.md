@@ -3,5 +3,5 @@
 <!-- repo-context-ledger:start -->
 ## Months
 
-- [2026-08](2026/08/README.md) — 33 changes
+- [2026-08](2026/08/README.md) — 32 changes
 <!-- repo-context-ledger:end -->

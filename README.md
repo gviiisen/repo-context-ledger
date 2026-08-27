@@ -322,9 +322,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
 
 ## What's new in v1.0.1
 
-- Automatic planning now treats only explicit typo, spelling, comment-only, or one-line requests as `small-fix`. Quantity words such as “one” and “single” no longer reduce scope, and security, concurrency, transaction, migration, database, protocol, payment, and public-API signals always stay on the ordinary-change route.
+- Automatic planning treats explicit typo, spelling, and comment-only work as `small-fix`. A one-line request is only supporting evidence when it also names a low-risk README, documentation, comment, copy, text, or example target; code risk remains `ordinary-change` even when the proposed edit is one line.
 - Workflow actions preserve an explicitly supplied `--tool`, so a planned `start`, `resume`, or context route keeps its Agent source in continuation records.
-- Rename-aware Git evidence and Coverage retain both the old and new path. Moving production code into a test or generated directory can no longer hide the removed implementation boundary; copy sources remain informational rather than changed implementation paths.
+- Rename-aware Git evidence and Coverage retain both the old and new path. Coverage requires the old implementation path to be owned by a Pack at the merge base, the new implementation path to be owned by a current Pack of the same feature, and the affected Packs to be refreshed. Moving production code into a test or generated directory cannot hide the removed boundary; copy sources remain informational.
 - New Git-tracked documents and configuration use mode `0644` on POSIX, while private sessions, state, cache, and preset trust use `0600`. Existing targets and copied runtime modes remain preserved.
 
 ## What's new in v1.0.0

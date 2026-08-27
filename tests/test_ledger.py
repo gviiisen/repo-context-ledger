@@ -606,6 +606,114 @@ class LedgerFlowTests(unittest.TestCase):
             )
             self.run_ledger(repo, "check", "--coverage")
 
+    def test_coverage_accepts_a_rename_when_the_same_feature_pack_moves_with_it(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo, "Alice")
+            spec = repo / "docs/specs/service.md"
+            spec.write_text(
+                "# Service\n\n"
+                "Status: current\n"
+                "Quality profile: evidence-v1\n"
+                "Language: en\n"
+                "Detail: standard\n"
+                "Last reviewed: 2026-08-27\n\n"
+                "## Purpose and behavior\n\nThe service exposes the configured value.\n\n"
+                "## Entry points and code map\n\n`src/service.py` owns the value.\n\n"
+                "## Data flow and contracts\n\n"
+                "- Input: callers request the configured service value.\n"
+                "- Flow: the service returns the value through its public entry point.\n"
+                "- Persistence / dependencies: no durable state or external dependency is used.\n"
+                "- Output: callers receive one deterministic value.\n\n"
+                "## Boundaries and failure modes\n\n"
+                "- Invariants: the configured value remains stable for every caller.\n"
+                "- Permissions / concurrency: reads require no permission and share no mutable state.\n"
+                "- Failure / recovery: invalid source state fails explicitly and can be corrected safely.\n"
+                "- Non-goals: persistence, authorization, and unrelated routing remain outside this feature.\n\n"
+                "## Verification\n\nRun `python -m unittest` for the focused service behavior.\n",
+                encoding="utf-8",
+            )
+            created = self.run_ledger(
+                repo,
+                "pack",
+                "--feature",
+                "service",
+                "--file",
+                "src/service.py",
+                "--spec",
+                "docs/specs/service.md",
+            )
+            pack = repo / created.stdout.splitlines()[0]
+            self.fill_context_pack(pack)
+            self.run_ledger(repo, "manifest", "sync")
+            self.run_git(repo, "add", "-A")
+            self.run_git(repo, "commit", "-m", "Document the service boundary")
+            base = self.run_git(repo, "rev-parse", "HEAD").stdout.strip()
+
+            started = self.run_ledger(
+                repo,
+                "start",
+                "--title",
+                "Move the service boundary",
+                "--feature",
+                "service",
+                "--workflow",
+                "ordinary-change",
+            )
+            self.run_git(repo, "mv", "src/service.py", "src/renamed_service.py")
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "`src/service.py` owns the value.",
+                    "`src/renamed_service.py` owns the value after the path migration.",
+                ),
+                encoding="utf-8",
+            )
+            self.run_ledger(
+                repo,
+                "pack",
+                "--feature",
+                "service",
+                "--file",
+                "src/renamed_service.py",
+                "--spec",
+                "docs/specs/service.md",
+            )
+            self.run_ledger(repo, "evidence", "--session", session_from_result(started))
+            self.fill_handoff(
+                private_draft(repo, started),
+                "src/renamed_service.py::VALUE",
+                "docs/specs/service.md",
+            )
+            self.run_ledger(
+                repo,
+                "verify",
+                "--session",
+                session_from_result(started),
+                "--",
+                sys.executable,
+                "-c",
+                "print('rename verification passed')",
+            )
+            self.run_ledger(
+                repo,
+                "finish",
+                "--session",
+                session_from_result(started),
+                "--spec",
+                "docs/specs/service.md",
+            )
+            self.run_git(repo, "add", "-A")
+            self.run_git(repo, "commit", "-m", "Move the documented service boundary")
+
+            self.run_ledger(
+                repo,
+                "check",
+                "--strict",
+                "--coverage",
+                "--base",
+                base,
+            )
+
     def test_coverage_ignores_spec_exception_from_an_unrelated_private_session(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw) / "repo"

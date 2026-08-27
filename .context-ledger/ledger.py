@@ -3476,10 +3476,16 @@ def build_workflow_plan(
         r"分析|审查|解释|如何|看看|查看|状态|了解|是什么|为什么",
         lowered,
     )) or lowered.endswith(("?", "？"))
-    strong_small_signal = bool(re.search(
-        r"\b(comment[- ]only|one[- ]line|spelling|typo)\b|仅修改注释|只改一行|错别字|拼写",
+    textual_small_signal = bool(re.search(
+        r"\b(comment[- ]only|spelling|typo)\b|仅修改注释|错别字|拼写",
         lowered,
     ))
+    one_line_signal = bool(re.search(r"\bone[- ]line\b|只改一行", lowered))
+    low_risk_target = bool(re.search(
+        r"\b(comment|copy|docs?|documentation|example|readme|text)\b|注释|文案|文档|示例|说明",
+        lowered,
+    ))
+    strong_small_signal = textual_small_signal or (one_line_signal and low_risk_target)
     risk_signal = bool(re.search(
         r"\b(authentication|authorization|concurren(?:cy|t)|database|distributed|funds?|migration|"
         r"payment|permission|protocol|public api|schema|security|settlement|transaction|vulnerabilit(?:y|ies))\b|"
@@ -6598,6 +6604,38 @@ def tracked_context_packs(
     return tracked
 
 
+def tracked_context_packs_at_ref(
+    repo: Path,
+    config: dict,
+    ref: str,
+) -> dict[str, list[tuple[str, str]]]:
+    """Return tracked paths and feature identity from committed Packs at one ref."""
+    packs_prefix = config["docs"]["ai"].rstrip("/") + "/context-packs"
+    listed = run_git(repo, "ls-tree", "-r", "--name-only", "-z", ref, "--", packs_prefix)
+    if listed.returncode != 0:
+        raise git_command_error(repo, listed)
+    tracked: dict[str, list[tuple[str, str]]] = {}
+    for raw in listed.stdout.split(b"\0"):
+        if not raw:
+            continue
+        pack_rel = decode_git_path(raw)
+        if not pack_rel.endswith(".md") or pack_rel.casefold().endswith("/readme.md"):
+            continue
+        loaded = run_git(repo, "show", f"{ref}:{pack_rel}")
+        if loaded.returncode != 0:
+            raise git_command_error(repo, loaded)
+        try:
+            text = loaded.stdout.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise LedgerError(f"Context Pack is not valid UTF-8 at {ref}: {pack_rel}") from exc
+        if field_value(text, "Status").casefold() != "current" or field_value(text, "Superseded by"):
+            continue
+        feature = feature_slug(field_value(text, "Feature") or Path(pack_rel).stem)
+        for path, _ in pack_file_entries(text):
+            tracked.setdefault(normalize_git_path(path), []).append((pack_rel, feature))
+    return tracked
+
+
 def related_context_documents(
     changed: set[str],
     packs: list[dict[str, object]],
@@ -6618,6 +6656,7 @@ def coverage_validation_errors(
     config: dict,
     raw_base: str = "",
     packs_by_path: dict[str, list[str]] | None = None,
+    current_packs: list[dict[str, object]] | None = None,
 ) -> list[str]:
     if not is_git_repo(repo):
         return ["Change coverage requires a Git repository."]
@@ -6625,8 +6664,9 @@ def coverage_validation_errors(
     if git_revision(repo, base) == "none":
         return [f"Coverage base ref does not exist locally: {base}"]
     merge_base = git_output(repo, "merge-base", "HEAD", base) or git_revision(repo, base)
-    changed = git_changed_behavior_paths(repo, f"{merge_base}..HEAD")
-    changed.update(git_dirty_behavior_paths(repo))
+    path_changes = git_changed_path_changes(repo, f"{merge_base}..HEAD")
+    path_changes.extend(git_dirty_path_changes(repo))
+    changed = git_change_paths(path_changes, True)
     implementation = sorted(path for path in changed if is_implementation_path(config, path))
     if not implementation:
         return []
@@ -6676,9 +6716,64 @@ def coverage_validation_errors(
     changed_packs = {
         path for path in changed if path.startswith(packs_prefix) and path.endswith(".md")
     }
+    if current_packs is None:
+        current_packs = load_live_context_packs(repo, config)
     if packs_by_path is None:
-        packs_by_path = tracked_context_packs(repo, config)
-    for raw in implementation:
+        packs_by_path = tracked_context_packs(repo, config, current_packs)
+    current_features = {
+        str(pack["rel"]): feature_slug(str(pack["feature"])) for pack in current_packs
+    }
+    base_packs_by_path = tracked_context_packs_at_ref(repo, config, merge_base)
+    transition_paths: set[str] = set()
+    for transition in path_changes:
+        if transition.status != "R" or not transition.old_path or not transition.new_path:
+            continue
+        old_path = normalize_git_path(transition.old_path)
+        new_path = normalize_git_path(transition.new_path)
+        old_implementation = is_implementation_path(config, old_path)
+        new_implementation = is_implementation_path(config, new_path)
+        if not old_implementation and not new_implementation:
+            continue
+        transition_paths.update(
+            path for path, required in (
+                (old_path, old_implementation),
+                (new_path, new_implementation),
+            ) if required
+        )
+        base_related = base_packs_by_path.get(old_path, []) if old_implementation else []
+        current_related = packs_by_path.get(new_path, []) if new_implementation else []
+        if old_implementation and not base_related:
+            errors.append(
+                f"Renamed implementation path had no Context Pack at the coverage base: {old_path}"
+            )
+        if new_implementation and not current_related:
+            errors.append(
+                f"Renamed implementation path has no current Context Pack tracked file: {new_path}"
+            )
+        if old_implementation and new_implementation and base_related and current_related:
+            base_features = {feature for _, feature in base_related}
+            current_matching = [
+                pack for pack in current_related
+                if current_features.get(pack, "") in base_features
+            ]
+            if not current_matching:
+                errors.append(
+                    "Renamed implementation path is not covered by the same Context Pack feature: "
+                    f"{old_path} -> {new_path}"
+                )
+        if old_implementation:
+            for pack, _ in base_related:
+                if pack not in changed_packs:
+                    errors.append(
+                        f"Source Context Pack was not changed for renamed path {old_path}: {pack}"
+                    )
+        if new_implementation:
+            for pack in current_related:
+                if pack not in changed_packs:
+                    errors.append(
+                        f"Related Context Pack was not changed for behavior-changing path {new_path}: {pack}"
+                    )
+    for raw in (path for path in implementation if path not in transition_paths):
         related = packs_by_path.get(normalize_git_path(raw), [])
         if not related:
             errors.append(
@@ -6871,6 +6966,7 @@ def check_changed_repo(
                 config,
                 coverage_base or changed_since,
                 packs_by_path=packs_by_path,
+                current_packs=current_packs,
             )
         )
 
