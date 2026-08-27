@@ -23,10 +23,11 @@ from pathlib import Path
 
 
 VERSION = 8
-TOOL_VERSION = "0.8.2"
+TOOL_VERSION = "0.9.0"
 MANIFEST_VERSION = 1
 ROUTER_CACHE_SCHEMA = 2
 CONTEXT_BUNDLE_SCHEMA = "context-bundle-v1"
+WORKFLOW_PLAN_SCHEMA = "workflow-plan-v1"
 RESUME_CAPSULE_SCHEMA = "resume-capsule-v2"
 DOCTOR_SCHEMA = "doctor-v1"
 STATUS_SCHEMA = "status-v1"
@@ -1728,11 +1729,11 @@ def managed_rules(config: dict) -> str:
     specs = config["docs"]["specs"]
     return f"""## Repository context ledger
 
-Choose the shortest applicable path. Read-only work uses `context` only when routing is needed and never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config>`. A single-session small fix with an already known code path uses `status` → `start` → implement → independent parallel `verify` commands → `finish`; prefer an exact reviewed `verify --preset <name>` when configured. On first use or after the preset changes, inspect it and repeat with the exact printed `--trust-digest`; otherwise pass direct executable arguments; skip context/focus and a separate evidence command unless the task expands or becomes uncertain. Ordinary behavior changes use the lifecycle below.
+Start a new request or fresh window with `plan --query "<user request>" --tool <agent>`. Follow its `readonly`, `small-fix`, `ordinary-change`, or `resume` mode and structured `next_action`; clarify instead of acting when `requires_confirmation` is true. Read-only work never starts a session. A small worktree-local configuration change uses `status` → `start --kind local-config --workflow small-fix --language <en|zh-CN>` → `verify --sensitive -- <direct executable and arguments>` → `finish --path <changed-config>`. A single-session small fix with an already known code path uses `status` → `start --workflow small-fix` → implement → independent parallel `verify` commands → `finish`; prefer an exact reviewed `verify --preset <name>` when configured. On first use or after the preset changes, inspect it and repeat with the exact printed `--trust-digest`; otherwise pass direct executable arguments; skip context/focus and a separate evidence command unless the task expands or becomes uncertain. Ordinary behavior changes use the lifecycle below.
 
 For every feature, bug fix, refactor, interface change, or other ordinary behavior-changing code task:
 
-1. Before editing code, run `status`, then start or reuse only this task's private draft session. Keep the returned session ID and pass `--session <id>` whenever multiple sessions exist.
+1. Before editing code, run `plan`, then `status`; start or reuse only this task's private draft session. Keep the returned session ID and pass `--session <id>` whenever multiple sessions exist. `start --workflow readonly|resume` must fail rather than create duplicate work.
 2. Resolve `quality.language`; when it is `auto`, follow nearby docs or the user's language. Keep paths, symbols, commands, and error text untranslated.
 3. For medium/large or uncertain work, {context_plan_policy()} Focus the selected feature Context Pack before broad code exploration. If no Pack exists, create and fill one. Skip routing only for a genuinely small fix whose code path and behavior boundary are already established.
 4. {resume_plan_policy()} Run `checkpoint --session <id> --summary "..." --next "..."` before handing active work to another Agent. Pause only this task's session; never pause, resume, or finish another task's session.
@@ -2188,6 +2189,7 @@ def start_change(
     language: str = "",
     tool: str = "",
     kind: str = "change",
+    workflow: str = "ordinary-change",
 ) -> int:
     title = title.strip()
     if not title or len(title) > 160 or "\n" in title or "\r" in title:
@@ -2197,6 +2199,14 @@ def start_change(
     if kind not in {"change", "local-config"}:
         print("Task kind must be change or local-config.", file=sys.stderr)
         return 2
+    if workflow in {"readonly", "resume"}:
+        print(f"Workflow {workflow} cannot start a new task session.", file=sys.stderr)
+        return 2
+    if workflow not in {"small-fix", "ordinary-change"}:
+        print("Start workflow must be small-fix or ordinary-change.", file=sys.stderr)
+        return 2
+    if kind == "local-config":
+        workflow = "small-fix"
     feature = feature_slug(feature or title)
     stamp = now()
     handoff_id = unique_handoff_id(repo, stamp)
@@ -2252,6 +2262,7 @@ def start_change(
     remember_feature(state, feature)
     save_context_state(repo, state)
     print(f"Session: {handoff_id}")
+    print(f"Workflow: {workflow}")
     print("Continuation epoch: 1")
     print(f"Publish target: {rel_posix(publish_path, repo)}")
     return 0
@@ -3368,6 +3379,122 @@ def route_resume_sessions(
     }, selected
 
 
+def build_workflow_plan(
+    repo: Path,
+    query: str,
+    intent: str,
+    resume_route: dict[str, object],
+    feature: str = "",
+) -> dict[str, object]:
+    requested = intent or "auto"
+    if requested not in {"auto", "readonly", "small-fix", "ordinary-change", "resume"}:
+        raise LedgerError("Workflow intent must be auto, readonly, small-fix, ordinary-change, or resume.")
+    lowered = query.casefold().strip()
+    tokens = set(query_tokens(query))
+    change_signal = bool(re.search(
+        r"\b(add|change|create|fix|implement|remove|rename|repair|update)\b|"
+        r"新增|修改|创建|修复|实现|删除|重命名|更新|优化",
+        lowered,
+    ))
+    readonly_signal = bool(re.search(
+        r"\b(analy[sz]e|audit|explain|how|inspect|read|review|show|status|understand|what|why)\b|"
+        r"分析|审查|解释|如何|看看|查看|状态|了解|是什么|为什么",
+        lowered,
+    )) or lowered.endswith(("?", "？"))
+    small_signal = bool(re.search(
+        r"\b(minor|one|single|small|tiny|typo)\b|小修|很小|一个|错别字|拼写",
+        lowered,
+    ))
+    capsule = resume_route.get("capsule")
+    blocked_resume = resume_route.get("mode") == "blocked"
+    resume_signal = bool(tokens.intersection(RESUME_INTENT_TOKENS))
+    reasons: list[str] = []
+    requires_confirmation = False
+    confidence = "medium"
+
+    if requested == "resume" or (
+        requested == "auto" and isinstance(capsule, dict) and (resume_signal or capsule)
+    ):
+        mode = "resume"
+        if isinstance(capsule, dict):
+            confidence = "high"
+            reasons.append("one accessible task session matches the query")
+        elif blocked_resume:
+            confidence = "low"
+            requires_confirmation = True
+            reasons.append("multiple accessible task sessions match the query")
+        else:
+            confidence = "low"
+            requires_confirmation = True
+            reasons.append("no accessible task session can be selected safely")
+    elif requested != "auto":
+        mode = requested
+        confidence = "high"
+        reasons.append(f"the caller explicitly selected {requested}")
+    elif change_signal and small_signal:
+        mode = "small-fix"
+        reasons.extend(["the request asks for a change", "the request explicitly bounds it as small"])
+    elif change_signal:
+        mode = "ordinary-change"
+        reasons.append("the request asks to change observable repository behavior")
+    elif readonly_signal:
+        mode = "readonly"
+        reasons.append("the request asks to inspect or explain without an explicit change")
+    else:
+        mode = "readonly"
+        confidence = "low"
+        requires_confirmation = True
+        reasons.append("the query contains no reliable change or resume signal")
+
+    session_id = str(capsule.get("session_id", "")) if isinstance(capsule, dict) else ""
+    if requires_confirmation:
+        next_action = {
+            "kind": "clarify",
+            "argv": [],
+            "description": "Confirm the intended workflow or select an explicit task session.",
+        }
+    elif mode == "resume":
+        next_action = {
+            "kind": "resume",
+            "argv": ["resume", "--session", session_id],
+            "description": "Resume the selected private task and keep the returned continuation epoch.",
+        }
+    elif mode == "readonly":
+        next_action = {
+            "kind": "focus" if feature else "context",
+            "argv": (["focus", "--feature", feature] if feature else ["context", "--query", query]),
+            "description": "Load only the bounded read-only route; do not create a task session.",
+        }
+    else:
+        title = query.strip()[:160] or ("Small repository fix" if mode == "small-fix" else "Repository change")
+        argv = ["start", "--title", title, "--workflow", mode]
+        if feature:
+            argv.extend(["--feature", feature])
+        next_action = {
+            "kind": "start",
+            "argv": argv,
+            "description": "Create one private task session after accepting the routed feature boundary.",
+        }
+    return {
+        "schema": WORKFLOW_PLAN_SCHEMA,
+        "tool_version": TOOL_VERSION,
+        "query": query,
+        "requested_intent": requested,
+        "mode": mode,
+        "confidence": confidence,
+        "requires_confirmation": requires_confirmation,
+        "reasons": reasons,
+        "feature": feature,
+        "session_id": session_id,
+        "next_action": next_action,
+        "safety": {
+            "mutates_repository": False,
+            "foreign_private_state_loaded": False,
+            "code_reading_is_bounded_initially_not_capped": True,
+        },
+    }
+
+
 def context_search(
     repo: Path,
     query: str,
@@ -3375,6 +3502,7 @@ def context_search(
     output_format: str = "text",
     tool: str = "",
     baseline_ref: str = "",
+    intent: str = "auto",
 ) -> int:
     started = time.perf_counter()
     config = load_config(repo)
@@ -3437,6 +3565,7 @@ def context_search(
         best_score, primary, reasons = 0, None, ["private checkpoint without current Pack"]
     else:
         if output_format == "json":
+            workflow = build_workflow_plan(repo, query, intent, resume_route)
             print(json.dumps({
                 "schema": CONTEXT_BUNDLE_SCHEMA,
                 "tool_version": TOOL_VERSION,
@@ -3447,6 +3576,7 @@ def context_search(
                     "message": "No matching Git-tracked Context Pack was found.",
                 },
                 "required_reads": [],
+                "workflow": workflow,
                 "warnings": ([
                     "a matching private task belongs to another principal"
                 ] if resume_route["foreign_overlap"] else []),
@@ -3552,6 +3682,7 @@ def context_search(
             ),
         },
         "resume": resume_route,
+        "workflow": build_workflow_plan(repo, query, intent, resume_route, feature),
         "baseline": baseline,
         "required_reads": [
             {"kind": kind, "path": path, "characters": characters}
@@ -3607,6 +3738,12 @@ def context_search(
     print(f"Score: {best_score}")
     print(f"Fingerprints: {plan['selection']['fingerprints']}")
     print(f"Resume mode: {resume_route['mode']}")
+    workflow = plan["workflow"]
+    print(
+        f"Workflow: {workflow['mode']} "
+        f"(confidence={workflow['confidence']}; confirmation={'yes' if workflow['requires_confirmation'] else 'no'})"
+    )
+    print(f"Workflow next action: {workflow['next_action']['kind']}")
     capsule = resume_route.get("capsule")
     if isinstance(capsule, dict):
         print(f"Resume session: {capsule['session_id']} ({capsule['status']}; epoch={capsule['resume_epoch']})")
@@ -3667,6 +3804,47 @@ def context_search(
         for score, pack, why in near:
             print(f"- {pack['rel']} score={score} why={', '.join(why) or 'token overlap'}")
     return 0
+
+
+def workflow_plan_command(
+    repo: Path,
+    query: str,
+    intent: str,
+    output_format: str,
+    tool: str = "",
+    baseline_ref: str = "",
+) -> int:
+    captured = io.StringIO()
+    with redirect_stdout(captured):
+        context_search(
+            repo,
+            query,
+            1,
+            "json",
+            tool,
+            baseline_ref,
+            intent,
+        )
+    try:
+        bundle = json.loads(captured.getvalue())
+        workflow = bundle["workflow"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise LedgerError("Workflow Plan could not be produced from the context preflight.") from exc
+    if output_format == "json":
+        print(json.dumps(workflow, indent=2, ensure_ascii=True))
+        return EXIT_SUCCESS
+    print(f"Workflow Plan: {workflow['schema']}")
+    print(f"Mode: {workflow['mode']}")
+    print(f"Confidence: {workflow['confidence']}")
+    print(f"Requires confirmation: {'yes' if workflow['requires_confirmation'] else 'no'}")
+    print("Reasons:")
+    for reason in workflow["reasons"]:
+        print(f"- {reason}")
+    action = workflow["next_action"]
+    print(f"Next action: {action['kind']}")
+    print(f"Arguments: {json.dumps(action['argv'], ensure_ascii=False)}")
+    print(f"Guidance: {action['description']}")
+    return EXIT_SUCCESS
 
 
 def context_pack_path(repo: Path, config: dict, feature: str) -> Path:
@@ -4720,6 +4898,7 @@ def resume_change(
         remember_feature(state, str(new_record["feature"]))
         save_context_state(repo, state)
         print(f"Forked session {session_id} -> {new_id}")
+        print("Workflow: resume")
         print("Continuation epoch: 1")
         print(f"Continuation tool: {normalize_tool_id(tool)}")
         print(f"Private draft: {session_draft_ref(repo, new_draft)}")
@@ -4752,6 +4931,7 @@ def resume_change(
     remember_feature(state, feature)
     save_context_state(repo, state)
     print(f"Continued session {session_id}")
+    print("Workflow: resume")
     print(f"Continuation epoch: {next_epoch}")
     print(f"Continuation tool: {normalize_tool_id(tool)}")
     print(f"Resume summary: {field_value(text, 'Resume summary') or 'none'}")
@@ -6907,6 +7087,12 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--language", choices=("auto", "en", "zh-CN"), default="")
     start.add_argument("--tool", default="", help="Calling Agent tool ID for continuation audit")
     start.add_argument(
+        "--workflow",
+        choices=("readonly", "small-fix", "ordinary-change", "resume"),
+        default="ordinary-change",
+        help="Accepted workflow-plan mode; readonly and resume cannot create a new session",
+    )
+    start.add_argument(
         "--kind",
         choices=("change", "local-config"),
         default="change",
@@ -6918,10 +7104,26 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("--format", choices=("text", "json"), default="text")
     context.add_argument("--tool", default="", help="Calling Agent tool ID for the Context Bundle")
     context.add_argument(
+        "--intent",
+        choices=("auto", "readonly", "small-fix", "ordinary-change", "resume"),
+        default="auto",
+        help="Explicit workflow intent; auto uses deterministic request signals",
+    )
+    context.add_argument(
         "--baseline",
         default="",
         help="Optional Git ref whose merge-base delta should guide Pack selection",
     )
+    plan = sub.add_parser("plan", help="Classify the task and return one safe next action")
+    plan.add_argument("--query", required=True)
+    plan.add_argument(
+        "--intent",
+        choices=("auto", "readonly", "small-fix", "ordinary-change", "resume"),
+        default="auto",
+    )
+    plan.add_argument("--format", choices=("text", "json"), default="text")
+    plan.add_argument("--tool", default="", help="Calling Agent tool ID")
+    plan.add_argument("--baseline", default="", help="Optional Git ref for PR-delta routing")
     pack = sub.add_parser("pack", help="Create or refresh a feature Context Pack")
     pack.add_argument("--feature", required=True)
     pack.add_argument("--title", default="")
@@ -7058,7 +7260,7 @@ def requested_json_command(argv: list[str]) -> str:
         if raw.startswith("-"):
             index += 1
             continue
-        return raw if raw in {"context", "doctor", "status", "check"} else ""
+        return raw if raw in {"plan", "context", "doctor", "status", "check"} else ""
     return ""
 
 
@@ -7078,7 +7280,27 @@ def emit_requested_json_error(argv: list[str], repo: Path, exc: LedgerError) -> 
     if not command:
         return False
     message = redact_local_paths(str(exc), repo)
-    if command == "context":
+    if command == "plan":
+        report = {
+            "schema": WORKFLOW_PLAN_SCHEMA,
+            "tool_version": TOOL_VERSION,
+            "query": argument_value(argv, "--query"),
+            "requested_intent": argument_value(argv, "--intent") or "auto",
+            "mode": "readonly",
+            "confidence": "low",
+            "requires_confirmation": True,
+            "reasons": [message],
+            "feature": "",
+            "session_id": "",
+            "next_action": {"kind": "clarify", "argv": [], "description": message},
+            "safety": {
+                "mutates_repository": False,
+                "foreign_private_state_loaded": False,
+                "code_reading_is_bounded_initially_not_capped": True,
+            },
+            "error": {"code": exc.code, "message": message},
+        }
+    elif command == "context":
         report = {
             "schema": CONTEXT_BUNDLE_SCHEMA,
             "tool_version": TOOL_VERSION,
@@ -7154,7 +7376,8 @@ def run_main(argv: list[str] | None = None) -> int:
                     return init_repo(repo, args.dry_run)
                 if args.command == "start":
                     return start_change(
-                        repo, args.title, args.feature, args.language, args.tool, args.kind
+                        repo, args.title, args.feature, args.language, args.tool, args.kind,
+                        args.workflow,
                     )
                 if args.command == "pack":
                     return refresh_context_pack(
@@ -7203,6 +7426,11 @@ def run_main(argv: list[str] | None = None) -> int:
                 args.format,
                 args.tool,
                 args.baseline,
+                args.intent,
+            )
+        if args.command == "plan":
+            return workflow_plan_command(
+                repo, args.query, args.intent, args.format, args.tool, args.baseline
             )
         if args.command == "init":
             return init_repo(repo, args.dry_run)

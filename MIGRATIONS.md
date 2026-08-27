@@ -18,6 +18,8 @@ v0.8.1 does not change repository/private-state schema v8 or any published JSON 
 
 v0.8.2 does not change repository/private-state schema v8 or public JSON schema names. Re-run `init` to refresh the standalone runtime. Existing legacy write locks are diagnosed as invalid metadata and are never auto-removed. The first explicit use of each verification preset now requires reviewing its normalized configuration and repeating the command with the printed `--trust-digest`; this principal-local trust state is created outside Git and can be discarded safely.
 
+v0.9.0 does not change repository/private-state schema v8. Re-run `init` to refresh the standalone runtime and native Agent adapters. The new `plan` command and `workflow-plan-v1` schema are additive; `context-bundle-v1` consumers must continue to ignore unknown fields. Existing `start` calls default to `ordinary-change`, while new integrations should call `plan` first and require confirmation when the returned plan says so.
+
 ## Rollback
 
 Keep the prior Skill installation or release artifact until the upgraded repository passes its checks. Repository file changes are ordinary Git changes and should be reviewed or reverted through Git. Private state is not committed; back it up separately before a state-schema migration when an active task cannot be recreated safely.

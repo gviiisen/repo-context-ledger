@@ -1,0 +1,13 @@
+{
+  "schema": "workflow-plan-eval-v1",
+  "cases": [
+    {"query": "explain how announcement retries work", "mode": "readonly"},
+    {"query": "为什么公告限频会重试？", "mode": "readonly"},
+    {"query": "fix a small README typo", "mode": "small-fix"},
+    {"query": "修复一个小的文档拼写问题", "mode": "small-fix"},
+    {"query": "add a retry policy to the announcement API", "mode": "ordinary-change"},
+    {"query": "新增公告接口的重试策略", "mode": "ordinary-change"},
+    {"query": "review and fix the retry transaction boundary", "mode": "ordinary-change"},
+    {"query": "更新公告抓取的持久化行为", "mode": "ordinary-change"}
+  ]
+}

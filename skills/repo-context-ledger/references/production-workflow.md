@@ -2,6 +2,10 @@
 
 Use this reference in repositories where accumulated Packs, specs, and completed changes make broad context loading or full local audits expensive.
 
+## Plan before lifecycle work
+
+Run `plan --query "<user request>" --tool <agent>` before `start`, `resume`, or broad routing. Its read-only `workflow-plan-v1` result selects `readonly`, `small-fix`, `ordinary-change`, or `resume` and returns a structured next action. Do not execute that action when `requires_confirmation` is true; ask the user to clarify the requested outcome. The planner never replaces code investigation and never writes repository or private session state.
+
 ## Context Bundle is the initial read boundary
 
 Run:

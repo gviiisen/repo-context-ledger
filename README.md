@@ -20,6 +20,8 @@ npx skills@latest add gviiisen/repo-context-ledger --skill repo-context-ledger
 
 You make ordinary coding requests. The AI owns the documentation lifecycle.
 
+Before any lifecycle command, the Agent can ask the read-only Workflow Plan whether the request is understanding work, a small fix, an ordinary change, or a continuation. The plan reuses the bounded context router, explains its decision, and asks for clarification instead of guessing when intent is ambiguous.
+
 ## Why it exists
 
 AI coding sessions often start without the context accumulated in earlier windows. The next agent must read a large part of the codebase again, and implementation details or important boundaries can be lost between sessions.
@@ -131,13 +133,14 @@ Make the same request you would make without this skill:
 
 You do **not** need to run `ctx begin`, name a handoff, or remember lifecycle commands. The agent should autonomously:
 
-1. retrieve the relevant repository and feature context;
-2. start a change handoff before implementation;
-3. update code and execute claimed checks through the verification recorder;
-4. derive changed paths from Git and record Before/After behavior, boundaries, and evidence;
-5. update the stable feature spec and Context Pack;
-6. refresh affected module README files and the root README summary;
-7. close the handoff and validate structure plus Git-diff documentation coverage.
+1. produce a read-only `workflow-plan-v1` decision for the request;
+2. retrieve the relevant repository and feature context when the selected workflow needs it;
+3. start a private handoff only for a small fix or ordinary behavior change;
+4. update code and execute claimed checks through the verification recorder;
+5. derive changed paths from Git and record Before/After behavior, boundaries, and evidence;
+6. update the stable feature spec and Context Pack;
+7. refresh affected module README files and the root README summary;
+8. close the handoff and validate structure plus Git-diff documentation coverage.
 
 On a feature branch, shared monthly indexes and README summary blocks are intentionally left unchanged until merge.
 
@@ -316,6 +319,14 @@ python scripts/build_runtime.py --check
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
+
+## What's new in v0.9.0
+
+- `plan --query` adds a read-only `workflow-plan-v1` front door with four explicit modes: `readonly`, `small-fix`, `ordinary-change`, and `resume`. It returns reasons, confidence, a confirmation flag, and a structured argument array for the next action without executing it.
+- Explicit intent is deterministic. Automatic planning uses bounded English and Chinese request signals plus principal-owned Resume Capsule discovery; an ambiguous request returns `clarify` instead of creating or resuming a session.
+- `context --format json` additively embeds the same Workflow Plan, while `start` rejects `readonly` and `resume` workflows so the decision layer cannot accidentally mutate task state.
+- A synthetic bilingual evaluation corpus and a golden contract fixture keep the planner behavior and machine schema reviewable without production prompts or repository data.
+- The primary `SKILL.md` was reduced from roughly 22,000 characters to under 12,000 and now routes detailed production, verification, and writing guidance through progressive-disclosure references.
 
 ## What's new in v0.8.2
 

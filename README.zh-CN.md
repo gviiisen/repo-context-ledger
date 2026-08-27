@@ -20,6 +20,8 @@ npx skills@latest add gviiisen/repo-context-ledger --skill repo-context-ledger
 
 用户只需正常描述开发需求，文档生命周期由 AI 自主完成。
 
+在执行任何生命周期命令前，Agent 可以先通过只读 Workflow Plan 判断这是了解功能、小修复、普通变更还是续接任务。它复用有界上下文路由、解释判断理由；意图不明确时先请求澄清，不会猜测并创建 session。
+
 ## 为什么需要它
 
 不同的 AI 编程窗口通常无法自动继承此前积累的上下文。新的 Agent 不得不重新阅读大量代码，功能逻辑、关键边界和历史决策也容易在会话之间丢失。
@@ -131,13 +133,14 @@ python path/to/ledger.py --repo path/to/repository init --dry-run
 
 你**不需要**手动执行 `ctx begin`，也不需要给交接记录命名或记忆生命周期命令。Agent 应该自主完成：
 
-1. 获取与本次需求有关的项目和功能上下文；
-2. 在开始修改前创建变更交接；
-3. 修改代码，并通过验证记录器执行所有声称完成的检查；
-4. 从 Git 获取实际变更路径，记录 Before/After 行为、边界和证据；
-5. 更新长期有效的功能说明和 Context Pack；
-6. 刷新相关模块 README 和根目录 README 摘要；
-7. 完成交接，并校验 Ledger 结构及 Git diff 文档覆盖。
+1. 为本次请求生成只读的 `workflow-plan-v1` 判断；
+2. 在所选工作流需要时获取相关项目和功能上下文；
+3. 仅在小修复或普通行为变更时创建私有 handoff；
+4. 修改代码，并通过验证记录器执行所有声称完成的检查；
+5. 从 Git 获取实际变更路径，记录 Before/After 行为、边界和证据；
+6. 更新长期有效的功能说明和 Context Pack；
+7. 刷新相关模块 README 和根目录 README 摘要；
+8. 完成交接，并校验 Ledger 结构及 Git diff 文档覆盖。
 
 如果当前处于功能分支，共享月度索引和 README 摘要区块会暂时保持不变，等合并后再统一生成。
 
@@ -316,6 +319,14 @@ python scripts/build_runtime.py --check
 ```
 
 源码与生成物边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## v0.9.0 新增能力
+
+- `plan --query` 新增只读的 `workflow-plan-v1` 入口，明确区分 `readonly`、`small-fix`、`ordinary-change` 与 `resume`；输出理由、置信度、是否需要确认，以及不会被自动执行的结构化下一步参数数组。
+- 显式 intent 的结果完全确定；自动判断只使用有界的中英文请求信号和当前 principal 自己的 Resume Capsule。意图不明确时返回 `clarify`，不会擅自创建或续接 session。
+- `context --format json` 以向后兼容方式附带同一份 Workflow Plan；`start` 会拒绝 `readonly` 和 `resume`，避免只读决策层意外修改任务状态。
+- 新增不含生产提示词和仓库数据的中英文合成评测集与 golden 契约，固定规划行为和机器接口。
+- 主 `SKILL.md` 从约 22,000 字符压缩到 12,000 字符以内，详细的生产、验证和写作规则改为按需读取 reference。
 
 ## v0.8.2 新增能力
 

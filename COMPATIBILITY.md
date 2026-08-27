@@ -17,6 +17,7 @@ The stable JSON contracts are:
 
 | Command | Schema | Purpose |
 | --- | --- | --- |
+| `plan --format json` | `workflow-plan-v1` | Read-only workflow classification and structured next action. |
 | `context --format json` | `context-bundle-v1` | Bounded context route and optional Resume Capsule. |
 | `doctor --format json` | `doctor-v1` | Read-only health findings and repair suggestions. |
 | `status --format json` | `status-v1` | Privacy-bounded session counts/details and repository inventory. |
@@ -25,6 +26,8 @@ The stable JSON contracts are:
 Exit classes are `0` for success, `1` for a valid query with no context match, and `2` for invalid input, an unhealthy required contract, or a failed gate. A future incompatible field removal, meaning change, or exit-class change requires a new JSON schema name and a major project version.
 
 Starting in v0.8.0, an owned continuation may include an additive `resume-capsule-v2` object under `context-bundle-v1.resume.capsule`. Every pre-v0.8 Capsule field remains present; v2 adds structured guidance fields. Consumers must continue to ignore unknown fields, and a missing Capsule remains valid for no-match, ambiguous, or foreign-only routes.
+
+Starting in v0.9.0, `plan --format json` publishes `workflow-plan-v1` with the stable modes `readonly`, `small-fix`, `ordinary-change`, and `resume`. Its `next_action.argv` is data, not a shell command, and the planner never executes it. When `requires_confirmation` is true, `next_action.action` is `clarify` and `argv` is empty. `context-bundle-v1` additively includes the same object under `workflow`; existing consumers may ignore it.
 
 Expected JSON failures remain inside the requested schema and use stable machine codes: `LEDGER_ERROR`, `INVALID_ARGUMENT`, `UNSUPPORTED_SCHEMA`, `CONTEXT_NO_MATCH`, `CHECK_FAILED`, and `DOCTOR_FAILED`. Human messages may improve without changing the code. Unknown future repository/private-state schemas fail closed with `UNSUPPORTED_SCHEMA` rather than being normalized or rewritten.
 

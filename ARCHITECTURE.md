@@ -26,6 +26,8 @@ Git-facing runtime code captures stdout and stderr as bytes. Path-producing comm
 
 Repository writes use a short exclusive lock containing only bounded diagnostic metadata and a random ownership nonce. Cleanup checks both the original file identity and nonce. `doctor` may classify the lock but never removes it. Verification presets remain Git-tracked inert data until their normalized digest is trusted for the current local principal; trust state lives below Git metadata and is not part of repository history.
 
+Workflow Planning is a read-only decision layer above the existing lifecycle. `plan` reuses the bounded context route and current-principal Resume Capsule preflight, then emits `workflow-plan-v1`; `context` additively embeds the same decision. The returned argument array is never executed by the planner. Mutation guards remain authoritative in `start` and `resume`, so a caller cannot turn a read-only or continuation decision into a new task merely by bypassing the front door.
+
 Edit source and rebuild with:
 
 ```text
