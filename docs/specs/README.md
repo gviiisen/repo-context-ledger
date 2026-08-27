@@ -5,6 +5,7 @@
 
 - [Compact local configuration workflow](compact-local-config-workflow.md) — current
 - [Context Routing Performance](context-routing-performance.md) — current
+- [Continuation Quality](continuation-quality.md) — current
 - [Contract Stability](contract-stability.md) — current
 - [Coverage Integrity](coverage-integrity.md) — current
 - [Native Context Bridge](native-context-bridge.md) — current

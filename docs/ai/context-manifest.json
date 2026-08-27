@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "tool_version": "0.7.3",
+  "tool_version": "0.8.0",
   "default_branch": "main",
   "project_context": "docs/ai/project-context.md",
   "docs": {
@@ -14,8 +14,8 @@
       "title": "Compact Local Configuration Workflow",
       "context_pack": "docs/ai/context-packs/compact-local-config-workflow.md",
       "status": "current",
-      "source_commit": "e9589ed8c0474590bc6266d9d92424ac1b5050cb",
-      "last_refreshed": "2026-08-27T07:16:02+08:00",
+      "source_commit": "45055d81262efa4ef1ec627ac22e578fb1be61d3",
+      "last_refreshed": "2026-08-27T08:19:55+08:00",
       "stable_specs": [
         "docs/specs/compact-local-config-workflow.md"
       ],
@@ -101,8 +101,8 @@
       "title": "Context Routing Performance",
       "context_pack": "docs/ai/context-packs/context-routing-performance.md",
       "status": "current",
-      "source_commit": "e9589ed8c0474590bc6266d9d92424ac1b5050cb",
-      "last_refreshed": "2026-08-27T07:16:03+08:00",
+      "source_commit": "45055d81262efa4ef1ec627ac22e578fb1be61d3",
+      "last_refreshed": "2026-08-27T08:19:56+08:00",
       "stable_specs": [
         "docs/specs/context-routing-performance.md"
       ],
@@ -148,12 +148,73 @@
       ]
     },
     {
+      "feature": "continuation-quality",
+      "title": "Continuation Quality",
+      "context_pack": "docs/ai/context-packs/continuation-quality.md",
+      "status": "current",
+      "source_commit": "45055d81262efa4ef1ec627ac22e578fb1be61d3",
+      "last_refreshed": "2026-08-27T08:05:54+08:00",
+      "stable_specs": [
+        "docs/specs/continuation-quality.md"
+      ],
+      "tracked_files": [
+        "src/repo_context_ledger/runtime.py.tmpl",
+        "src/repo_context_ledger/constants.pyfrag",
+        "skills/repo-context-ledger/assets/context-pack-template.md",
+        "skills/repo-context-ledger/SKILL.md",
+        "scripts/evaluate_continuation.py",
+        "tests/test_continuation_evaluation.py",
+        "tests/fixtures/continuation-eval-v1.json"
+      ],
+      "recent_changes": [
+        {
+          "id": "20260827075252-gviiisen-c783c8332f",
+          "path": "docs/changes/2026/08/20260827075252-gviiisen-c783c8332f-build-continuation-quality-engine.md",
+          "title": "Build continuation quality engine",
+          "feature": "continuation-quality",
+          "date": "2026-08-27",
+          "summary": "Pack authors can maintain bounded aliases and explicit `path::Symbol` anchors; Pack and owned-session routing use them deterministically while foreign drafts remain unread. `context-bundle-v1` may now contain additive `resume-capsule-v2` guidance, and an eight-case synthetic continuation gate measures Top-1 selection, ambiguity, privacy, anchors, character budgets, and latency.",
+          "evidence_paths": [
+            ".context-ledger/ledger.py",
+            "COMPATIBILITY.md",
+            "MIGRATIONS.md",
+            "README.md",
+            "README.zh-CN.md",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/continuation-quality.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/ai/context-packs/verification-presets.md",
+            "docs/specs/context-routing-performance.md",
+            "docs/specs/continuation-quality.md",
+            "docs/specs/task-session-integrity.md",
+            "scripts/evaluate_continuation.py",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/assets/context-pack-template.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/constants.pyfrag",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/fixtures/continuation-eval-v1.json",
+            "tests/test_continuation_evaluation.py",
+            "tests/test_ledger.py",
+            "tests/test_runtime_build.py"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
       "feature": "contract-stability",
       "title": "Contract Stability",
       "context_pack": "docs/ai/context-packs/contract-stability.md",
       "status": "current",
-      "source_commit": "e9589ed8c0474590bc6266d9d92424ac1b5050cb",
-      "last_refreshed": "2026-08-27T07:16:03+08:00",
+      "source_commit": "45055d81262efa4ef1ec627ac22e578fb1be61d3",
+      "last_refreshed": "2026-08-27T08:06:27+08:00",
       "stable_specs": [
         "docs/specs/contract-stability.md"
       ],
@@ -292,8 +353,8 @@
       "title": "Coverage Integrity",
       "context_pack": "docs/ai/context-packs/coverage-integrity.md",
       "status": "current",
-      "source_commit": "e9589ed8c0474590bc6266d9d92424ac1b5050cb",
-      "last_refreshed": "2026-08-27T07:16:05+08:00",
+      "source_commit": "45055d81262efa4ef1ec627ac22e578fb1be61d3",
+      "last_refreshed": "2026-08-27T08:19:57+08:00",
       "stable_specs": [
         "docs/specs/coverage-integrity.md"
       ],
@@ -441,8 +502,8 @@
       "title": "Native Context Bridge",
       "context_pack": "docs/ai/context-packs/native-context-bridge.md",
       "status": "current",
-      "source_commit": "e9589ed8c0474590bc6266d9d92424ac1b5050cb",
-      "last_refreshed": "2026-08-27T07:16:05+08:00",
+      "source_commit": "45055d81262efa4ef1ec627ac22e578fb1be61d3",
+      "last_refreshed": "2026-08-27T08:19:58+08:00",
       "stable_specs": [
         "docs/specs/native-context-bridge.md"
       ],
@@ -557,8 +618,8 @@
       "title": "Pack Health and Doctor",
       "context_pack": "docs/ai/context-packs/pack-health-doctor.md",
       "status": "current",
-      "source_commit": "e9589ed8c0474590bc6266d9d92424ac1b5050cb",
-      "last_refreshed": "2026-08-27T07:16:06+08:00",
+      "source_commit": "45055d81262efa4ef1ec627ac22e578fb1be61d3",
+      "last_refreshed": "2026-08-27T08:06:29+08:00",
       "stable_specs": [
         "docs/specs/pack-health-doctor.md"
       ],
@@ -599,8 +660,8 @@
       "title": "Runtime Architecture",
       "context_pack": "docs/ai/context-packs/runtime-architecture.md",
       "status": "current",
-      "source_commit": "e9589ed8c0474590bc6266d9d92424ac1b5050cb",
-      "last_refreshed": "2026-08-27T07:23:44+08:00",
+      "source_commit": "45055d81262efa4ef1ec627ac22e578fb1be61d3",
+      "last_refreshed": "2026-08-27T08:06:30+08:00",
       "stable_specs": [
         "docs/specs/runtime-architecture.md"
       ],
@@ -669,8 +730,8 @@
       "title": "Task Session Integrity",
       "context_pack": "docs/ai/context-packs/task-session-integrity.md",
       "status": "current",
-      "source_commit": "e9589ed8c0474590bc6266d9d92424ac1b5050cb",
-      "last_refreshed": "2026-08-27T07:16:08+08:00",
+      "source_commit": "45055d81262efa4ef1ec627ac22e578fb1be61d3",
+      "last_refreshed": "2026-08-27T08:19:58+08:00",
       "stable_specs": [
         "docs/specs/task-session-integrity.md"
       ],
@@ -824,8 +885,8 @@
       "title": "Verification presets",
       "context_pack": "docs/ai/context-packs/verification-presets.md",
       "status": "current",
-      "source_commit": "e9589ed8c0474590bc6266d9d92424ac1b5050cb",
-      "last_refreshed": "2026-08-27T07:16:08+08:00",
+      "source_commit": "45055d81262efa4ef1ec627ac22e578fb1be61d3",
+      "last_refreshed": "2026-08-27T08:19:59+08:00",
       "stable_specs": [
         "docs/specs/verification-presets.md"
       ],
