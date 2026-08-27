@@ -6,10 +6,10 @@ Aliases: none
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 2c5ea2f81b7b8f8939ad274f44094a6b937faca5
+Source commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
 Base branch: main
-Base commit: 0d7e1f289e726edc4ae2b621361f89c621de5623
-Last refreshed: 2026-08-27T19:05:00+08:00
+Base commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
+Last refreshed: 2026-08-27T20:39:17+08:00
 
 ## Purpose
 
@@ -49,9 +49,9 @@ Run `python -m unittest discover -s tests -p test_ledger.py` for public CLI life
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:6552c343fb986f841042fae89716668ad7612165eaf594b7bb6f0bd8022e57aa`
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:e4b8e16789bce7ba8e405f0069f0372dd0ff25fcbfd9dc805cb460b0fbe5a62a`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:0bfead16d1f3312ac8a0eacbb907905be4159c123f85f96dab4bc7ed4e0c985a`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:703ce2da25b3f3455576ce0bbe2ef3e1307d076113de234b20fc8ac02f209603`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:81a8fb3f2c0e857b28f88b9a6d75e31e6d40e485835517d7c50c95296ff5ed44`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:b9dfc812d8554191ad300a6816092ff171d9062c76af51d5dfc6f13f4c6ba0f7`
 - `skills/repo-context-ledger/SKILL.md` — `sha256:c49a692005ff85c62c4fc3ebb5617af4725c55bba3857a3413b5c4d8bba4e12a`
 - `skills/repo-context-ledger/references/production-workflow.md` — `sha256:61b308e7b737e2677cf0f4c8740ad281710bc6e33740098cee5e17beb2b36d48`
 - `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:dd1e26e29993ac93d5f52de315df130b270982125b4037dc01c17d9cb63f9a52`

@@ -4,6 +4,7 @@ def build_workflow_plan(
     intent: str,
     resume_route: dict[str, object],
     feature: str = "",
+    tool: str = "",
 ) -> dict[str, object]:
     requested = intent or "auto"
     if requested not in {"auto", "readonly", "small-fix", "ordinary-change", "resume"}:
@@ -11,8 +12,8 @@ def build_workflow_plan(
     lowered = query.casefold().strip()
     tokens = set(query_tokens(query))
     change_signal = bool(re.search(
-        r"\b(add|change|create|fix|implement|remove|rename|repair|update)\b|"
-        r"新增|修改|创建|修复|实现|删除|重命名|更新|优化",
+        r"\b(add|change|correct|create|edit|fix|implement|refactor|remove|rename|repair|update)\b|"
+        r"新增|增加|修改|创建|修复|实现|删除|重命名|更新|优化|改正|只改",
         lowered,
     ))
     readonly_signal = bool(re.search(
@@ -20,8 +21,14 @@ def build_workflow_plan(
         r"分析|审查|解释|如何|看看|查看|状态|了解|是什么|为什么",
         lowered,
     )) or lowered.endswith(("?", "？"))
-    small_signal = bool(re.search(
-        r"\b(minor|one|single|small|tiny|typo)\b|小修|很小|一个|错别字|拼写",
+    strong_small_signal = bool(re.search(
+        r"\b(comment[- ]only|one[- ]line|spelling|typo)\b|仅修改注释|只改一行|错别字|拼写",
+        lowered,
+    ))
+    risk_signal = bool(re.search(
+        r"\b(authentication|authorization|concurren(?:cy|t)|database|distributed|funds?|migration|"
+        r"payment|permission|protocol|public api|schema|security|settlement|transaction|vulnerabilit(?:y|ies))\b|"
+        r"并发|事务|迁移|鉴权|认证|授权|权限|分布式|数据库|协议|公开接口|公共接口|安全|资金|支付|结算|漏洞",
         lowered,
     ))
     capsule = resume_route.get("capsule")
@@ -50,7 +57,7 @@ def build_workflow_plan(
         mode = requested
         confidence = "high"
         reasons.append(f"the caller explicitly selected {requested}")
-    elif change_signal and small_signal:
+    elif change_signal and strong_small_signal and not risk_signal:
         mode = "small-fix"
         reasons.extend(["the request asks for a change", "the request explicitly bounds it as small"])
     elif change_signal:
@@ -66,6 +73,7 @@ def build_workflow_plan(
         reasons.append("the query contains no reliable change or resume signal")
 
     session_id = str(capsule.get("session_id", "")) if isinstance(capsule, dict) else ""
+    tool_argv = ["--tool", normalize_tool_id(tool)] if tool else []
     if requires_confirmation:
         next_action = {
             "kind": "clarify",
@@ -75,13 +83,17 @@ def build_workflow_plan(
     elif mode == "resume":
         next_action = {
             "kind": "resume",
-            "argv": ["resume", "--session", session_id],
+            "argv": ["resume", "--session", session_id, *tool_argv],
             "description": "Resume the selected private task and keep the returned continuation epoch.",
         }
     elif mode == "readonly":
         next_action = {
             "kind": "focus" if feature else "context",
-            "argv": (["focus", "--feature", feature] if feature else ["context", "--query", query]),
+            "argv": (
+                ["focus", "--feature", feature]
+                if feature
+                else ["context", "--query", query, *tool_argv]
+            ),
             "description": "Load only the bounded read-only route; do not create a task session.",
         }
     else:
@@ -89,6 +101,7 @@ def build_workflow_plan(
         argv = ["start", "--title", title, "--workflow", mode]
         if feature:
             argv.extend(["--feature", feature])
+        argv.extend(tool_argv)
         next_action = {
             "kind": "start",
             "argv": argv,

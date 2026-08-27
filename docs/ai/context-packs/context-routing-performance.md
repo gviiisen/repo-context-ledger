@@ -6,10 +6,10 @@ Aliases: 上下文路由 | context routing | code anchor routing
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: 2c5ea2f81b7b8f8939ad274f44094a6b937faca5
+Source commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
 Base branch: main
-Base commit: 0d7e1f289e726edc4ae2b621361f89c621de5623
-Last refreshed: 2026-08-27T19:05:01+08:00
+Base commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
+Last refreshed: 2026-08-27T20:39:18+08:00
 
 ## Purpose
 
@@ -51,7 +51,7 @@ Last refreshed: 2026-08-27T19:05:01+08:00
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:0bfead16d1f3312ac8a0eacbb907905be4159c123f85f96dab4bc7ed4e0c985a`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:b9dfc812d8554191ad300a6816092ff171d9062c76af51d5dfc6f13f4c6ba0f7`
 - `tests/test_ledger.py` — `sha256:7944c012f406e8c8dabe7946a07f6477a886515104e53b2de9c8497162bfc65e`
 - `benchmarks/context_router_benchmark.py` — `sha256:78762f66163af15cb0ee502e4944c2c20bc4035503d0517c026074042be96935`
 - `benchmarks/README.md` — `sha256:9244091fc1202a9c40c54f2fb7f81d7e708dacd3d619f8e68e70f70ee633088a`

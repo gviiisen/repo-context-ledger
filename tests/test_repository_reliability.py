@@ -120,6 +120,32 @@ class RepositoryReliabilityTests(unittest.TestCase):
                 destination,
             )
             self.assertIn(f"- {destination}\n", evidence.stdout.replace("\r\n", "\n"))
+            self.assertIn("- src/old name.py\n", evidence.stdout.replace("\r\n", "\n"))
+
+    def test_rename_coverage_keeps_the_old_implementation_path(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo)
+            self.run_ledger(repo, "init")
+            self.run_git(repo, "add", ".")
+            self.run_git(repo, "commit", "-m", "initialize ledger")
+
+            (repo / "tests").mkdir()
+            self.run_git(repo, "mv", "src/service.py", "tests/service.py")
+            self.run_git(repo, "commit", "-am", "move implementation into tests")
+            result = self.run_ledger(
+                repo,
+                "check",
+                "--strict",
+                "--coverage",
+                "--base",
+                "HEAD~1",
+                expected=2,
+            )
+            self.assertIn(
+                "Behavior-changing path is not covered by handoff evidence: src/service.py",
+                result.stderr,
+            )
 
     @unittest.skipIf(os.name == "nt", "POSIX-only Git filename characters")
     def test_git_path_reader_preserves_control_and_arrow_filenames(self):
@@ -206,6 +232,34 @@ class RepositoryReliabilityTests(unittest.TestCase):
             readme.chmod(0o644)
             self.run_ledger(repo, "sync")
             self.assertEqual(0o644, stat.S_IMODE(readme.stat().st_mode))
+
+    @unittest.skipIf(os.name == "nt", "POSIX file modes are not enforced on Windows")
+    def test_new_public_documents_and_private_drafts_use_distinct_modes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            repo.mkdir()
+            self.run_ledger(repo, "init")
+            self.assertEqual(
+                0o644,
+                stat.S_IMODE((repo / "docs/specs/README.md").stat().st_mode),
+            )
+
+            started = self.run_ledger(
+                repo,
+                "start",
+                "--title",
+                "Private draft permissions",
+                "--feature",
+                "private-draft-permissions",
+            )
+            draft = (
+                repo
+                / ".context-ledger"
+                / "sessions"
+                / self.session_id(started)
+                / "handoff.md"
+            )
+            self.assertEqual(0o600, stat.S_IMODE(draft.stat().st_mode))
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ Repo Context Ledger separates editable source from the single-file runtime insta
 | `src/repo_context_ledger/runtime.py.tmpl` | Canonical runtime body and ordered build markers. |
 | `src/repo_context_ledger/constants.pyfrag` | Stable version, schema, exit, and runtime constants. |
 | `src/repo_context_ledger/errors.pyfrag` | Stable user-facing error type and machine error-code carrier. |
-| `src/repo_context_ledger/models.pyfrag` | Typed machine-result contracts such as `CommandResult` and raw-byte `GitResult`. |
+| `src/repo_context_ledger/models.pyfrag` | Typed machine-result contracts such as `CommandResult`, raw-byte `GitResult`, and lossless `GitPathChange`. |
 | `src/repo_context_ledger/locks.pyfrag` | Repository write-lock acquisition, ownership, and safe cleanup. |
 | `src/repo_context_ledger/git.pyfrag` | Core Git process execution, fail-closed errors, repository identity, and actor queries. |
 | `src/repo_context_ledger/workflow.pyfrag` | `workflow-plan-v1` classification and rendering. |
@@ -24,9 +24,9 @@ The generated files are byte-identical. `init` copies the currently executing st
 
 ## Build contract
 
-The builder reads UTF-8 source, normalizes line endings to LF, injects each ordered fragment through exactly one explicit marker, emits no timestamp or machine path, and writes outputs atomically. When replacing an existing target on Unix-like systems, the temporary file receives the target's permission mode before the atomic replace. Git attributes pin the build inputs and generated outputs to LF so byte comparison remains portable when Windows enables `core.autocrlf`. `--check` compares bytes and never writes. CI runs the check on Windows and Ubuntu with Python 3.10 and 3.12 before tests; release, scheduled, and manual workflows also run on macOS.
+The builder reads UTF-8 source, normalizes line endings to LF, injects each ordered fragment through exactly one explicit marker, emits no timestamp or machine path, and writes outputs atomically. When replacing an existing target on Unix-like systems, the temporary file receives the target's permission mode before the atomic replace. New public repository files use `0644`; private session, state, cache, and trust files use `0600`; copied runtime files retain their source mode. Git attributes pin the build inputs and generated outputs to LF so byte comparison remains portable when Windows enables `core.autocrlf`. `--check` compares bytes and never writes. CI runs the check on Windows and Ubuntu with Python 3.10 and 3.12 before tests; release, scheduled, and manual workflows also run on macOS.
 
-Git-facing runtime code captures stdout and stderr as bytes. Path-producing commands use `-z`, split only on NUL, and decode individual paths through the operating-system filesystem codec. After Git confirms a worktree, required path/evidence queries fail closed; only a genuine non-Git directory may use the local fallback.
+Git-facing runtime code captures stdout and stderr as bytes. Path-producing commands use `-z`, split only on NUL, and decode individual paths through the operating-system filesystem codec. Rename-aware evidence and Coverage retain old and new paths, while ordinary path-list consumers keep their destination-oriented view and copy sources are not treated as changed implementations. After Git confirms a worktree, required path/evidence queries fail closed; only a genuine non-Git directory may use the local fallback.
 
 Repository writes use a short exclusive lock containing only bounded diagnostic metadata and a random ownership nonce. Cleanup checks both the original file identity and nonce. `doctor` may classify the lock but never removes it. Verification presets remain Git-tracked inert data until their normalized digest is trusted for the current local principal; trust state lives below Git metadata and is not part of repository history.
 

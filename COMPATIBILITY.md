@@ -50,4 +50,4 @@ The initialized `.context-ledger/ledger.py` is a standalone artifact. Its versio
 
 Source contributors may edit ordered build fragments, but installed repositories continue to receive one byte-complete `ledger.py`. The schema files and source fragments are development/review assets and are not imported by that runtime.
 
-Atomic rewrites preserve the permission mode of an existing target on Unix-like systems. A newly created file still receives the platform and process defaults. This does not add a cross-platform promise for Windows ACL inheritance or ownership metadata.
+Atomic rewrites preserve the permission mode of an existing target on Unix-like systems. Newly created Git-tracked documents and configuration use `0644`; private session, state, cache, and preset-trust files use `0600`; copied runtime files preserve their source mode. This does not add a cross-platform promise for Windows ACL inheritance or ownership metadata.
