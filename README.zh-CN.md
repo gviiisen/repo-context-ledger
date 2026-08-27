@@ -317,6 +317,14 @@ python scripts/build_runtime.py --check
 
 源码与生成物边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
+## v0.8.0 新增能力
+
+- Resume Capsule v2 继续使用向后兼容的 `context-bundle-v1` 外层，并把私有续接路线整理为目标、当前状态、下一动作、显式代码锚点、必须保持的契约、已验证事实、未决问题、Required reads 与默认不加载内容。
+- Context Pack 可以维护有上限的人工 `Aliases`，记录中文、英文或团队日常真正会说的功能关键词。`pack --alias` 在刷新指纹时保留这些短语；运行时不会自动翻译，也不会猜测任务状态。
+- Pack 代码地图中的 `file.go::Symbol` 成为一级路由锚点。精确别名和符号既能选择 Pack，也能选择当前 principal 自己的 active/paused session，全程不读取源码正文或其他用户的私有草稿。
+- 新增完全合成的续接评测集，覆盖 owned session Top-1 命中、中英文别名、路径/符号锚点、歧义阻断、foreign overlap 隐私、Capsule 字符预算和首轮指导，不保存生产仓库名称、路径、日志或任务内容。
+- 自动推断任务进度、diff 和符号明确留到后续。Capsule v2 只重组显式 checkpoint、evidence、verification、Git 位置以及 Git 中的 Pack/spec 事实；Agent 仍必须核验所有影响行为的代码边界。
+
 ## v0.7.3 新增能力
 
 - 仓库可以保存经过审核的验证预设，用结构化 `argv`、工作目录、超时、敏感标记和平台信息代替 Agent 临时拼接命令字符串。

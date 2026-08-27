@@ -1969,6 +1969,57 @@ def pack_purpose_text(text: str) -> str:
     return body.split("\n\n", 1)[0].strip()
 
 
+def pack_aliases(text: str) -> list[str]:
+    """Return explicit human-maintained search aliases from a Pack header."""
+    raw = field_value(text, "Aliases")
+    if not raw or raw.casefold() in {"none", "n/a"}:
+        return []
+    aliases = [item.strip() for item in re.split(r"[|;,，]", raw) if item.strip()]
+    return list(dict.fromkeys(aliases))
+
+
+def validate_pack_aliases(aliases: list[str]) -> list[str]:
+    errors: list[str] = []
+    if len(aliases) > RESUME_MAX_ALIASES:
+        errors.append(f"Context Pack Aliases supports at most {RESUME_MAX_ALIASES} values")
+    for alias in aliases:
+        if len(alias) > RESUME_ALIAS_CHARS:
+            errors.append(
+                f"Context Pack alias exceeds {RESUME_ALIAS_CHARS} characters: {alias[:32]}..."
+            )
+        if "\n" in alias or "\r" in alias:
+            errors.append("Context Pack aliases must be single-line phrases")
+    return errors
+
+
+def pack_code_anchors(text: str) -> list[str]:
+    """Read explicit path/symbol anchors from the Pack code-map table."""
+    body = section_body(text, "## Entry points and code map")
+    anchors: list[str] = []
+    for line in body.splitlines():
+        match = re.match(r"^\|\s*`([^`]+)`\s*\|", line.strip())
+        if not match:
+            continue
+        anchor = match.group(1).strip()
+        if anchor and not anchor.casefold().startswith("todo:"):
+            anchors.append(anchor)
+    return list(dict.fromkeys(anchors))
+
+
+def pack_invariants(text: str) -> list[str]:
+    """Read bounded, explicit invariants without inferring task state from code."""
+    body = section_body(text, "## Contracts and boundaries")
+    values: list[str] = []
+    for line in body.splitlines():
+        match = re.match(r"^-\s*Invariants and contracts:\s*(.+)$", line.strip(), re.IGNORECASE)
+        if not match:
+            continue
+        value = compact_resume_text(match.group(1), 360)
+        if value and not value.casefold().startswith("todo"):
+            values.append(value)
+    return list(dict.fromkeys(values))[:RESUME_MAX_CONTRACTS]
+
+
 def pack_fingerprint_current(repo: Path, entries: list[tuple[str, str]]) -> bool:
     for raw, digest in entries:
         target = repo / normalize_git_path(raw)
@@ -2023,6 +2074,11 @@ def valid_cached_pack_metadata(raw: object) -> bool:
         isinstance(item, str) for item in raw["specs"]
     ):
         return False
+    for key in ("aliases", "code_anchors", "invariants"):
+        if not isinstance(raw.get(key), list) or not all(
+            isinstance(item, str) for item in raw[key]
+        ):
+            return False
     entries = raw.get("tracked_entries")
     return isinstance(entries, list) and all(
         isinstance(item, list)
@@ -2053,6 +2109,9 @@ def parse_context_pack_metadata(repo: Path, path: Path) -> dict[str, object]:
         "status": (field_value(text, "Status") or "unknown").casefold(),
         "superseded_by": field_value(text, "Superseded by"),
         "purpose": pack_purpose_text(text),
+        "aliases": pack_aliases(text),
+        "code_anchors": pack_code_anchors(text),
+        "invariants": pack_invariants(text),
         "tracked_entries": [[raw, digest] for raw, digest in tracked],
         "specs": specs,
         "refreshed": field_value(text, "Last refreshed"),
@@ -2296,6 +2355,20 @@ def score_context_pack(pack: dict[str, object], query: str, tokens: list[str]) -
     if title and title in folded:
         score += 8000
         reasons.append("title")
+    aliases = [str(item) for item in pack.get("aliases", [])]
+    for alias in aliases:
+        if alias.casefold() in folded:
+            score += 9000
+            reasons.append(f"alias={alias}")
+            break
+    anchors = [str(item) for item in pack.get("code_anchors", [])]
+    for anchor in anchors:
+        anchor_folded = anchor.casefold()
+        symbol = anchor_folded.rsplit("::", 1)[-1]
+        if anchor_folded in folded or (symbol and symbol in folded):
+            score += 7000
+            reasons.append(f"anchor={anchor}")
+            break
     tracked = [str(item) for item in pack["tracked"]]
     for raw in tracked:
         name = Path(raw).name.casefold()
@@ -2315,7 +2388,14 @@ def score_context_pack(pack: dict[str, object], query: str, tokens: list[str]) -
         else:
             continue
         break
-    haystack = " ".join([feature, title, str(pack["purpose"]).casefold(), " ".join(tracked).casefold()])
+    haystack = " ".join([
+        feature,
+        title,
+        str(pack["purpose"]).casefold(),
+        " ".join(tracked).casefold(),
+        " ".join(aliases).casefold(),
+        " ".join(anchors).casefold(),
+    ])
     for token in tokens:
         if token in haystack:
             score += 20 * max(1, len(token))
@@ -2341,6 +2421,8 @@ def build_context_reverse_index(packs: list[dict[str, object]]) -> dict[str, set
             str(pack["feature"]).replace("-", " "),
             str(pack["title"]),
             str(pack["purpose"]),
+            *[str(item) for item in pack.get("aliases", [])],
+            *[str(item) for item in pack.get("code_anchors", [])],
             *[str(item) for item in pack["tracked"]],
         ]
         terms: set[str] = set()
@@ -2351,6 +2433,8 @@ def build_context_reverse_index(packs: list[dict[str, object]]) -> dict[str, set
                 terms.add(folded)
                 terms.add(Path(folded).name)
                 terms.add(Path(folded).stem)
+            if "::" in folded:
+                terms.add(folded.rsplit("::", 1)[-1])
         for term in terms:
             if term:
                 index.setdefault(term, set()).add(rel)
@@ -2661,7 +2745,12 @@ def resume_session_view(
     }
 
 
-def score_resume_session(view: dict[str, object], query: str, tokens: list[str]) -> tuple[int, list[str]]:
+def score_resume_session(
+    view: dict[str, object],
+    query: str,
+    tokens: list[str],
+    pack: dict[str, object] | None = None,
+) -> tuple[int, list[str]]:
     if not tokens:
         return 0, []
     folded = query.casefold()
@@ -2675,11 +2764,28 @@ def score_resume_session(view: dict[str, object], query: str, tokens: list[str])
     if title and title in folded:
         score += 8000
         reasons.append("title")
+    if pack is not None:
+        for alias in pack.get("aliases", []):
+            if str(alias).casefold() in folded:
+                score += 9000
+                reasons.append(f"alias={alias}")
+                break
+        for anchor in pack.get("code_anchors", []):
+            anchor_folded = str(anchor).casefold()
+            symbol = anchor_folded.rsplit("::", 1)[-1]
+            if anchor_folded in folded or (symbol and symbol in folded):
+                score += 7000
+                reasons.append(f"anchor={anchor}")
+                break
     paths = [str(item).casefold() for item in view["evidence_paths"]]
     haystacks = {
         "title": f"{feature} {title}",
         "resume": f"{str(view['summary']).casefold()} {str(view['next_step']).casefold()}",
         "paths": " ".join(paths),
+        "pack": "" if pack is None else " ".join([
+            *[str(item).casefold() for item in pack.get("aliases", [])],
+            *[str(item).casefold() for item in pack.get("code_anchors", [])],
+        ]),
     }
     for token in tokens:
         if token in haystacks["title"]:
@@ -2688,12 +2794,19 @@ def score_resume_session(view: dict[str, object], query: str, tokens: list[str])
             score += 40 * max(1, len(token))
         if token in haystacks["paths"]:
             score += 60 * max(1, len(token))
+        if token in haystacks["pack"]:
+            score += 70 * max(1, len(token))
     if score:
         reasons.append("private-checkpoint")
     return score, reasons
 
 
-def foreign_session_query_match(record: dict, query: str, tokens: list[str]) -> bool:
+def foreign_session_query_match(
+    record: dict,
+    query: str,
+    tokens: list[str],
+    pack: dict[str, object] | None = None,
+) -> bool:
     """Detect only coarse feature overlap without reading a foreign private draft."""
     feature = feature_slug(str(record.get("feature", ""))) if record.get("feature") else ""
     if not feature or not tokens:
@@ -2701,6 +2814,13 @@ def foreign_session_query_match(record: dict, query: str, tokens: list[str]) -> 
     folded = query.casefold()
     if feature in folded.replace(" ", "-") or feature.replace("-", " ") in folded:
         return True
+    if pack is not None:
+        public_terms = [
+            *[str(item).casefold() for item in pack.get("aliases", [])],
+            *[str(item).casefold() for item in pack.get("code_anchors", [])],
+        ]
+        if any(term and (term in folded or term.rsplit("::", 1)[-1] in folded) for term in public_terms):
+            return True
     feature_tokens = {item for item in feature.split("-") if len(item) >= 3}
     matched = feature_tokens.intersection(tokens)
     return bool(matched) and (
@@ -2761,7 +2881,18 @@ def build_resume_capsule(
         warnings.append(f"the current principal must explicitly accept the {access} grant before writing")
     unknowns.extend(warnings)
     mode = "ready" if not unknowns else "guided"
+    code_anchors = [] if primary_pack is None else [
+        str(item) for item in primary_pack.get("code_anchors", [])
+    ][:RESUME_MAX_CODE_ANCHORS]
+    required_reads = [] if primary_pack is None else [
+        str(primary_pack["rel"]),
+        *[str(item) for item in primary_pack.get("specs", [])],
+    ][:RESUME_MAX_REQUIRED_READS]
+    verified_facts = []
+    if view["verification"]:
+        verified_facts.append(str(view["verification"]))
     capsule: dict[str, object] = {
+        "schema": RESUME_CAPSULE_SCHEMA,
         "mode": mode,
         "session_id": str(view["session_id"]),
         "status": str(view["status"]),
@@ -2782,6 +2913,21 @@ def build_resume_capsule(
         "primary_pack": str(primary_pack["rel"]) if primary_pack else "",
         "warnings": warnings,
         "unknowns": unknowns,
+        "goal": str(view["title"]),
+        "current_state": str(view["summary"]),
+        "next_action": str(view["next_step"]),
+        "code_anchors": code_anchors,
+        "must_preserve": (
+            [] if primary_pack is None
+            else [str(item) for item in primary_pack.get("invariants", [])][:RESUME_MAX_CONTRACTS]
+        ),
+        "verified_facts": verified_facts,
+        "unresolved": unknowns,
+        "required_reads": required_reads,
+        "do_not_load": [
+            "completed Change bodies unless a specific historical decision is needed",
+            "ledger documents outside required_reads unless a route uncertainty requires them",
+        ],
         "expand_when": [
             "a required symbol calls or implements behavior outside the loaded paths",
             "configuration, persistence, permissions, concurrency, retries, or external APIs affect the behavior",
@@ -2809,6 +2955,13 @@ def build_resume_capsule(
         serialized_size = refresh_capsule_size()
     if serialized_size > RESUME_CAPSULE_CHARS:
         capsule["last_verification"] = ""
+        capsule["verified_facts"] = []
+        serialized_size = refresh_capsule_size()
+    while serialized_size > RESUME_CAPSULE_CHARS and capsule["code_anchors"]:
+        capsule["code_anchors"] = capsule["code_anchors"][:-1]
+        serialized_size = refresh_capsule_size()
+    while serialized_size > RESUME_CAPSULE_CHARS and capsule["must_preserve"]:
+        capsule["must_preserve"] = capsule["must_preserve"][:-1]
         serialized_size = refresh_capsule_size()
     if serialized_size > RESUME_CAPSULE_CHARS:
         capsule["summary"] = compact_resume_text(str(capsule["summary"]), RESUME_SUMMARY_CHARS // 2)
@@ -2817,6 +2970,8 @@ def build_resume_capsule(
     if serialized_size > RESUME_CAPSULE_CHARS:
         capsule["summary"] = ""
         capsule["next_step"] = ""
+        capsule["current_state"] = ""
+        capsule["next_action"] = ""
         capsule["warnings"] = ["Resume Capsule exceeded its budget and was reduced; reload the private checkpoint."]
         capsule["unknowns"] = ["private checkpoint details require explicit follow-up reads"]
         refresh_capsule_size()
@@ -2838,14 +2993,19 @@ def route_resume_sessions(
         if record.get("status") not in {"active", "paused"}:
             continue
         access = session_access_level(repo, config, session_id, record)
+        feature = feature_slug(str(record.get("feature", ""))) if record.get("feature") else ""
+        session_pack = next(
+            (pack for pack in packs if str(pack["feature"]) == feature),
+            None,
+        )
         if access == "foreign":
-            if foreign_session_query_match(record, query, tokens):
+            if foreign_session_query_match(record, query, tokens, session_pack):
                 foreign_overlap = True
             continue
         view = resume_session_view(repo, config, session_id, record)
         if view is None:
             continue
-        score, reasons = score_resume_session(view, query, tokens)
+        score, reasons = score_resume_session(view, query, tokens, session_pack)
         if score <= 0:
             continue
         view["access"] = access
@@ -3237,12 +3397,21 @@ def refresh_context_pack(
     raw_files: list[str],
     raw_specs: list[str],
     language: str = "",
+    raw_aliases: list[str] | None = None,
 ) -> int:
     config = load_config(repo)
     feature = feature_slug(feature)
     path = context_pack_path(repo, config, feature)
     existing = path.exists()
     previous = path.read_text(encoding="utf-8") if existing else ""
+    aliases = list(dict.fromkeys(item.strip() for item in (raw_aliases or []) if item.strip()))
+    if not aliases and existing:
+        aliases = pack_aliases(previous)
+    alias_errors = validate_pack_aliases(aliases)
+    if alias_errors:
+        for error in alias_errors:
+            print(f"ERROR: {error}", file=sys.stderr)
+        return 2
     if not raw_files and existing:
         raw_files = [item[0] for item in pack_file_entries(previous)]
     if not raw_specs and existing:
@@ -3274,6 +3443,7 @@ def refresh_context_pack(
         )
     text = set_field(text, "Status", "current")
     text = set_field(text, "Feature", feature, after="Status")
+    text = set_field(text, "Aliases", " | ".join(aliases) if aliases else "none", after="Feature")
     text = set_field(text, "Source commit", git_revision(repo), after="Feature")
     text = set_field(
         text,
@@ -3334,6 +3504,7 @@ def context_pack_errors(
         errors.append("Context pack status must be current.")
     if not field_value(text, "Feature"):
         errors.append("Context pack is missing Feature metadata.")
+    errors.extend(f"{error}." for error in validate_pack_aliases(pack_aliases(text)))
     if not field_value(text, "Source commit"):
         errors.append("Context pack is missing Source commit metadata.")
     if not field_value(text, "Base branch"):
@@ -6323,6 +6494,12 @@ def build_parser() -> argparse.ArgumentParser:
     pack.add_argument("--title", default="")
     pack.add_argument("--file", action="append", default=[])
     pack.add_argument("--spec", action="append", default=[])
+    pack.add_argument(
+        "--alias",
+        action="append",
+        default=[],
+        help="Explicit cross-language or human search phrase; repeat as needed",
+    )
     pack.add_argument("--language", choices=("auto", "en", "zh-CN"), default="")
     focus = sub.add_parser("focus", help="Load and validate a feature Context Pack")
     focus.add_argument("--feature", required=True)
@@ -6543,7 +6720,8 @@ def run_main(argv: list[str] | None = None) -> int:
                     )
                 if args.command == "pack":
                     return refresh_context_pack(
-                        repo, args.feature, args.title, args.file, args.spec, args.language
+                        repo, args.feature, args.title, args.file, args.spec, args.language,
+                        args.alias,
                     )
                 if args.command == "focus":
                     return focus_context(repo, args.feature, args.session)

@@ -15,7 +15,7 @@ Context Routing Performance 负责在大型仓库中快速生成有界 Context B
 | Path / symbol | Ownership and role |
 | --- | --- |
 | `skills/repo-context-ledger/scripts/ledger.py::load_live_context_packs` | 从私有缓存或当前 Pack 文件加载可路由元数据，并核验 tracked-file 指纹。 |
-| `skills/repo-context-ledger/scripts/ledger.py::build_context_reverse_index` | 将 feature、title、purpose 与 tracked path 规范化为 Pack 候选反向索引。 |
+| `skills/repo-context-ledger/scripts/ledger.py::build_context_reverse_index` | 将 feature、title、purpose、显式 aliases、代码锚点与 tracked path 规范化为 Pack 候选反向索引。 |
 | `skills/repo-context-ledger/scripts/ledger.py::context_baseline` | 解析显式 baseline ref、merge base 与当前 delta，不读取源码正文。 |
 | `skills/repo-context-ledger/scripts/ledger.py::context_search` | 输出一个有预算、仓库相对且可跨 Agent 使用的 `context-bundle-v1`。 |
 | `skills/repo-context-ledger/scripts/ledger.py::build_resume_capsule` | 按主 Pack 范围过滤旧 evidence 噪声，并报告省略数量。 |
@@ -24,9 +24,9 @@ Context Routing Performance 负责在大型仓库中快速生成有界 Context B
 ## Data flow and contracts
 
 - Input: 自然语言 query、可选 Agent tool、可选 baseline ref、current Context Pack、当前 principal 可访问的 active/paused session，以及 Context Manifest 中有限的 completed Change 元数据。
-- Flow: 运行时先读取或重建 Git metadata 中的私有缓存；Pack 文件变化会重新解析，tracked file 的 stat 或 Git text mode 变化会重新计算 digest。反向索引给出候选 Pack；owned session feature、精确 tracked path 和 baseline overlap 可以提高候选优先级。最终只选择一个主 Pack，并在配置预算内加入关联 spec、Change 摘要与 Resume Capsule。
+- Flow: 运行时先读取或重建 Git metadata 中的私有缓存；Pack 文件变化会重新解析，tracked file 的 stat 或 Git text mode 变化会重新计算 digest。反向索引给出候选 Pack；owned session feature、人工 aliases、显式 `path::Symbol`、精确 tracked path 和 baseline overlap 可以提高候选优先级。最终只选择一个主 Pack，并在配置预算内加入关联 spec、Change 摘要与 Resume Capsule。
 - Persistence / dependencies: 缓存只能位于 `git rev-parse --git-path repo-context-ledger/cache/...` 返回的位置；不得写入工作树、Manifest 或 completed Change。缓存内容不得包含源码正文、Change 正文、验证日志或聊天记录。缓存缺失、损坏、旧 schema、不可写或并发覆盖时必须回退到当前文件并保持正确结果。
-- Output: `context-bundle-v1` 包含选择依据、Required reads、可选 Resume Capsule、baseline 状态、扩展规则、预算与本地性能/cache 指标。所有公开路径都必须是仓库相对路径；Required reads 只是首轮路线，不限制后续代码调查。
+- Output: `context-bundle-v1` 包含选择依据、Required reads、可选 `resume-capsule-v2`、baseline 状态、扩展规则、预算与本地性能/cache 指标。所有公开路径都必须是仓库相对路径；Required reads 只是首轮路线，不限制后续代码调查。
 
 ## Boundaries and failure modes
 

@@ -317,6 +317,14 @@ python scripts/build_runtime.py --check
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
 
+## What's new in v0.8.0
+
+- Resume Capsule v2 keeps the additive `context-bundle-v1` envelope while organizing private continuation guidance into goal, current state, next action, explicit code anchors, must-preserve contracts, verified facts, unresolved questions, Required reads, and cold-document exclusions.
+- Context Packs may declare bounded, human-maintained `Aliases` for phrases people actually use in different languages. `pack --alias` preserves those phrases across fingerprint refreshes; the runtime never invents translations or task state.
+- The router treats Pack code-map entries such as `file.go::Symbol` as first-class anchors. Exact aliases and symbols guide both Pack selection and an owned active/paused session without reading source bodies or foreign private drafts.
+- A fully synthetic continuation corpus evaluates owned-session Top-1 selection, multilingual aliases, path/symbol anchors, ambiguity blocking, foreign-overlap privacy, Capsule budgets, and required guidance without storing production names, paths, logs, or task content.
+- Automatic task-progress, diff, and symbol inference remains deliberately deferred. Capsule v2 restructures only explicit checkpoints, evidence, verification, Git position, and Git-tracked Pack/spec facts; Agents must still inspect every behavior-relevant code boundary.
+
 ## What's new in v0.7.3
 
 - Repository-owned verification presets replace improvised command strings with reviewed `argv`, working-directory, timeout, sensitivity, and platform metadata.

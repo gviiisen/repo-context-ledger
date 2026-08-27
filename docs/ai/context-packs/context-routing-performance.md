@@ -2,13 +2,14 @@
 
 Status: current
 Feature: context-routing-performance
+Aliases: 上下文路由 | context routing | code anchor routing
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: e9589ed8c0474590bc6266d9d92424ac1b5050cb
+Source commit: 45055d81262efa4ef1ec627ac22e578fb1be61d3
 Base branch: main
-Base commit: b7e4eb53249faa64881e37401a764093faf476b7
-Last refreshed: 2026-08-27T07:16:03+08:00
+Base commit: 45055d81262efa4ef1ec627ac22e578fb1be61d3
+Last refreshed: 2026-08-27T08:19:56+08:00
 
 ## Purpose
 
@@ -25,7 +26,7 @@ Last refreshed: 2026-08-27T07:16:03+08:00
 | Path / symbol | Role |
 | --- | --- |
 | `skills/repo-context-ledger/scripts/ledger.py::load_live_context_packs` | 缓存或解析 current Pack 元数据，并以当前 tracked file 校验指纹。 |
-| `skills/repo-context-ledger/scripts/ledger.py::build_context_reverse_index` | 将 query token、feature、title 与 tracked path 映射为有限 Pack 候选。 |
+| `skills/repo-context-ledger/scripts/ledger.py::build_context_reverse_index` | 将 query token、feature、title、显式 aliases、代码锚点与 tracked path 映射为有限 Pack 候选。 |
 | `skills/repo-context-ledger/scripts/ledger.py::context_baseline` | 从显式 ref 计算 merge-base delta，并给相关 Pack 增加可解释优先级。 |
 | `skills/repo-context-ledger/scripts/ledger.py::context_search` | 生成 `context-bundle-v1`、Required reads、预算和匿名 cache/performance 指标。 |
 | `skills/repo-context-ledger/scripts/ledger.py::build_resume_capsule` | 按主 Pack 过滤旧 evidence 噪声，保留恢复所需最小路线。 |
@@ -50,8 +51,8 @@ Last refreshed: 2026-08-27T07:16:03+08:00
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:187328722f04f19285b4e95115a6bda0b565ab554419156797307229a911045c`
-- `tests/test_ledger.py` — `sha256:bb1837198bb1324bea43b4f974991d59041780970efe5251a20085a83fd4a03a`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:c72b923b0c5f1cd758e5771e914e150f9bc885a2ba176410287c077804645007`
+- `tests/test_ledger.py` — `sha256:7ad70640f1331235e79c7860ea613b971b0b64991e09faf9008c0dd37f84e8f8`
 - `benchmarks/context_router_benchmark.py` — `sha256:78762f66163af15cb0ee502e4944c2c20bc4035503d0517c026074042be96935`
 - `benchmarks/README.md` — `sha256:9244091fc1202a9c40c54f2fb7f81d7e708dacd3d619f8e68e70f70ee633088a`
 <!-- repo-context-ledger:pack-files:end -->
