@@ -1,16 +1,16 @@
-# Repo Context Ledger：跨 Agent 的 AI 编程上下文接力
+# Repo Context Ledger：AI 功能变更账本与跨 Agent 上下文接力
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![skills.sh](https://skills.sh/b/gviiisen/repo-context-ledger)](https://skills.sh/gviiisen/repo-context-ledger)
 
-> 从 Codex 换到 Cursor 或 Claude，只说功能关键词，就能沿着正确代码和功能边界继续开发。
+> 自动记录每次有行为影响的功能新增、修复和调整，让 Codex、Cursor 或 Claude 能沿着正确的代码、决策和边界继续开发。
 
-Repo Context Ledger 是一个面向 AI 编程的仓库上下文管理与上下文切换 Skill。它在 Codex、Claude、Cursor、GitHub Copilot、Grok 等编码 Agent 之间桥接经过验证的仓库上下文，并在代码新增或修复后同步维护功能说明、变更交接记录以及各级 README 摘要。
+Repo Context Ledger 是一个面向 AI 编程的仓库级功能变更账本。每当功能新增、修复或发生行为调整，它会保留改了什么、为什么改、实现在哪里、哪些边界必须稳定，以及结果如何验证。
 
-它适用于 AI 编程上下文管理、跨窗口续接、跨 Agent 上下文切换与任务交接，不需要在新会话中重新描述全部背景。
+这些经过验证的记录会成为 Codex、Claude、Cursor、GitHub Copilot、Grok 等编码 Agent 可共用的持久上下文。换窗口或换工具后，新的 Agent 可以按照精准路线找到相关代码并继续工作，无需重述长对话，也无需从头重新理解整个功能。
 
-如果你正在寻找 AI 上下文管理、Codex 上下文管理、Codex 上下文、Cursor 上下文、Cursor 上下文切换、Claude 上下文管理，或者希望换一个 AI 窗口后继续开发，这个 Skill 会引导新的 Agent 快速找到相关代码、功能边界和经过验证的变更记录。
+它适用于 AI 功能变更记录、软件变更文档、AI 上下文管理、Codex 上下文管理、Cursor 上下文切换、Claude 上下文管理与跨 Agent 开发交接。功能变更账本是知识源，跨窗口和跨工具续接是建立在账本之上的能力。
 
 使用通用的 Agent Skills CLI 即可安装：
 
@@ -24,9 +24,11 @@ npx skills@latest add gviiisen/repo-context-ledger --skill repo-context-ledger
 
 ## 为什么需要它
 
-不同的 AI 编程窗口通常无法自动继承此前积累的上下文。新的 Agent 不得不重新阅读大量代码，功能逻辑、关键边界和历史决策也容易在会话之间丢失。
+AI 可以很快完成代码修改，但这些修改往往没有沉淀成持久的仓库知识。如果没有功能级记录，修复原因、代码路径、验证证据和重要边界只会留在对话中，后续只能从大量 diff 和代码里重新发现。
 
-Repo Context Ledger 为每个 AI 会话提供一份精简、持久的项目地图：
+当工作切换到新窗口或另一个编码 Agent 时，这个缺口会更明显。新的 Agent 不得不重新阅读大量代码，功能逻辑、关键边界和历史决策也容易在会话之间丢失。
+
+Repo Context Ledger 记录每次有行为影响的功能新增、修复和调整，再把经过验证的历史变成一份精简、持久的项目地图：
 
 - 某项功能位于哪些代码位置；
 - 代码调用链和处理流程如何工作；

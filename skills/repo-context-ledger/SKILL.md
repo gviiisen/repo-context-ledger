@@ -1,11 +1,11 @@
 ---
 name: repo-context-ledger
-description: Maintain durable, evidence-based repository context whenever an agent initializes a repository, changes behavior, checkpoints or resumes work, switches AI tools or windows, collaborates through Git, prepares a pull request, or completes a coding task. Use the deterministic runtime to route bounded context, isolate private drafts, publish verified change records, refresh stable feature knowledge, and keep native Codex, Claude, Cursor, Copilot, Grok, and other Agent entry points aligned without asking the user to run bookkeeping commands.
+description: Record every behavior-changing feature addition, fix, and adjustment as durable, evidence-based repository knowledge, then use that ledger to continue accurately across AI windows, tools, Git collaboration, and pull requests. Use the deterministic runtime to route bounded context, isolate private drafts, publish verified change records, refresh stable feature knowledge, and keep native Codex, Claude, Cursor, Copilot, Grok, and other Agent entry points aligned without asking the user to run bookkeeping commands.
 ---
 
 # Repo Context Ledger
 
-Carry code-verified repository knowledge across AI tools and fresh windows. Git-tracked Packs, specs, and completed Changes are the shared source; private vendor Memory is never read or synchronized.
+Turn behavior-changing feature work into durable, code-verified repository knowledge. Git-tracked Packs, specs, and completed Changes form the feature change ledger; cross-window and cross-Agent continuation are capabilities built on that shared source. Private vendor Memory is never read or synchronized.
 
 ## Runtime
 

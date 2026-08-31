@@ -6,10 +6,10 @@ Aliases: none
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 4800d58e9bde70c8f0b55a9afe0f6e7df90480d2
+Source commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
 Base branch: main
-Base commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
-Last refreshed: 2026-08-27T21:54:17+08:00
+Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
+Last refreshed: 2026-08-31T18:33:19+08:00
 
 ## Purpose
 
@@ -73,7 +73,7 @@ Routes runtime changes to one editable template, ordered low-coupling fragments,
 - `src/repo_context_ledger/contracts.pyfrag` — `sha256:542f32ce352a7450693a70eb559c983188c150e08b5933d2ce9e9d28400d448c`
 - `scripts/build_runtime.py` — `sha256:c94ec02761a97d70631a2f261780f569e357f026d1a86c6d293359dff5cb6324`
 - `skills/repo-context-ledger/scripts/ledger.py` — `sha256:f00aafdd16ed109963ed90b5bc4d77b2fc2b0c4f230a09e4cba7e52b8fa45d49`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:c49a692005ff85c62c4fc3ebb5617af4725c55bba3857a3413b5c4d8bba4e12a`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:e1b01f109a01267b9519c349c6016123d2e78449b63ab6c9299c449ad4a23b68`
 - `skills/repo-context-ledger/references/verification-presets.md` — `sha256:0650fa160e9a46a3b0f6cad68c8153f09614626e2046eb4acada3ab8b59e04f3`
 - `tests/test_runtime_build.py` — `sha256:0059d7b363ceb71d9d25830aa2eefa19d8e10d2979a806be4fcec9e29ccf6a8e`
 - `tests/test_repository_reliability.py` — `sha256:16d05703c805a7b0f7b88d74b6023274d45cdd64e2bb138d19608a60aea63f3e`

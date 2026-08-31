@@ -1,16 +1,16 @@
-# Repo Context Ledger — Cross-Agent Context Relay
+# Repo Context Ledger — Feature Change Ledger & Cross-Agent Context Relay
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![skills.sh](https://skills.sh/b/gviiisen/repo-context-ledger)](https://skills.sh/gviiisen/repo-context-ledger)
 
-> Switch from Codex to Cursor or Claude, mention the feature, and continue from the right code and boundaries.
+> Automatically record every behavior-changing feature update, then let Codex, Cursor, or Claude continue from the right code, decisions, and boundaries.
 
-Repo Context Ledger is an open repository context management and context switching Agent Skill for AI coding. It bridges verified context across Codex, Claude, Cursor, GitHub Copilot, Grok, and other coding agents while keeping feature documentation, change handoffs, and README summaries synchronized.
+Repo Context Ledger is an open, repository-level feature change ledger for AI coding. After a feature is added, fixed, or behaviorally adjusted, it preserves what changed, why it changed, where the implementation lives, which boundaries must remain stable, and how the result was verified.
 
-Use it for AI coding context management, cross-session continuation, cross-tool context switching, and durable agent handoffs without replaying a long chat.
+Those verified records become durable context for Codex, Claude, Cursor, GitHub Copilot, Grok, and other coding agents. A fresh window or a different tool can follow a focused route into the relevant code and continue without replaying a long chat or rediscovering the feature from scratch.
 
-If you are looking for AI context management, Codex context management, Cursor context switching, Claude context management, or a way to continue work across AI coding sessions, this Skill gives the next agent a focused route to the relevant code, boundaries, and verified change history.
+Use it for AI feature change tracking, software change documentation, AI context management, Codex context management, Cursor context switching, Claude context management, and cross-agent development handoffs. The change ledger is the knowledge source; cross-session and cross-tool continuation are capabilities built on top of it.
 
 Install it with the standard Agent Skills CLI:
 
@@ -24,9 +24,11 @@ Before any lifecycle command, the Agent can ask the read-only Workflow Plan whet
 
 ## Why it exists
 
-AI coding sessions often start without the context accumulated in earlier windows. The next agent must read a large part of the codebase again, and implementation details or important boundaries can be lost between sessions.
+AI-assisted changes are easy to implement but hard to preserve as durable repository knowledge. Without a feature-level record, the reason for a fix, its code path, verification evidence, and important boundaries remain trapped in a chat or must be rediscovered from a large diff and codebase.
 
-Repo Context Ledger gives every AI session a small, durable map of the repository:
+The same gap becomes more visible when work moves to a fresh window or another coding agent. The next agent must reconstruct the feature from scratch, and implementation details or important constraints can be lost between sessions.
+
+Repo Context Ledger records each behavior-changing feature addition, repair, and adjustment, then turns that verified history into a small, durable map of the repository:
 
 - where a feature lives;
 - how its code path works;

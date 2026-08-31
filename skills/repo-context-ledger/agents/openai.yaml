@@ -1,4 +1,4 @@
 interface:
   display_name: "Repo Context Ledger"
-  short_description: "Bridge verified context with private task drafts"
-  default_prompt: "Use $repo-context-ledger to maintain private task drafts and publish verified repository context."
+  short_description: "Record feature changes and relay verified context"
+  default_prompt: "Use $repo-context-ledger to record this feature change as verified repository knowledge and preserve it for future AI windows and tools."
