@@ -4,7 +4,7 @@ Status: current
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Last reviewed: 2026-08-27
+Last reviewed: 2026-09-07
 
 ## Purpose and behavior
 
@@ -40,11 +40,14 @@ Contract Stability keeps automation and initialized repositories safe across the
 
 ## Verification
 
+Development integration retains the installed v1.0.2 `policy --base` and `audit --history --policy as-recorded` commands. Policy selects ordinary or derived-only checks from the actual delta, not the branch name. Historical dispositions remain hash-bound explanations of later resolution, never permission to rewrite an old result. `tests/test_policy_and_audit.py` protects classification, unmanaged prose boundaries, and historical disposition semantics when newer workflow/runtime features are installed.
+
 Run `python tests/test_protocol_schemas.py`, `python -m unittest discover -s tests -p test_contract_stability.py`, and `python -m unittest discover -s tests -p test_routing_evaluation.py`. Required GitHub CI runs the complete suite on Windows and Ubuntu with Python 3.10 and 3.12; release/nightly/manual validation also runs on macOS.
 
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Reduce verification wrapping and support global runtime reuse](../changes/2026/09/20260907222104-gviiisen-57768a4aa1-reduce-verification-wrapping-and-support-global-.md)
 - [Cover public protocol error shapes](../changes/2026/08/20260827191239-gviiisen-eaffca7e21-cover-public-protocol-error-shapes.md)
 - [Add safe verification presets](../changes/2026/08/20260827065951-gviiisen-6daa4a6c38-add-safe-verification-presets.md)
 - [Harden raw JSON command detection](../changes/2026/08/20260822002738-gviiisen-9d24fbee4b-harden-raw-json-command-detection.md)

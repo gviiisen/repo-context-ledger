@@ -6,14 +6,14 @@ Aliases: workflow plan | task planning | 工作流规划 | 任务判断
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 4800d58e9bde70c8f0b55a9afe0f6e7df90480d2
+Source commit: 44630d3805a54ae02184131497c715d64fa88e5a
 Base branch: main
-Base commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
-Last refreshed: 2026-08-27T21:54:20+08:00
+Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
+Last refreshed: 2026-09-08T00:14:49+08:00
 
 ## Purpose
 
-Routes a natural-language coding request through one deterministic, read-only preflight before an Agent loads broad context or mutates task state. It conservatively recognizes only explicit low-risk small fixes, preserves the calling tool in executable guidance, and returns a stable workflow mode, reasons, confidence, confirmation requirement, and one structured next action while keeping later code inspection open-ended.
+Routes a natural-language coding request through a deterministic, read-only preflight when task identity or required background is missing. The Skill first asks the Agent to judge new facts/effects from loaded context, so a routine follow-up or known active task does not restart routing. Actual routing still conservatively recognizes only explicit low-risk small fixes, preserves tool identity, and returns the existing stable plan contract; there is no new semantic-deduplication engine.
 
 ## Load order
 
@@ -30,7 +30,8 @@ Routes a natural-language coding request through one deterministic, read-only pr
 | `src/repo_context_ledger/runtime.py.tmpl::context_search` | Embeds the same plan in `context-bundle-v1`. |
 | `src/repo_context_ledger/runtime.py.tmpl::start_change` | Rejects read-only/resume modes before creating private state. |
 | `src/repo_context_ledger/runtime.py.tmpl::resolve_resumable_session` | Reuses the privacy-bounded session route for actual continuation. |
-| `skills/repo-context-ledger/SKILL.md` | Makes `plan` the short Agent front door and sends detailed procedures to references. |
+| `skills/repo-context-ledger/SKILL.md` | Puts Agent delta judgment before tool calls, reuses unfinished task context, and routes only missing information through plan. |
+| `src/repo_context_ledger/runtime.py.tmpl::context_plan_policy`, `resume_plan_policy`, `managed_rules` | Make generated Agent entry points conditional and distinguish same-window continuation from actual resume. |
 | `tests/test_workflow_plan.py` | Protects English/Chinese classification, resume selection/ambiguity, contract fields, and Skill budget. |
 
 ## Contracts and boundaries
@@ -43,6 +44,8 @@ Routes a natural-language coding request through one deterministic, read-only pr
 
 `python -m unittest discover -s tests -p test_workflow_plan.py -v` checks classification, ambiguity, integration, and schema shape. `python -m unittest discover -s tests -p test_contract_stability.py -v` protects additive public compatibility. The Skill validator and runtime build check protect progressive disclosure and generated outputs.
 
+`tests/test_small_fix_closeout.py` also exercises consecutive real edits in one session without resume, preservation of earlier reasoning/checks, one publication, rejection of writes to the completed task, and a distinct later task. It validates the lifecycle's support for the guidance, not an LLM's ability to recognize every repeat.
+
 <!-- repo-context-ledger:pack-specs:start -->
 ## Stable context
 
@@ -53,14 +56,14 @@ Routes a natural-language coding request through one deterministic, read-only pr
 ## Tracked file fingerprints
 
 - `src/repo_context_ledger/workflow.pyfrag` — `sha256:6099dec2fe65490a333c98ce9b61b363c56fc1012281ca83398c48088a33cc09`
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:aabb91b17f8a9bae7d42d2932d20eeb5b37819e6c358a0b517c253d71c8c6a39`
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:81a8fb3f2c0e857b28f88b9a6d75e31e6d40e485835517d7c50c95296ff5ed44`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:f00aafdd16ed109963ed90b5bc4d77b2fc2b0c4f230a09e4cba7e52b8fa45d49`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:c49a692005ff85c62c4fc3ebb5617af4725c55bba3857a3413b5c4d8bba4e12a`
-- `skills/repo-context-ledger/references/production-workflow.md` — `sha256:61b308e7b737e2677cf0f4c8740ad281710bc6e33740098cee5e17beb2b36d48`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:c01e9bee65a2e168ee22d0a8e1fe5b1b7686f61c7cd4320d17cbfb25f1c6ccf4`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:1d78f4e2545641efce1a3ef6db9948769ec39cfd530d795a4727a3c7214dcd7f`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:12ae39362268ec7c1c2e27d4a4d73ee1ffd0beecc1509f7b3d7f234db412463e`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:5ded6a55fcd32c9cd6ae07eef809b7c33a9c158fdc13a26b70752eb3288a3e69`
+- `skills/repo-context-ledger/references/production-workflow.md` — `sha256:e9b3f1fbf7b1e5f25486f17d1d4fb6756f7b90d408c108be514c1b5c882cc6e7`
 - `ARCHITECTURE.md` — `sha256:b06788c0dc2e1ae5bf2f5292d3fda91e3876ebc2395976655f29dab5aeafcdd5`
-- `COMPATIBILITY.md` — `sha256:5688484d4886d09f7aa34fa064eff2c562fd88ac16c5b85da46525e0efe398d3`
-- `MIGRATIONS.md` — `sha256:3883ad8ec72e7ddda2e05d04fef4c851083d85bb511667e70fe84cec7b72ab48`
+- `COMPATIBILITY.md` — `sha256:e25fd7bd143072cca9bf88f008b023a23d360496717cbd6c2c8ca1096e309876`
+- `MIGRATIONS.md` — `sha256:e4021bd7e3de33818069f3339cb143e5233a468d2178e8596a14aec14d959b04`
 - `tests/test_workflow_plan.py` — `sha256:92233e4c35291a02b612563bf3c63a39acef72d88f5ead2a9ad77bb339e0235f`
 - `tests/fixtures/workflow-plan-eval-v1.json` — `sha256:6fbee688d02ab3801129c8e1f6da918a9b68981170eddc2d8ff9a64506f565bb`
 - `tests/golden/workflow-plan-v1.json` — `sha256:9ed5dc04cc4afadbb651ff61ed387a6c77145fff7e85d2f846b6d3071d154802`

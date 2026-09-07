@@ -122,12 +122,18 @@ def fill_handoff(path: Path) -> None:
         "The synthetic Pack is refreshed from the changed fixture before finish.",
         "None.",
     ]
+    short = RUNTIME.field_value(text, "Workflow") == "small-fix"
+    if short:
+        replacements = replacements[:3] + [
+            "`src/service.py::VALUE` changes from one to two so the fixture exercises a real behavior delta; shared boundaries and verification are below."
+        ] + replacements[6:9] + replacements[10:]
     for replacement in replacements:
-        text = re.sub(r"TODO:[^|`\r\n]*", replacement, text, count=1)
+        pattern = r"TODO:[^\r\n]*" if short else r"TODO:[^|`\r\n]*"
+        text = re.sub(pattern, replacement, text, count=1)
     path.write_text(text, encoding="utf-8")
 
 
-def create_fixture(root: Path) -> tuple[Path, str]:
+def create_fixture(root: Path, workflow: str = "ordinary-change", branch: str = "") -> tuple[Path, str]:
     repo = root / "repository"
     repo.mkdir()
     run("git", "init", "-b", "main", cwd=repo)
@@ -153,12 +159,16 @@ def create_fixture(root: Path) -> tuple[Path, str]:
     fill_pack(pack)
     run("git", "add", "-A", cwd=repo)
     run("git", "commit", "-m", "Create synthetic closeout fixture", cwd=repo)
+    if branch:
+        run("git", "checkout", "-b", branch, cwd=repo)
 
     started = ledger(
         repo,
         "start",
         "--title",
         "Benchmark synthetic closeout",
+        "--workflow",
+        workflow,
         "--feature",
         FEATURE,
         "--tool",

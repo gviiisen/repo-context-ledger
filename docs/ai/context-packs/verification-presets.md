@@ -6,14 +6,16 @@ Aliases: none
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 4800d58e9bde70c8f0b55a9afe0f6e7df90480d2
+Source commit: 44630d3805a54ae02184131497c715d64fa88e5a
 Base branch: main
-Base commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
-Last refreshed: 2026-08-27T21:54:19+08:00
+Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
+Last refreshed: 2026-09-08T00:14:50+08:00
 
 ## Purpose
 
 Verification presets let a repository review a repeated check once as structured executable arguments, then let any Agent select it by name. The runtime resolves platform, repository-relative working directory, timeout, and sensitivity before invoking the executable directly and attaching the result to the selected private task session.
+
+Choose one acceptance goal per invocation, not one wrapper per helper. Optional bounded step annotations retain failed/not-run details without replacing the aggregate exit-code gate. Private timings distinguish actual subprocess work from preparation, recording, and total Ledger overhead. A tested optional `skills/repo-context-ledger/assets/verify-change.py` example groups serial acceptance only; normal operations and deployment remain outside that helper.
 
 ## Load order
 
@@ -51,10 +53,12 @@ Verification presets let a repository review a repeated check once as structured
 ## Tracked file fingerprints
 
 - `.context-ledger/config.json` — `sha256:b70099d1d5911cc7edb1c3aefa182effb46314e5746f4b9c4318f9ed147cb4e8`
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:aabb91b17f8a9bae7d42d2932d20eeb5b37819e6c358a0b517c253d71c8c6a39`
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:81a8fb3f2c0e857b28f88b9a6d75e31e6d40e485835517d7c50c95296ff5ed44`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:f00aafdd16ed109963ed90b5bc4d77b2fc2b0c4f230a09e4cba7e52b8fa45d49`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:c49a692005ff85c62c4fc3ebb5617af4725c55bba3857a3413b5c4d8bba4e12a`
-- `skills/repo-context-ledger/references/verification-presets.md` — `sha256:0650fa160e9a46a3b0f6cad68c8153f09614626e2046eb4acada3ab8b59e04f3`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:c01e9bee65a2e168ee22d0a8e1fe5b1b7686f61c7cd4320d17cbfb25f1c6ccf4`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:1d78f4e2545641efce1a3ef6db9948769ec39cfd530d795a4727a3c7214dcd7f`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:12ae39362268ec7c1c2e27d4a4d73ee1ffd0beecc1509f7b3d7f234db412463e`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:5ded6a55fcd32c9cd6ae07eef809b7c33a9c158fdc13a26b70752eb3288a3e69`
+- `skills/repo-context-ledger/references/verification-presets.md` — `sha256:0e0e1a36b87590d36f9e2b75ea12f25599baf4ff5c500b951d3f74ebbc0be87a`
 - `tests/test_ledger.py` — `sha256:8f5041ab68473240b1e6cf571c3fe31df732a09110ccd48475a9236ca1cd3f70`
+- `skills/repo-context-ledger/assets/verify-change.py` — `sha256:fa08a967a74466e4cc69560d82aa147851bf929a0c30d0cd2f05f95923753a44`
+- `tests/test_verification_boundaries.py` — `sha256:3b74053613339fc0d38d44d433660c0dd6b4a95bdec0400098b4883cd8fb8f0a`
 <!-- repo-context-ledger:pack-files:end -->

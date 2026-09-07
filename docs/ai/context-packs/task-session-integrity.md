@@ -6,10 +6,10 @@ Aliases: 跨窗口续接 | cross-agent continuation | resume task session
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 4800d58e9bde70c8f0b55a9afe0f6e7df90480d2
+Source commit: 44630d3805a54ae02184131497c715d64fa88e5a
 Base branch: main
-Base commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
-Last refreshed: 2026-08-27T21:54:18+08:00
+Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
+Last refreshed: 2026-09-08T00:14:51+08:00
 
 ## Purpose
 
@@ -59,11 +59,12 @@ Run `python -m unittest discover -s tests -p test_ledger.py` for v8 migration, s
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:f00aafdd16ed109963ed90b5bc4d77b2fc2b0c4f230a09e4cba7e52b8fa45d49`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:c49a692005ff85c62c4fc3ebb5617af4725c55bba3857a3413b5c4d8bba4e12a`
-- `skills/repo-context-ledger/references/production-workflow.md` — `sha256:61b308e7b737e2677cf0f4c8740ad281710bc6e33740098cee5e17beb2b36d48`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:12ae39362268ec7c1c2e27d4a4d73ee1ffd0beecc1509f7b3d7f234db412463e`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:5ded6a55fcd32c9cd6ae07eef809b7c33a9c158fdc13a26b70752eb3288a3e69`
+- `skills/repo-context-ledger/agents/openai.yaml` — `sha256:84582076dab207d0d16c25260b033b4b2ebe10e241a9b7a18715de41ad7f12ca`
+- `skills/repo-context-ledger/references/production-workflow.md` — `sha256:e9b3f1fbf7b1e5f25486f17d1d4fb6756f7b90d408c108be514c1b5c882cc6e7`
 - `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:dd1e26e29993ac93d5f52de315df130b270982125b4037dc01c17d9cb63f9a52`
 - `tests/test_ledger.py` — `sha256:8f5041ab68473240b1e6cf571c3fe31df732a09110ccd48475a9236ca1cd3f70`
-- `benchmarks/closeout_workflow_benchmark.py` — `sha256:33fb3dc82c2acd29e5bab6d3870046868a5d79858c2ac7641bb0a8102c089d6c`
-- `benchmarks/README.md` — `sha256:9244091fc1202a9c40c54f2fb7f81d7e708dacd3d619f8e68e70f70ee633088a`
+- `benchmarks/closeout_workflow_benchmark.py` — `sha256:22d6b75799ca24e8b3289a0c77caa312acac8763b511550722b7ce23d1a396be`
+- `benchmarks/README.md` — `sha256:7646ec968c4a325196bac99b26ce855f6ad46ad1993d82a7ffe0b67862cf7ae2`
 <!-- repo-context-ledger:pack-files:end -->

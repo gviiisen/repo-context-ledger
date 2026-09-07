@@ -6,10 +6,10 @@ Aliases: none
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 4800d58e9bde70c8f0b55a9afe0f6e7df90480d2
+Source commit: 44630d3805a54ae02184131497c715d64fa88e5a
 Base branch: main
-Base commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
-Last refreshed: 2026-08-27T21:54:13+08:00
+Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
+Last refreshed: 2026-09-08T00:14:54+08:00
 
 ## Purpose
 
@@ -53,11 +53,11 @@ Routes compatibility work to the public CLI schemas, golden fixtures, routing co
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:81a8fb3f2c0e857b28f88b9a6d75e31e6d40e485835517d7c50c95296ff5ed44`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:1d78f4e2545641efce1a3ef6db9948769ec39cfd530d795a4727a3c7214dcd7f`
 - `src/repo_context_ledger/errors.pyfrag` — `sha256:7cd76293bd376f12cf7e13ba747159820667919afcc720098e7958ee05bb9717`
 - `src/repo_context_ledger/models.pyfrag` — `sha256:a22d3de153c2deff0417d79af5e90dbb907ec2820d475fc7d9be7ed9fc06893a`
-- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:aabb91b17f8a9bae7d42d2932d20eeb5b37819e6c358a0b517c253d71c8c6a39`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:f00aafdd16ed109963ed90b5bc4d77b2fc2b0c4f230a09e4cba7e52b8fa45d49`
+- `src/repo_context_ledger/runtime.py.tmpl` — `sha256:c01e9bee65a2e168ee22d0a8e1fe5b1b7686f61c7cd4320d17cbfb25f1c6ccf4`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:12ae39362268ec7c1c2e27d4a4d73ee1ffd0beecc1509f7b3d7f234db412463e`
 - `schemas/README.md` — `sha256:edfc6ed9e01236021278fbd276092a8acd8fb44c140cd81be4170006278ffb29`
 - `schemas/workflow-plan-v1.schema.json` — `sha256:8e298fa8bd11aaeab1a89b322b2b4f63541b8137ebc7f492b526e4ba802f7ebe`
 - `schemas/context-bundle-v1.schema.json` — `sha256:bba40cd2f4e0d8a630b82cc3372fc820a110f2a0433741aec766da84a903806d`
@@ -75,7 +75,8 @@ Routes compatibility work to the public CLI schemas, golden fixtures, routing co
 - `scripts/evaluate_routing.py` — `sha256:d798030a684e81e0f8d298136abf3a72309da3f4c51384fcebdc251210137833`
 - `tests/test_routing_evaluation.py` — `sha256:4bee2325cc493db7fedc8c77b637806cf84cabb2e513f424b64f51da61f6f53d`
 - `tests/fixtures/routing-eval-v1.json` — `sha256:6eaf30268655247499174dfa9913969f4b1915aa98b02c0587f5ff9a7e53c4cc`
-- `.github/workflows/test.yml` — `sha256:50080dc86a7cbcf0c17fefe15766a65dc73fd78935ccd576c48116709f1add11`
-- `COMPATIBILITY.md` — `sha256:5688484d4886d09f7aa34fa064eff2c562fd88ac16c5b85da46525e0efe398d3`
-- `MIGRATIONS.md` — `sha256:3883ad8ec72e7ddda2e05d04fef4c851083d85bb511667e70fe84cec7b72ab48`
+- `.github/workflows/test.yml` — `sha256:8e42b4c3232a03caf55b93190a8f7667729978aba6d3306a3592a94207a2dcee`
+- `COMPATIBILITY.md` — `sha256:e25fd7bd143072cca9bf88f008b023a23d360496717cbd6c2c8ca1096e309876`
+- `MIGRATIONS.md` — `sha256:e4021bd7e3de33818069f3339cb143e5233a468d2178e8596a14aec14d959b04`
+- `tests/test_policy_and_audit.py` — `sha256:2de7276a6930ae82e4d0a15b0439740d66fdeb88c9f9d8b0253a6a107df81ea2`
 <!-- repo-context-ledger:pack-files:end -->

@@ -48,8 +48,10 @@ Starting in v0.8.2, an untrusted or changed verification preset fails before exe
 
 Context Pack `Aliases` are optional Git-tracked metadata added in v0.8.0. Existing Packs without the field behave as before. Aliases are explicit phrases only; upgrade and routing never generate translations or infer private task state.
 
-The initialized `.context-ledger/ledger.py` is a standalone artifact. Its version should match the installed Skill runtime after `init`; the repository does not require a Python package installation or API key.
+By default, initialized `.context-ledger/ledger.py` is a standalone artifact. Its version should match the installed Skill runtime after init; no Python package or API key is required. Starting in v1.0.3, opt-in runtime.mode global uses a portable forwarding entry instead. That entry requires the current user's global Codex Skill and preserves repository-local data; a missing or unsafe target fails closed. Bundled mode remains the default for self-contained checkouts and CI.
 
-Source contributors may edit ordered build fragments, but installed repositories continue to receive one byte-complete `ledger.py`. The schema files and source fragments are development/review assets and are not imported by that runtime.
+Source contributors may edit ordered build fragments; bundled installations still receive one byte-complete ledger.py, and opt-in global installations execute the same standalone artifact through a small forwarding entry. Schema files and source fragments are development/review assets and are not imported by the runtime.
+
+v1.0.3 includes policy/audit commands developed for the unreleased v1.0.2. They use existing text-mode exit classes and no new public JSON schema. The optional small-fix-explained-v1 record marker tightens new short-form publication without rewriting old completed records. Optional script-reported verification substeps are bounded/redacted annotations, not independent attestations; the real aggregate process exit code still determines the managed result. Private timing fields remain optional and are never persisted as repository evidence.
 
 Atomic rewrites preserve the permission mode of an existing target on Unix-like systems. Newly created Git-tracked documents and configuration use `0644`; private session, state, cache, and preset-trust files use `0600`; copied runtime files preserve their source mode. This does not add a cross-platform promise for Windows ACL inheritance or ownership metadata.

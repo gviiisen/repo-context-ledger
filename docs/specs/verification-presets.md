@@ -4,11 +4,15 @@ Status: current
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Last reviewed: 2026-08-27
+Last reviewed: 2026-09-07
 
 ## Purpose and behavior
 
 Verification presets let a repository define repeatable, reviewed test commands as executable argument arrays. An Agent explicitly selects one with `verify --preset <name>` instead of rebuilding a shell command on every task, reducing PowerShell quoting failures while preserving real subprocess execution and session-scoped evidence.
+
+An invocation represents an acceptance goal, not every read or helper operation. Related checks may use an existing project script; preparation and authorized deployment remain ordinary operations, with required pre/post checks kept in their original safety phases. A script may emit bounded `ledger-step: <short-name> <passed|failed|not-run>` annotations: the runtime retains up to 16 redacted annotations and explicitly counts omissions. These are script-reported substeps; the aggregate managed result always comes from the actual subprocess exit code. Sensitive mode persists no annotations. The optional verify-change asset is a fail-closed, serial acceptance example, not a deployment engine or automatically executed preset.
+
+Private timing output separates verification_prepare_ms, verification_command_ms, verification_record_ms, and ledger_overhead_ms. Lock wait is already part of overhead. Total timing starts inside main and excludes Python interpreter startup; no timing values or machine paths are added to the handoff.
 
 ## Entry points and code map
 
@@ -41,5 +45,6 @@ Run `python -m unittest discover -s tests -p test_ledger.py -k verification_pres
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Reduce verification wrapping and support global runtime reuse](../changes/2026/09/20260907222104-gviiisen-57768a4aa1-reduce-verification-wrapping-and-support-global-.md)
 - [Add safe verification presets](../changes/2026/08/20260827065951-gviiisen-6daa4a6c38-add-safe-verification-presets.md)
 <!-- repo-context-ledger:changes:end -->

@@ -24,6 +24,12 @@ v1.0.0 does not change repository/private-state schema v8, private session owner
 
 v1.0.1 does not change repository/private-state schema v8 or any published JSON schema. Re-run `init` to replace the standalone runtime and native adapters. Existing files retain their mode; newly created public repository files use `0644` on POSIX, while private session, state, cache, and preset-trust files use `0600`. Existing integrations may observe additive `--tool` arguments in `workflow-plan-v1.next_action.argv` when the caller supplied a tool.
 
+v1.0.3 includes the previously unreleased v1.0.2 policy/audit work. Repository/private-state schema v8 and public JSON schema names remain unchanged. New short drafts carry the additive small-fix-explained-v1 marker and need an actual change explanation and documentation rationale; existing completed records are not rewritten. Refresh the Skill and native adapters to use delta-first Agent guidance.
+
+Runtime mode defaults to bundled. Explicit `init --runtime global --dry-run` previews a normal init using a forwarding entry; inspect the full plan before applying it. A mature repository that must preserve every document and private-state byte can instead follow the targeted migration in `skills/repo-context-ledger/references/global-runtime.md`. Global mode requires the Skill on each machine and must not silently fall back to a stale local runtime. Installing a global update changes the next executable invocation, not already-loaded Agent instructions.
+
+PR workflows may use `policy --base <ref>` instead of separate team, changed-scope Coverage and diff gates. Optional historical dispositions under docs/audit-dispositions record an existing later resolution; never invent an approval or alter a failed historical result to satisfy a release gate.
+
 ## Rollback
 
 Keep the prior Skill installation or release artifact until the upgraded repository passes its checks. Repository file changes are ordinary Git changes and should be reviewed or reverted through Git. Private state is not committed; back it up separately before a state-schema migration when an active task cannot be recreated safely.

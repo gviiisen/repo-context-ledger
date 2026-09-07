@@ -1,16 +1,16 @@
-# Repo Context Ledger — Cross-Agent Context Relay
+# Repo Context Ledger — Feature Change Ledger & Cross-Agent Context Relay
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![skills.sh](https://skills.sh/b/gviiisen/repo-context-ledger)](https://skills.sh/gviiisen/repo-context-ledger)
 
-> Switch from Codex to Cursor or Claude, mention the feature, and continue from the right code and boundaries.
+> Automatically record every behavior-changing feature update, then let Codex, Cursor, or Claude continue from the right code, decisions, and boundaries.
 
-Repo Context Ledger is an open repository context management and context switching Agent Skill for AI coding. It bridges verified context across Codex, Claude, Cursor, GitHub Copilot, Grok, and other coding agents while keeping feature documentation, change handoffs, and README summaries synchronized.
+Repo Context Ledger is an open, repository-level feature change ledger for AI coding. After a feature is added, fixed, or behaviorally adjusted, it preserves what changed, why it changed, where the implementation lives, which boundaries must remain stable, and how the result was verified.
 
-Use it for AI coding context management, cross-session continuation, cross-tool context switching, and durable agent handoffs without replaying a long chat.
+Those verified records become durable context for Codex, Claude, Cursor, GitHub Copilot, Grok, and other coding agents. A fresh window or a different tool can follow a focused route into the relevant code and continue without replaying a long chat or rediscovering the feature from scratch.
 
-If you are looking for AI context management, Codex context management, Cursor context switching, Claude context management, or a way to continue work across AI coding sessions, this Skill gives the next agent a focused route to the relevant code, boundaries, and verified change history.
+Use it for AI feature change tracking, software change documentation, AI context management, Codex context management, Cursor context switching, Claude context management, and cross-agent development handoffs. The change ledger is the knowledge source; cross-session and cross-tool continuation are capabilities built on top of it.
 
 Install it with the standard Agent Skills CLI:
 
@@ -24,9 +24,11 @@ Before any lifecycle command, the Agent can ask the read-only Workflow Plan whet
 
 ## Why it exists
 
-AI coding sessions often start without the context accumulated in earlier windows. The next agent must read a large part of the codebase again, and implementation details or important boundaries can be lost between sessions.
+AI-assisted changes are easy to implement but hard to preserve as durable repository knowledge. Without a feature-level record, the reason for a fix, its code path, verification evidence, and important boundaries remain trapped in a chat or must be rediscovered from a large diff and codebase.
 
-Repo Context Ledger gives every AI session a small, durable map of the repository:
+The same gap becomes more visible when work moves to a fresh window or another coding agent. The next agent must reconstruct the feature from scratch, and implementation details or important constraints can be lost between sessions.
+
+Repo Context Ledger records each behavior-changing feature addition, repair, and adjustment, then turns that verified history into a small, durable map of the repository:
 
 - where a feature lives;
 - how its code path works;
@@ -138,11 +140,27 @@ You do **not** need to run `ctx begin`, name a handoff, or remember lifecycle co
 3. start a private handoff only for a small fix or ordinary behavior change;
 4. update code and execute claimed checks through the verification recorder;
 5. derive changed paths from Git and record Before/After behavior, boundaries, and evidence;
-6. update the stable feature spec and Context Pack;
-7. refresh affected module README files and the root README summary;
+6. update the stable feature spec and Context Pack when current facts or tracked dependencies change;
+7. update affected module README prose when its usage changes, deferring shared generated summaries until merge;
 8. close the handoff and validate structure plus Git-diff documentation coverage.
 
 On a feature branch, shared monthly indexes and README summary blocks are intentionally left unchanged until merge.
+
+### Small fixes, less bookkeeping
+
+Similar follow-ups do not automatically restart the workflow. The Agent first checks what is actually new using context it already has: an ordinary log recheck needs no new Ledger task, and a same-window continuation keeps the active session. New behavior on another path still needs its own explanation and current verification. Reuse background and methods, not stale success claims; completed records remain unchanged.
+
+Ledger records acceptance goals, not every terminal operation. Reads, searches, file generation, and deployment preparation use ordinary tools. Reuse the current task session; run related acceptance checks through one reviewed script/preset instead of wrapping every helper separately. Preserve each step's result and failure exit code, keep required pre/post-deployment checks in their proper phases, and never replay a deployment merely to add logging. `--timings verify ...` separates subprocess time from Ledger overhead; it does not promise to shorten the tests themselves.
+
+One logical request produces one completed Change, including its code, tests, and documentation—not separate records for each file or step. Important findings, decisions, and useful failed approaches are kept in the same private draft as work progresses, not reconstructed only at the end. The small-fix form has nine authoring prompts: intent, Before, After, change explanations, invariants, failure/recovery, unchanged scope, documentation rationale, and open questions. The Agent still explains what changed and why; only the documentation file list is generated, and verification comes from executed checks.
+
+Coupled files can share an explanation and common boundaries without repeating a table for each file. A path list alone cannot pass the new short-form gate. There is no cap on meaningful change items: when the scope or risk grows, the Agent expands the same draft instead of dropping details. These checks catch missing references and fields, not every business mistake; the Agent must still reconcile the record with the actual diff. This is a shorter evidence-v1 form, not a bypass for risky one-line changes.
+
+For a known single-session fix, the Agent can go from `start --workflow small-fix` to implementation, `verify`, and `finish`, without a separate evidence command. Unrelated dirty work or parallel sessions still need explicit scoped evidence. Optional `finish --dry-run` reports closeout problems together without writing anything; it is not an extra required step. Pack `--reference` links provide optional reading guidance without adding fingerprint dependencies; existing tracked files are never silently downgraded.
+
+### Optional global runtime
+
+`init --runtime global --dry-run` previews an opt-in installation where `.context-ledger/ledger.py` is only a portable forwarding entry to the globally installed Codex Skill. Project configuration and history remain local, while updating that global Skill updates the executable used by this entry. A missing global installation fails clearly rather than silently using an old version. Bundled standalone runtimes remain the default for portable checkouts and CI. See [global runtime migration](skills/repo-context-ledger/references/global-runtime.md) before changing a mature repository.
 
 ### Recording language and form
 
@@ -292,7 +310,7 @@ The exact month is generated from the completion date. Monthly grouping keeps th
 - Optional Git-diff coverage catches behavior paths omitted from handoff evidence, stable specs, or Context Packs.
 - Private vendor Memory is never imported as authoritative repository knowledge.
 - Evidence-quality records reject unresolved language, placeholders, vague standalone claims, missing concrete paths, incomplete Before/After behavior, and unverified results.
-- Verification output is shown to the active agent but only a hash and metadata are persisted; common secret-bearing command arguments are redacted.
+- Verification output is shown to the active agent; persisted evidence is limited to a hash, metadata and bounded redacted result/step summaries. Sensitive verification suppresses its command arguments and captured output.
 - Managed files use atomic replacement, and mutating commands use a short repository lock to prevent concurrent writers.
 - The runtime uses the Python 3.10+ standard library and requires no API key.
 - Semantic documentation remains the agent's responsibility; scripts enforce deterministic structure, lifecycle state, and links.
@@ -319,6 +337,18 @@ python scripts/build_runtime.py --check
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
+
+## What's new in v1.0.3
+
+- The Agent judges what is actually new before invoking Ledger. Known-task follow-ups reuse their session and context; same-window "continue" no longer implies another lookup or resume. New behavior and uncertain boundaries still require investigation and evidence.
+- Small fixes use nine authoring prompts while preserving change explanations, documentation rationale, decisions and failed attempts. New short records reject path-only explanations, missing changed-path references, and empty inline fields; completed historical records are preserved.
+- Verification follows acceptance goals rather than every helper operation. An optional reviewed project-script example retains passed/failed/not-run steps; private timings distinguish subprocess work from Ledger preparation, recording and overhead. Required safety checks are not skipped or reordered.
+- `init --runtime global` optionally installs a small forwarding entry to the globally installed Codex Skill. Configuration, private sessions and history stay in the consuming repository; bundled standalone runtimes remain the default.
+- Optional `finish --dry-run` previews the actual finish gate without writing, and `pack --reference` separates optional reading links from tracked validity dependencies without silently downgrading existing dependencies.
+- Runtime Git reads disable optional index refreshes, so read-only previews also preserve `.git/index` when clean-file timestamps have changed.
+- The aggregate `policy --base` PR gate and hash-bound `audit --history --policy as-recorded` support immutable historical outcomes and documented later resolutions.
+
+Version note: v1.0.2 was developed in PR #27 but was not released separately. Its policy/audit work is included in v1.0.3, alongside the subsequent workflow improvements. No earlier release date or tag is being backfilled.
 
 ## What's new in v1.0.1
 

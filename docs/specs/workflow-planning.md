@@ -4,11 +4,13 @@ Status: current
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Last reviewed: 2026-08-27
+Last reviewed: 2026-09-07
 
 ## Purpose and behavior
 
-Workflow Planning gives a fresh Agent one deterministic, read-only front door before it loads context or creates private task state. It classifies a request as `readonly`, `small-fix`, `ordinary-change`, or `resume`, explains the observable signals, and returns one structured `next_action`. Automatic classification never mutates repository or private state.
+Workflow Planning provides a deterministic, read-only route when an Agent lacks the task identity or necessary repository background. It classifies a request as `readonly`, `small-fix`, `ordinary-change`, or `resume`, explains the observable signals, and returns one structured `next_action`. Automatic classification never mutates repository or private state.
+
+Before invoking that route, the Agent judges the new delta from already loaded conversation and inspected facts. Routine questions, requested rechecks and existing operations with sufficient context use ordinary tools without a new Ledger lifecycle. Related unfinished work keeps its known session/epoch and adds only new findings and changes; a same-window continue is not a handover. Similar work on a different behavior/input still needs investigation and recorded evidence, and new changes after publication use a new record rather than reopening history. Missing identity/background, a paused task, and a real window/tool handover use the existing bounded commands as needed. This adds no classifier command, protocol field, extra document, cross-task result cache, or model call inside ledger.py.
 
 ## Entry points and code map
 
@@ -19,6 +21,7 @@ Workflow Planning gives a fresh Agent one deterministic, read-only front door be
 | `src/repo_context_ledger/runtime.py.tmpl::context_search` | Embeds the same `workflow-plan-v1` object inside `context-bundle-v1`. |
 | `src/repo_context_ledger/runtime.py.tmpl::start_change` | Accepts only change workflows; `readonly` and `resume` fail before session creation. |
 | `src/repo_context_ledger/runtime.py.tmpl::resolve_resumable_session` | Uses the same privacy-bounded owned-session router as context and plan. |
+| `src/repo_context_ledger/runtime.py.tmpl::managed_rules`, `context_plan_policy`, `resume_plan_policy` | Align native Agent instructions with delta-first judgment, conditional routing, and same-window versus actual-handover behavior. |
 | `tests/test_workflow_plan.py` | Protects classification, explicit intent, resume ambiguity, start rejection, schema shape, and Skill size. |
 | `tests/fixtures/workflow-plan-eval-v1.json` | Provides synthetic English/Chinese task-intent cases without production data. |
 | `tests/golden/workflow-plan-v1.json` | Pins required public fields, modes, and structured next-action shape. |
@@ -41,6 +44,8 @@ Workflow Planning gives a fresh Agent one deterministic, read-only front door be
 - Compatibility: `workflow-plan-v1` is additive to `context-bundle-v1`; v0.6.2 schemas and exit classes remain unchanged. Existing `start`, `context`, and `resume` calls remain valid without new options.
 - Non-goals: the planner does not use an LLM, infer semantic code size from a query, auto-start/auto-resume work, claim that Required reads are sufficient, or replace user clarification on low confidence.
 
+Existing context is reusable, not automatically authoritative: new or uncertain callers, code, configuration, environment and safety boundaries require fresh inspection. Similar wording cannot authorize a side effect, skip a requested recheck, recycle an old pass as new managed evidence, or bypass a stale epoch. Runtime tests protect these lifecycle boundaries but cannot prove every model's semantic judgment follows the Skill.
+
 ## Verification
 
 Run `python -m unittest discover -s tests -p test_workflow_plan.py -v`, `python -m unittest discover -s tests -p test_contract_stability.py -v`, the bilingual positive/negative evaluation corpus, the Skill validator, runtime build drift check, and the complete unit suite.
@@ -48,6 +53,7 @@ Run `python -m unittest discover -s tests -p test_workflow_plan.py -v`, `python 
 <!-- repo-context-ledger:changes:start -->
 ## Related changes
 
+- [Judge task deltas before invoking Ledger](../changes/2026/09/20260907230332-gviiisen-16c6b7fe8e-judge-task-deltas-before-invoking-ledger.md)
 - [Harden v1.0.1 workflow and repository boundaries](../changes/2026/08/20260827202058-gviiisen-0e61ed5004-harden-v1-0-1-workflow-and-repository-boundaries.md)
 - [Add deterministic Workflow Plan](../changes/2026/08/20260827183113-gviiisen-f737fa1ffb-add-deterministic-workflow-plan.md)
 <!-- repo-context-ledger:changes:end -->
