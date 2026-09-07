@@ -702,6 +702,10 @@ def run_git(repo: Path, *args: str) -> GitResult:
             argv,
             capture_output=True,
             timeout=10,
+            # status/diff may otherwise refresh .git/index as an optional side
+            # effect. Runtime Git reads must preserve preview/private snapshots.
+            # Required locks for explicitly mutating Git operations still apply.
+            env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return GitResult(argv, -1, b"", str(exc).encode("utf-8", errors="replace"))

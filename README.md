@@ -345,6 +345,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the source/generated boundary.
 - Verification follows acceptance goals rather than every helper operation. An optional reviewed project-script example retains passed/failed/not-run steps; private timings distinguish subprocess work from Ledger preparation, recording and overhead. Required safety checks are not skipped or reordered.
 - `init --runtime global` optionally installs a small forwarding entry to the globally installed Codex Skill. Configuration, private sessions and history stay in the consuming repository; bundled standalone runtimes remain the default.
 - Optional `finish --dry-run` previews the actual finish gate without writing, and `pack --reference` separates optional reading links from tracked validity dependencies without silently downgrading existing dependencies.
+- Runtime Git reads disable optional index refreshes, so read-only previews also preserve `.git/index` when clean-file timestamps have changed.
 - The aggregate `policy --base` PR gate and hash-bound `audit --history --policy as-recorded` support immutable historical outcomes and documented later resolutions.
 
 Version note: v1.0.2 was developed in PR #27 but was not released separately. Its policy/audit work is included in v1.0.3, alongside the subsequent workflow improvements. No earlier release date or tag is being backfilled.

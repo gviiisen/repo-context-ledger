@@ -6,10 +6,10 @@ Aliases: 跨窗口续接 | cross-agent continuation | resume task session
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 1a0f4bf5e0c8199efdd4930435270406a1d95907
+Source commit: 44630d3805a54ae02184131497c715d64fa88e5a
 Base branch: main
 Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
-Last refreshed: 2026-09-08T00:02:32+08:00
+Last refreshed: 2026-09-08T00:14:51+08:00
 
 ## Purpose
 
@@ -59,7 +59,7 @@ Run `python -m unittest discover -s tests -p test_ledger.py` for v8 migration, s
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:ee85dce70f9f4f43abd9369b6ca7bb45e2fdbfe0513a89e2a58ebea2e8b5d135`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:12ae39362268ec7c1c2e27d4a4d73ee1ffd0beecc1509f7b3d7f234db412463e`
 - `skills/repo-context-ledger/SKILL.md` — `sha256:5ded6a55fcd32c9cd6ae07eef809b7c33a9c158fdc13a26b70752eb3288a3e69`
 - `skills/repo-context-ledger/agents/openai.yaml` — `sha256:84582076dab207d0d16c25260b033b4b2ebe10e241a9b7a18715de41ad7f12ca`
 - `skills/repo-context-ledger/references/production-workflow.md` — `sha256:e9b3f1fbf7b1e5f25486f17d1d4fb6756f7b90d408c108be514c1b5c882cc6e7`

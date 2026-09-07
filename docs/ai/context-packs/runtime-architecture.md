@@ -6,10 +6,10 @@ Aliases: none
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 1a0f4bf5e0c8199efdd4930435270406a1d95907
+Source commit: 44630d3805a54ae02184131497c715d64fa88e5a
 Base branch: main
 Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
-Last refreshed: 2026-09-08T00:02:33+08:00
+Last refreshed: 2026-09-08T00:14:51+08:00
 
 ## Purpose
 
@@ -70,11 +70,11 @@ Consuming repositories may explicitly select global mode: their small forwarding
 - `src/repo_context_ledger/errors.pyfrag` — `sha256:7cd76293bd376f12cf7e13ba747159820667919afcc720098e7958ee05bb9717`
 - `src/repo_context_ledger/models.pyfrag` — `sha256:a22d3de153c2deff0417d79af5e90dbb907ec2820d475fc7d9be7ed9fc06893a`
 - `src/repo_context_ledger/locks.pyfrag` — `sha256:185ce4c5f8187f1c44d684299e0e090173d3ab371e556852ef82f78d708aff7a`
-- `src/repo_context_ledger/git.pyfrag` — `sha256:934ffac62d7780f524f36aad7a431e8d4323daf43f7d440a2043a1cb78fa5b21`
+- `src/repo_context_ledger/git.pyfrag` — `sha256:7a2f1a664907c50f53af0396b8b7f8440fa712325d30fd8715668ccb1484d609`
 - `src/repo_context_ledger/workflow.pyfrag` — `sha256:6099dec2fe65490a333c98ce9b61b363c56fc1012281ca83398c48088a33cc09`
 - `src/repo_context_ledger/contracts.pyfrag` — `sha256:542f32ce352a7450693a70eb559c983188c150e08b5933d2ce9e9d28400d448c`
 - `scripts/build_runtime.py` — `sha256:c94ec02761a97d70631a2f261780f569e357f026d1a86c6d293359dff5cb6324`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:ee85dce70f9f4f43abd9369b6ca7bb45e2fdbfe0513a89e2a58ebea2e8b5d135`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:12ae39362268ec7c1c2e27d4a4d73ee1ffd0beecc1509f7b3d7f234db412463e`
 - `skills/repo-context-ledger/SKILL.md` — `sha256:5ded6a55fcd32c9cd6ae07eef809b7c33a9c158fdc13a26b70752eb3288a3e69`
 - `skills/repo-context-ledger/references/verification-presets.md` — `sha256:0e0e1a36b87590d36f9e2b75ea12f25599baf4ff5c500b951d3f74ebbc0be87a`
 - `tests/test_runtime_build.py` — `sha256:db6a7eab05d71fe4b3bbb2ca3e2f564891b703c95f8f3de0e10db6e2792eed61`

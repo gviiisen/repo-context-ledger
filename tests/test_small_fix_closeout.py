@@ -1,6 +1,7 @@
 """Small-fix authoring cost without weakening publication or isolation checks."""
 
 import io
+import os
 import re
 import sys
 import tempfile
@@ -149,10 +150,33 @@ class SmallFixCloseoutTests(unittest.TestCase):
             self.assertIn("--spec", preview.stderr)
             self.assertIn("verification failed", preview.stderr)
             self.assertIn("did not refresh a related Context Pack", preview.stderr)
-            self.assertEqual(before, self.repository_snapshot(repo))
+            self.assert_snapshot_unchanged(repo, before)
             actual = self.run_ledger(repo, "finish", "--session", session, expected=2)
             self.assertEqual(preview.stderr, actual.stderr)
             self.assertTrue(flow.private_draft(repo, started).is_file())
+
+    def assert_snapshot_unchanged(self, repo, before):
+        after = self.repository_snapshot(repo)
+        changed = sorted(path for path in before.keys() | after.keys() if before.get(path) != after.get(path))
+        self.assertEqual([], changed, "Read-only operation changed snapshot paths: " + ", ".join(changed))
+
+    def test_preview_keeps_git_index_when_clean_file_stat_cache_is_outdated(self):
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            self.init_git_repo(repo)
+            started = self.start(repo)
+            session = flow.session_from_result(started)
+            (repo / "src/service.py").write_text("VALUE = 2\n", encoding="utf-8")
+            self.verify(repo, session, passed=False)
+            # Same bytes, deliberately different stat metadata: ordinary git status
+            # refreshes the index unless optional writes are disabled.
+            clean = repo / "README.md"
+            info = clean.stat()
+            os.utime(clean, ns=(info.st_atime_ns, info.st_mtime_ns + 60_000_000_000))
+            before = self.repository_snapshot(repo)
+            with mock.patch.dict(os.environ, {"GIT_OPTIONAL_LOCKS": "1"}):
+                self.run_ledger(repo, "finish", "--session", session, "--dry-run", expected=2)
+            self.assert_snapshot_unchanged(repo, before)
 
     def test_preview_never_acquires_a_lock(self):
         with tempfile.TemporaryDirectory() as raw:

@@ -6,10 +6,10 @@ Aliases: none
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 1a0f4bf5e0c8199efdd4930435270406a1d95907
+Source commit: 44630d3805a54ae02184131497c715d64fa88e5a
 Base branch: main
 Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
-Last refreshed: 2026-09-08T00:02:31+08:00
+Last refreshed: 2026-09-08T00:14:50+08:00
 
 ## Purpose
 
@@ -55,7 +55,7 @@ Choose one acceptance goal per invocation, not one wrapper per helper. Optional 
 - `.context-ledger/config.json` — `sha256:b70099d1d5911cc7edb1c3aefa182effb46314e5746f4b9c4318f9ed147cb4e8`
 - `src/repo_context_ledger/runtime.py.tmpl` — `sha256:c01e9bee65a2e168ee22d0a8e1fe5b1b7686f61c7cd4320d17cbfb25f1c6ccf4`
 - `src/repo_context_ledger/constants.pyfrag` — `sha256:1d78f4e2545641efce1a3ef6db9948769ec39cfd530d795a4727a3c7214dcd7f`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:ee85dce70f9f4f43abd9369b6ca7bb45e2fdbfe0513a89e2a58ebea2e8b5d135`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:12ae39362268ec7c1c2e27d4a4d73ee1ffd0beecc1509f7b3d7f234db412463e`
 - `skills/repo-context-ledger/SKILL.md` — `sha256:5ded6a55fcd32c9cd6ae07eef809b7c33a9c158fdc13a26b70752eb3288a3e69`
 - `skills/repo-context-ledger/references/verification-presets.md` — `sha256:0e0e1a36b87590d36f9e2b75ea12f25599baf4ff5c500b951d3f74ebbc0be87a`
 - `tests/test_ledger.py` — `sha256:8f5041ab68473240b1e6cf571c3fe31df732a09110ccd48475a9236ca1cd3f70`

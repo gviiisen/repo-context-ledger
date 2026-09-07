@@ -6,10 +6,10 @@ Aliases: none
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 1a0f4bf5e0c8199efdd4930435270406a1d95907
+Source commit: 44630d3805a54ae02184131497c715d64fa88e5a
 Base branch: main
 Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
-Last refreshed: 2026-09-08T00:02:39+08:00
+Last refreshed: 2026-09-08T00:14:56+08:00
 
 ## Purpose
 
@@ -59,7 +59,7 @@ Run `python -m unittest discover -s tests -p test_ledger.py` for public CLI life
 
 - `src/repo_context_ledger/runtime.py.tmpl` — `sha256:c01e9bee65a2e168ee22d0a8e1fe5b1b7686f61c7cd4320d17cbfb25f1c6ccf4`
 - `src/repo_context_ledger/constants.pyfrag` — `sha256:1d78f4e2545641efce1a3ef6db9948769ec39cfd530d795a4727a3c7214dcd7f`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:ee85dce70f9f4f43abd9369b6ca7bb45e2fdbfe0513a89e2a58ebea2e8b5d135`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:12ae39362268ec7c1c2e27d4a4d73ee1ffd0beecc1509f7b3d7f234db412463e`
 - `skills/repo-context-ledger/SKILL.md` — `sha256:5ded6a55fcd32c9cd6ae07eef809b7c33a9c158fdc13a26b70752eb3288a3e69`
 - `skills/repo-context-ledger/references/production-workflow.md` — `sha256:e9b3f1fbf7b1e5f25486f17d1d4fb6756f7b90d408c108be514c1b5c882cc6e7`
 - `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:dd1e26e29993ac93d5f52de315df130b270982125b4037dc01c17d9cb63f9a52`
@@ -67,7 +67,7 @@ Run `python -m unittest discover -s tests -p test_ledger.py` for public CLI life
 - `tests/test_doctor.py` — `sha256:84526dcc76e8bc08fcc4888763426729c8e73db4c6c70242abeecd763fcad8bd`
 - `benchmarks/closeout_workflow_benchmark.py` — `sha256:22d6b75799ca24e8b3289a0c77caa312acac8763b511550722b7ce23d1a396be`
 - `benchmarks/README.md` — `sha256:7646ec968c4a325196bac99b26ce855f6ad46ad1993d82a7ffe0b67862cf7ae2`
-- `tests/test_small_fix_closeout.py` — `sha256:1fc07359a4def67a4b0230b5efd3cf3c8d7d0744f2476d3de972c9307e091e3a`
+- `tests/test_small_fix_closeout.py` — `sha256:16fa4f5ad1265aae066c801411ed9e293606833b1e202436b1e35537078b8f9b`
 - `benchmarks/small_fix_authoring_benchmark.py` — `sha256:f12065d57870fe140c8480a7d6efaab3ea60590a52b0c7c624caf7795c838679`
 - `skills/repo-context-ledger/references/writing-quality.md` — `sha256:1583f96c127ea3dba2a83885dc4160172e01295c4b0c56d6781a6e31d449db60`
 <!-- repo-context-ledger:pack-files:end -->

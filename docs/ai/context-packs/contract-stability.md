@@ -6,10 +6,10 @@ Aliases: none
 Quality profile: evidence-v1
 Language: en
 Detail: standard
-Source commit: 1a0f4bf5e0c8199efdd4930435270406a1d95907
+Source commit: 44630d3805a54ae02184131497c715d64fa88e5a
 Base branch: main
 Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
-Last refreshed: 2026-09-08T00:02:36+08:00
+Last refreshed: 2026-09-08T00:14:54+08:00
 
 ## Purpose
 
@@ -57,7 +57,7 @@ Routes compatibility work to the public CLI schemas, golden fixtures, routing co
 - `src/repo_context_ledger/errors.pyfrag` — `sha256:7cd76293bd376f12cf7e13ba747159820667919afcc720098e7958ee05bb9717`
 - `src/repo_context_ledger/models.pyfrag` — `sha256:a22d3de153c2deff0417d79af5e90dbb907ec2820d475fc7d9be7ed9fc06893a`
 - `src/repo_context_ledger/runtime.py.tmpl` — `sha256:c01e9bee65a2e168ee22d0a8e1fe5b1b7686f61c7cd4320d17cbfb25f1c6ccf4`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:ee85dce70f9f4f43abd9369b6ca7bb45e2fdbfe0513a89e2a58ebea2e8b5d135`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:12ae39362268ec7c1c2e27d4a4d73ee1ffd0beecc1509f7b3d7f234db412463e`
 - `schemas/README.md` — `sha256:edfc6ed9e01236021278fbd276092a8acd8fb44c140cd81be4170006278ffb29`
 - `schemas/workflow-plan-v1.schema.json` — `sha256:8e298fa8bd11aaeab1a89b322b2b4f63541b8137ebc7f492b526e4ba802f7ebe`
 - `schemas/context-bundle-v1.schema.json` — `sha256:bba40cd2f4e0d8a630b82cc3372fc820a110f2a0433741aec766da84a903806d`

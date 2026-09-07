@@ -345,6 +345,7 @@ python scripts/build_runtime.py --check
 - 按验收目标调用 verify，不给每个辅助操作单独记账。可选的已审查脚本示例保留各步骤的通过、失败和未执行结果；私有计时区分实际脚本与 Ledger 开销。必要安全检查不省略、不重排。
 - `init --runtime global` 可选用小型转发入口执行全局 Codex Skill，项目配置、私有任务和历史仍留在原仓库；默认仍使用便于 clone 和 CI 的独立运行时。
 - 可选 `finish --dry-run` 无写入预览真实收尾检查；`pack --reference` 区分按需阅读链接与有效性依赖，不自动降低旧依赖的检查要求。
+- Git 只读查询禁用可选的索引刷新，即使干净文件的时间戳发生变化，预览也不会顺带改写 `.git/index`。
 - 汇总式 `policy --base` PR 门禁与带哈希绑定的 `audit --history --policy as-recorded`，支持保留历史结果并记录后续解决依据。
 
 版本说明：v1.0.2 的工作在 PR #27 中开发，但没有单独正式发布；其 policy/audit 能力和后续工作流优化统一包含在 v1.0.3 中，不补造过去的发布记录或标签。
