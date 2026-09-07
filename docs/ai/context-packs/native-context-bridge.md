@@ -6,10 +6,10 @@ Aliases: none
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
+Source commit: 1a0f4bf5e0c8199efdd4930435270406a1d95907
 Base branch: main
 Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
-Last refreshed: 2026-08-31T18:33:18+08:00
+Last refreshed: 2026-09-08T00:02:35+08:00
 
 ## Purpose
 
@@ -50,11 +50,11 @@ Native Context Bridge 将不同编码 Agent 的仓库入口连接到同一份 Gi
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:f00aafdd16ed109963ed90b5bc4d77b2fc2b0c4f230a09e4cba7e52b8fa45d49`
-- `skills/repo-context-ledger/SKILL.md` — `sha256:e1b01f109a01267b9519c349c6016123d2e78449b63ab6c9299c449ad4a23b68`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:ee85dce70f9f4f43abd9369b6ca7bb45e2fdbfe0513a89e2a58ebea2e8b5d135`
+- `skills/repo-context-ledger/SKILL.md` — `sha256:5ded6a55fcd32c9cd6ae07eef809b7c33a9c158fdc13a26b70752eb3288a3e69`
 - `skills/repo-context-ledger/agents/openai.yaml` — `sha256:84582076dab207d0d16c25260b033b4b2ebe10e241a9b7a18715de41ad7f12ca`
 - `skills/repo-context-ledger/assets/handoff-template.md` — `sha256:dd1e26e29993ac93d5f52de315df130b270982125b4037dc01c17d9cb63f9a52`
 - `skills/repo-context-ledger/references/document-model.md` — `sha256:ae14ffcfa7353cd5dab7d2776e3c3ed483fede91bf5ee7cb536110af7e7c7baa`
-- `skills/repo-context-ledger/references/production-workflow.md` — `sha256:61b308e7b737e2677cf0f4c8740ad281710bc6e33740098cee5e17beb2b36d48`
+- `skills/repo-context-ledger/references/production-workflow.md` — `sha256:e9b3f1fbf7b1e5f25486f17d1d4fb6756f7b90d408c108be514c1b5c882cc6e7`
 - `tests/test_ledger.py` — `sha256:8f5041ab68473240b1e6cf571c3fe31df732a09110ccd48475a9236ca1cd3f70`
 <!-- repo-context-ledger:pack-files:end -->

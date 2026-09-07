@@ -6,10 +6,10 @@ Aliases: none
 Quality profile: evidence-v1
 Language: zh-CN
 Detail: standard
-Source commit: 4800d58e9bde70c8f0b55a9afe0f6e7df90480d2
+Source commit: 1a0f4bf5e0c8199efdd4930435270406a1d95907
 Base branch: main
-Base commit: cc673f18238af119ecfe5cf08ffc2b4b3fc698e8
-Last refreshed: 2026-08-27T21:54:15+08:00
+Base commit: 68c3b0cb9de9d1f975f847046d9db2b883fef00f
+Last refreshed: 2026-09-08T00:02:36+08:00
 
 ## Purpose
 
@@ -52,8 +52,8 @@ Last refreshed: 2026-08-27T21:54:15+08:00
 <!-- repo-context-ledger:pack-files:start -->
 ## Tracked file fingerprints
 
-- `src/repo_context_ledger/constants.pyfrag` — `sha256:81a8fb3f2c0e857b28f88b9a6d75e31e6d40e485835517d7c50c95296ff5ed44`
-- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:f00aafdd16ed109963ed90b5bc4d77b2fc2b0c4f230a09e4cba7e52b8fa45d49`
+- `src/repo_context_ledger/constants.pyfrag` — `sha256:1d78f4e2545641efce1a3ef6db9948769ec39cfd530d795a4727a3c7214dcd7f`
+- `skills/repo-context-ledger/scripts/ledger.py` — `sha256:ee85dce70f9f4f43abd9369b6ca7bb45e2fdbfe0513a89e2a58ebea2e8b5d135`
 - `.context-ledger/config.json` — `sha256:b70099d1d5911cc7edb1c3aefa182effb46314e5746f4b9c4318f9ed147cb4e8`
 - `tests/test_ledger.py` — `sha256:8f5041ab68473240b1e6cf571c3fe31df732a09110ccd48475a9236ca1cd3f70`
 <!-- repo-context-ledger:pack-files:end -->

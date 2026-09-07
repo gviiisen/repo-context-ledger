@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  ledger-gates:
+  ledger-policy:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -23,9 +23,7 @@ jobs:
           python-version: "3.12"
       - run: python scripts/build_runtime.py --check
       - run: git fetch origin main
-      - run: python .context-ledger/ledger.py team-check --base origin/main
-      - run: python .context-ledger/ledger.py check --strict --coverage --changed-since origin/main
-      - run: git diff --check origin/main...HEAD
+      - run: python .context-ledger/ledger.py policy --base origin/main
 
   test:
     strategy:
