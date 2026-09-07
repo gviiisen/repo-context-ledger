@@ -569,5 +569,5 @@ Version note: v1.0.2 was developed in PR #27 but was not released separately. It
 - [Change history](docs/changes/README.md)
 - [Feature Context Packs](docs/ai/context-packs)
 - Relevant specs: [Compact local configuration workflow](docs/specs/compact-local-config-workflow.md), [Context Routing Performance](docs/specs/context-routing-performance.md), [Continuation Quality](docs/specs/continuation-quality.md), [Contract Stability](docs/specs/contract-stability.md), [Coverage Integrity](docs/specs/coverage-integrity.md)
-- Latest recorded change: [Address PR 25 review blockers](docs/changes/2026/08/20260827214039-gviiisen-c84859e7d8-address-pr-25-review-blockers.md)
+- Latest recorded change: [Preserve Git index during read-only finish preview](docs/changes/2026/09/20260908000924-gviiisen-6acf617116-preserve-git-index-during-read-only-finish-previ.md)
 <!-- repo-context-ledger:end -->

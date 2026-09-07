@@ -3,6 +3,12 @@
 <!-- repo-context-ledger:start -->
 ## Changes in 2026-08
 
+- [Align Skill UI metadata with ledger-first positioning](20260831183057-gviiisen-8ccc27959a-align-skill-ui-metadata-with-ledger-first-positi.md) — completed
+- [Center product messaging on the feature change ledger](20260831182446-gviiisen-8decd6bb1b-center-product-messaging-on-the-feature-change-l.md) — completed
+- [Reject unmanaged prose in derived indexes](20260828000657-gviiisen-9e1ff41396-reject-unmanaged-prose-in-derived-indexes.md) — completed
+- [Harden derived-only policy regression coverage](20260828000442-gviiisen-0e6663b20a-harden-derived-only-policy-regression-coverage.md) — completed
+- [Classify historical dispositions as Ledger documentation](20260828000221-gviiisen-43054cb61c-classify-historical-dispositions-as-ledger-docum.md) — completed
+- [Add ledger policy and historical dispositions](20260827233705-gviiisen-a9641a2f72-add-ledger-policy-and-historical-dispositions.md) — completed
 - [Address PR 25 review blockers](20260827214039-gviiisen-c84859e7d8-address-pr-25-review-blockers.md) — completed
 - [Harden v1.0.1 workflow and repository boundaries](20260827202058-gviiisen-0e61ed5004-harden-v1-0-1-workflow-and-repository-boundaries.md) — completed
 - [Cover public protocol error shapes](20260827191239-gviiisen-eaffca7e21-cover-public-protocol-error-shapes.md) — completed

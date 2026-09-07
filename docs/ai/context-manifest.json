@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "tool_version": "1.0.1",
+  "tool_version": "1.0.3",
   "default_branch": "main",
   "project_context": "docs/ai/project-context.md",
   "docs": {
@@ -14,8 +14,8 @@
       "title": "Compact Local Configuration Workflow",
       "context_pack": "docs/ai/context-packs/compact-local-config-workflow.md",
       "status": "current",
-      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
-      "last_refreshed": "2026-08-27T21:54:11+08:00",
+      "source_commit": "44630d3805a54ae02184131497c715d64fa88e5a",
+      "last_refreshed": "2026-09-08T00:14:56+08:00",
       "stable_specs": [
         "docs/specs/compact-local-config-workflow.md"
       ],
@@ -29,9 +29,49 @@
         "tests/test_ledger.py",
         "tests/test_doctor.py",
         "benchmarks/closeout_workflow_benchmark.py",
-        "benchmarks/README.md"
+        "benchmarks/README.md",
+        "tests/test_small_fix_closeout.py",
+        "benchmarks/small_fix_authoring_benchmark.py",
+        "skills/repo-context-ledger/references/writing-quality.md"
       ],
       "recent_changes": [
+        {
+          "id": "20260905163611-gviiisen-5e72f557a4",
+          "path": "docs/changes/2026/09/20260905163611-gviiisen-5e72f557a4-preserve-explanations-in-concise-change-records.md",
+          "title": "Preserve explanations in concise change records",
+          "feature": "compact-local-config-workflow",
+          "date": "2026-09-05",
+          "summary": "New short drafts have nine authoring prompts, retain Agent-authored change explanations and documentation rationale, and generate only the documentation Updated list. The new format marker requires exact evidence-path references and prose beyond a path list. Meaningful findings stay in the same private draft; scope growth expands that draft instead of discarding its notes. Inline values remain on their own line for LF and CRLF records.",
+          "evidence_paths": [
+            ".context-ledger/ledger.py",
+            ".context-ledger/writing-quality.md",
+            "AGENTS.md",
+            "README.md",
+            "README.zh-CN.md",
+            "benchmarks/README.md",
+            "benchmarks/closeout_workflow_benchmark.py",
+            "benchmarks/small_fix_authoring_benchmark.py",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/continuation-quality.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/ai/context-packs/verification-presets.md",
+            "docs/ai/context-packs/workflow-planning.md",
+            "docs/specs/compact-local-config-workflow.md",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/references/production-workflow.md",
+            "skills/repo-context-ledger/references/writing-quality.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/test_small_fix_closeout.py"
+          ],
+          "status": "completed"
+        },
         {
           "id": "20260827031910-gviiisen-bb7acfb439",
           "path": "docs/changes/2026/08/20260827031910-gviiisen-bb7acfb439-close-compact-workflow-review-gaps.md",
@@ -101,8 +141,8 @@
       "title": "Context Routing Performance",
       "context_pack": "docs/ai/context-packs/context-routing-performance.md",
       "status": "current",
-      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
-      "last_refreshed": "2026-08-27T21:54:12+08:00",
+      "source_commit": "44630d3805a54ae02184131497c715d64fa88e5a",
+      "last_refreshed": "2026-09-08T00:14:57+08:00",
       "stable_specs": [
         "docs/specs/context-routing-performance.md"
       ],
@@ -152,8 +192,8 @@
       "title": "Continuation Quality",
       "context_pack": "docs/ai/context-packs/continuation-quality.md",
       "status": "current",
-      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
-      "last_refreshed": "2026-08-27T21:54:12+08:00",
+      "source_commit": "1a0f4bf5e0c8199efdd4930435270406a1d95907",
+      "last_refreshed": "2026-09-08T00:02:38+08:00",
       "stable_specs": [
         "docs/specs/continuation-quality.md"
       ],
@@ -213,8 +253,8 @@
       "title": "Contract Stability",
       "context_pack": "docs/ai/context-packs/contract-stability.md",
       "status": "current",
-      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
-      "last_refreshed": "2026-08-27T21:54:13+08:00",
+      "source_commit": "44630d3805a54ae02184131497c715d64fa88e5a",
+      "last_refreshed": "2026-09-08T00:14:54+08:00",
       "stable_specs": [
         "docs/specs/contract-stability.md"
       ],
@@ -243,7 +283,8 @@
         "tests/fixtures/routing-eval-v1.json",
         ".github/workflows/test.yml",
         "COMPATIBILITY.md",
-        "MIGRATIONS.md"
+        "MIGRATIONS.md",
+        "tests/test_policy_and_audit.py"
       ],
       "recent_changes": [
         {
@@ -384,8 +425,8 @@
       "title": "Coverage Integrity",
       "context_pack": "docs/ai/context-packs/coverage-integrity.md",
       "status": "current",
-      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
-      "last_refreshed": "2026-08-27T21:54:15+08:00",
+      "source_commit": "44630d3805a54ae02184131497c715d64fa88e5a",
+      "last_refreshed": "2026-09-08T00:14:54+08:00",
       "stable_specs": [
         "docs/specs/coverage-integrity.md"
       ],
@@ -396,6 +437,152 @@
         "tests/test_ledger.py"
       ],
       "recent_changes": [
+        {
+          "id": "20260828000657-gviiisen-9e1ff41396",
+          "path": "docs/changes/2026/08/20260828000657-gviiisen-9e1ff41396-reject-unmanaged-prose-in-derived-indexes.md",
+          "title": "Reject unmanaged prose in derived indexes",
+          "feature": "coverage-integrity",
+          "date": "2026-08-28",
+          "summary": "Existing generated Markdown indexes qualify only when content outside their managed block matches the merge base. Newly generated index files qualify only with their exact canonical heading, while a full JSON Manifest remains wholly derived.",
+          "evidence_paths": [
+            ".github/workflows/test.yml",
+            "COMPATIBILITY.md",
+            "MIGRATIONS.md",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/continuation-quality.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/ai/context-packs/verification-presets.md",
+            "docs/ai/context-packs/workflow-planning.md",
+            "docs/audit-dispositions/20260822003651-final-verification-failed.json",
+            "docs/changes/2026/08/20260827233705-gviiisen-a9641a2f72-add-ledger-policy-and-historical-dispositions.md",
+            "docs/changes/2026/08/20260828000221-gviiisen-43054cb61c-classify-historical-dispositions-as-ledger-docum.md",
+            "docs/changes/2026/08/20260828000442-gviiisen-0e6663b20a-harden-derived-only-policy-regression-coverage.md",
+            "docs/specs/contract-stability.md",
+            "docs/specs/coverage-integrity.md",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/references/production-workflow.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/constants.pyfrag",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/test_policy_and_audit.py",
+            "tests/test_runtime_build.py"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "20260828000442-gviiisen-0e6663b20a",
+          "path": "docs/changes/2026/08/20260828000442-gviiisen-0e6663b20a-harden-derived-only-policy-regression-coverage.md",
+          "title": "Harden derived-only policy regression coverage",
+          "feature": "coverage-integrity",
+          "date": "2026-08-28",
+          "summary": "Tests prove a hand-edited generated index fails derived idempotence and README prose outside the managed block cannot receive derived-only classification; the derived drift message now reports the exact planned action clearly.",
+          "evidence_paths": [
+            ".github/workflows/test.yml",
+            "COMPATIBILITY.md",
+            "MIGRATIONS.md",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/continuation-quality.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/ai/context-packs/verification-presets.md",
+            "docs/ai/context-packs/workflow-planning.md",
+            "docs/audit-dispositions/20260822003651-final-verification-failed.json",
+            "docs/changes/2026/08/20260827233705-gviiisen-a9641a2f72-add-ledger-policy-and-historical-dispositions.md",
+            "docs/changes/2026/08/20260828000221-gviiisen-43054cb61c-classify-historical-dispositions-as-ledger-docum.md",
+            "docs/specs/contract-stability.md",
+            "docs/specs/coverage-integrity.md",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/references/production-workflow.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/constants.pyfrag",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/test_policy_and_audit.py",
+            "tests/test_runtime_build.py"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "20260828000221-gviiisen-43054cb61c",
+          "path": "docs/changes/2026/08/20260828000221-gviiisen-43054cb61c-classify-historical-dispositions-as-ledger-docum.md",
+          "title": "Classify historical dispositions as Ledger documentation",
+          "feature": "coverage-integrity",
+          "date": "2026-08-28",
+          "summary": "Coverage derives the disposition directory from the configured Changes parent and classifies its JSON records as docs, so they remain audited without requiring an unrelated Context Pack code mapping.",
+          "evidence_paths": [
+            ".github/workflows/test.yml",
+            "COMPATIBILITY.md",
+            "MIGRATIONS.md",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/continuation-quality.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/ai/context-packs/verification-presets.md",
+            "docs/ai/context-packs/workflow-planning.md",
+            "docs/audit-dispositions/20260822003651-final-verification-failed.json",
+            "docs/changes/2026/08/20260827233705-gviiisen-a9641a2f72-add-ledger-policy-and-historical-dispositions.md",
+            "docs/specs/contract-stability.md",
+            "docs/specs/coverage-integrity.md",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/references/production-workflow.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/constants.pyfrag",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/test_policy_and_audit.py",
+            "tests/test_runtime_build.py"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "20260827233705-gviiisen-a9641a2f72",
+          "path": "docs/changes/2026/08/20260827233705-gviiisen-a9641a2f72-add-ledger-policy-and-historical-dispositions.md",
+          "title": "Add ledger policy and historical dispositions",
+          "feature": "coverage-integrity",
+          "date": "2026-08-28",
+          "summary": "`policy --base <ref>` classifies the actual merge-base delta as ordinary or derived-only and applies the matching aggregate gate. `audit --history --policy as-recorded` preserves recorded outcomes, while exact-hash `historical-disposition-v1` records can resolve known findings through a later completed Change and become invalid after any history edit.",
+          "evidence_paths": [
+            ".github/workflows/test.yml",
+            "COMPATIBILITY.md",
+            "MIGRATIONS.md",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/continuation-quality.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/ai/context-packs/verification-presets.md",
+            "docs/ai/context-packs/workflow-planning.md",
+            "docs/audit-dispositions/20260822003651-final-verification-failed.json",
+            "docs/specs/contract-stability.md",
+            "docs/specs/coverage-integrity.md",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/references/production-workflow.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/constants.pyfrag",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/test_policy_and_audit.py",
+            "tests/test_runtime_build.py"
+          ],
+          "status": "completed"
+        },
         {
           "id": "20260827214039-gviiisen-c84859e7d8",
           "path": "docs/changes/2026/08/20260827214039-gviiisen-c84859e7d8-address-pr-25-review-blockers.md",
@@ -432,136 +619,6 @@
             "tests/test_ledger.py"
           ],
           "status": "completed"
-        },
-        {
-          "id": "20260822003911-gviiisen-e688fa6347",
-          "path": "docs/changes/2026/08/20260822003911-gviiisen-e688fa6347-classify-git-attributes-as-repository-configurat.md",
-          "title": "Classify Git attributes as repository configuration",
-          "feature": "coverage-integrity",
-          "date": "2026-08-22",
-          "summary": "Default and repository-local Coverage configuration classify `.gitattributes` as `config`. Strict changed-scope Coverage still checks implementation paths, while checkout policy changes no longer require an implementation handoff merely to satisfy the catch-all glob.",
-          "evidence_paths": [
-            ".context-ledger/config.json",
-            ".context-ledger/ledger.py",
-            "docs/ai/context-packs/context-routing-performance.md",
-            "docs/ai/context-packs/contract-stability.md",
-            "docs/ai/context-packs/coverage-integrity.md",
-            "docs/ai/context-packs/native-context-bridge.md",
-            "docs/ai/context-packs/pack-health-doctor.md",
-            "docs/ai/context-packs/runtime-architecture.md",
-            "docs/ai/context-packs/task-session-integrity.md",
-            "skills/repo-context-ledger/scripts/ledger.py",
-            "src/repo_context_ledger/constants.pyfrag",
-            "tests/test_ledger.py"
-          ],
-          "status": "completed"
-        },
-        {
-          "id": "20260821144634-gviiisen-60f90c607e",
-          "path": "docs/changes/2026/08/20260821144634-gviiisen-60f90c607e-make-fingerprints-portable-and-redact-local-path.md",
-          "title": "Make fingerprints portable and redact local paths",
-          "feature": "coverage-integrity",
-          "date": "2026-08-21",
-          "summary": "指纹先遵守 Git `text/eol` 属性，再对未声明的 UTF-8 非 NUL 文本把 CRLF 规范为 LF；`-text`、NUL 与非 UTF-8 文件保持逐字节哈希。`verify` 和 `finish` 以稳定占位符净化普通、slash 与 JSON-escaped 路径，当前可见的 5 处旧绝对路径也已纠正。",
-          "evidence_paths": [
-            "docs/ai/context-packs/coverage-integrity.md",
-            "docs/ai/context-packs/native-context-bridge.md",
-            "docs/ai/context-packs/task-session-integrity.md",
-            "docs/changes/2026/08/20260811211310-gviiisen-5a44822643-implement-native-context-bridge.md",
-            "docs/changes/2026/08/20260812025946-gviiisen-ec71978b50-change.md",
-            "docs/changes/2026/08/20260812034448-gviiisen-6c5673170f-handoff.md",
-            "docs/changes/2026/08/20260812041915-gviiisen-c1688f4523-evidence-finish.md",
-            "docs/changes/2026/08/20260815153145-gviiisen-c108737ed0-implement-init-dry-run-planning.md",
-            "docs/specs/coverage-integrity.md",
-            "docs/specs/task-session-integrity.md",
-            "skills/repo-context-ledger/SKILL.md",
-            "skills/repo-context-ledger/scripts/ledger.py",
-            "tests/test_ledger.py"
-          ],
-          "status": "completed"
-        },
-        {
-          "id": "20260812003845-gviiisen-5857b9529e",
-          "path": "docs/changes/2026/08/20260812003845-gviiisen-5857b9529e-readme.md",
-          "title": "修正受管 README 路径分类",
-          "feature": "coverage-integrity",
-          "date": "2026-08-12",
-          "summary": "根目录符合 `README(?:\\.[^/]+)*\\.md` 的文件和 `config.modules[*].readme` 都返回 managed，翻译 README 与模块摘要不再触发生产行为 Coverage。",
-          "evidence_paths": [
-            ".context-ledger/config.json",
-            ".context-ledger/ledger.py",
-            ".context-ledger/templates/context-pack-template.md",
-            ".context-ledger/templates/handoff-template.md",
-            ".context-ledger/templates/project-context-template.md",
-            ".context-ledger/templates/spec-template.md",
-            ".context-ledger/writing-quality.md",
-            ".cursor/rules/repo-context-ledger.mdc",
-            ".github/copilot-instructions.md",
-            "AGENTS.md",
-            "CLAUDE.md",
-            "README.md",
-            "README.zh-CN.md",
-            "docs/ai/context-manifest.json",
-            "docs/ai/context-packs/coverage-integrity.md",
-            "docs/ai/context-packs/native-context-bridge.md",
-            "docs/ai/project-context.md",
-            "docs/changes/2026/08/20260811211310-gviiisen-5a44822643-implement-native-context-bridge.md",
-            "docs/changes/2026/08/20260812002950-gviiisen-495d91c753-coverage-context-pack.md",
-            "docs/changes/2026/08/20260812003845-gviiisen-5857b9529e-readme.md",
-            "docs/changes/2026/08/README.md",
-            "docs/changes/README.md",
-            "docs/specs/README.md",
-            "docs/specs/coverage-integrity.md",
-            "docs/specs/native-context-bridge.md",
-            "skills/repo-context-ledger/SKILL.md",
-            "skills/repo-context-ledger/agents/openai.yaml",
-            "skills/repo-context-ledger/assets/handoff-template.md",
-            "skills/repo-context-ledger/references/document-model.md",
-            "skills/repo-context-ledger/scripts/ledger.py",
-            "tests/test_ledger.py"
-          ],
-          "status": "completed"
-        },
-        {
-          "id": "20260812002950-gviiisen-495d91c753",
-          "path": "docs/changes/2026/08/20260812002950-gviiisen-495d91c753-coverage-context-pack.md",
-          "title": "修正 Coverage 分类与 Context Pack 关联",
-          "feature": "coverage-integrity",
-          "date": "2026-08-12",
-          "summary": "`coverage_path_kind` 按受管路径及可配置 glob 区分生产实现、测试、CI、配置、生成与忽略路径；`coverage_validation_errors` 对每个生产路径校验精确 tracked-file 关联，并拒绝未刷新或完全无关的 Pack。",
-          "evidence_paths": [
-            ".context-ledger/config.json",
-            ".context-ledger/ledger.py",
-            ".context-ledger/templates/context-pack-template.md",
-            ".context-ledger/templates/handoff-template.md",
-            ".context-ledger/templates/project-context-template.md",
-            ".context-ledger/templates/spec-template.md",
-            ".context-ledger/writing-quality.md",
-            ".cursor/rules/repo-context-ledger.mdc",
-            ".github/copilot-instructions.md",
-            "AGENTS.md",
-            "CLAUDE.md",
-            "README.md",
-            "README.zh-CN.md",
-            "docs/ai/context-manifest.json",
-            "docs/ai/context-packs/coverage-integrity.md",
-            "docs/ai/context-packs/native-context-bridge.md",
-            "docs/ai/project-context.md",
-            "docs/changes/2026/08/20260811211310-gviiisen-5a44822643-implement-native-context-bridge.md",
-            "docs/changes/2026/08/20260812002950-gviiisen-495d91c753-coverage-context-pack.md",
-            "docs/changes/2026/08/README.md",
-            "docs/changes/README.md",
-            "docs/specs/README.md",
-            "docs/specs/coverage-integrity.md",
-            "docs/specs/native-context-bridge.md",
-            "skills/repo-context-ledger/SKILL.md",
-            "skills/repo-context-ledger/agents/openai.yaml",
-            "skills/repo-context-ledger/assets/handoff-template.md",
-            "skills/repo-context-ledger/references/document-model.md",
-            "skills/repo-context-ledger/scripts/ledger.py",
-            "tests/test_ledger.py"
-          ],
-          "status": "completed"
         }
       ]
     },
@@ -570,8 +627,8 @@
       "title": "Native Context Bridge",
       "context_pack": "docs/ai/context-packs/native-context-bridge.md",
       "status": "current",
-      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
-      "last_refreshed": "2026-08-27T21:54:15+08:00",
+      "source_commit": "44630d3805a54ae02184131497c715d64fa88e5a",
+      "last_refreshed": "2026-09-08T00:14:53+08:00",
       "stable_specs": [
         "docs/specs/native-context-bridge.md"
       ],
@@ -686,8 +743,8 @@
       "title": "Pack Health and Doctor",
       "context_pack": "docs/ai/context-packs/pack-health-doctor.md",
       "status": "current",
-      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
-      "last_refreshed": "2026-08-27T21:54:16+08:00",
+      "source_commit": "44630d3805a54ae02184131497c715d64fa88e5a",
+      "last_refreshed": "2026-09-08T00:14:53+08:00",
       "stable_specs": [
         "docs/specs/pack-health-doctor.md"
       ],
@@ -728,8 +785,8 @@
       "title": "Runtime Architecture",
       "context_pack": "docs/ai/context-packs/runtime-architecture.md",
       "status": "current",
-      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
-      "last_refreshed": "2026-08-27T21:54:17+08:00",
+      "source_commit": "44630d3805a54ae02184131497c715d64fa88e5a",
+      "last_refreshed": "2026-09-08T00:14:51+08:00",
       "stable_specs": [
         "docs/specs/runtime-architecture.md"
       ],
@@ -756,9 +813,44 @@
         "ARCHITECTURE.md",
         "SECURITY.md",
         "THREAT_MODEL.md",
-        ".github/workflows/test.yml"
+        ".github/workflows/test.yml",
+        "skills/repo-context-ledger/references/global-runtime.md",
+        "tests/test_verification_boundaries.py"
       ],
       "recent_changes": [
+        {
+          "id": "20260907235433-gviiisen-0423b7d012",
+          "path": "docs/changes/2026/09/20260907235433-gviiisen-0423b7d012-prepare-the-v1-0-3-release.md",
+          "title": "Prepare the v1.0.3 release",
+          "feature": "runtime-architecture",
+          "date": "2026-09-08",
+          "summary": "Both standalone artifacts report 1.0.3, the version tests expect the final release identifier, and Windows/Ubuntu PR CI uses the aggregate ledger-policy gate. Existing policy/audit records and their unchanged hash-bound disposition are included. English and Chinese release notes explicitly state that unreleased v1.0.2 work is included in v1.0.3; no earlier release/tag is fabricated. Shared indexes remain deferred until after merge.",
+          "evidence_paths": [
+            ".context-ledger/ledger.py",
+            ".github/workflows/test.yml",
+            "COMPATIBILITY.md",
+            "MIGRATIONS.md",
+            "README.md",
+            "README.zh-CN.md",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/continuation-quality.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/ai/context-packs/verification-presets.md",
+            "docs/ai/context-packs/workflow-planning.md",
+            "docs/audit-dispositions/20260822003651-final-verification-failed.json",
+            "docs/specs/runtime-architecture.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/constants.pyfrag",
+            "tests/test_runtime_build.py"
+          ],
+          "status": "completed"
+        },
         {
           "id": "20260827202058-gviiisen-0e61ed5004",
           "path": "docs/changes/2026/08/20260827202058-gviiisen-0e61ed5004-harden-v1-0-1-workflow-and-repository-boundaries.md",
@@ -884,21 +976,6 @@
             "tests/test_runtime_build.py"
           ],
           "status": "completed"
-        },
-        {
-          "id": "20260822003651-gviiisen-9d9c476d8a",
-          "path": "docs/changes/2026/08/20260822003651-gviiisen-9d9c476d8a-pin-standalone-runtime-checkout-line-endings.md",
-          "title": "Pin standalone runtime checkout line endings",
-          "feature": "runtime-architecture",
-          "date": "2026-08-22",
-          "summary": "repository attributes pin the runtime-generation chain to LF. A focused Git-attribute regression test covers the exact inputs and outputs, while the existing byte-identity and drift tests remain green.",
-          "evidence_paths": [
-            "ARCHITECTURE.md",
-            "docs/ai/context-packs/runtime-architecture.md",
-            "docs/specs/runtime-architecture.md",
-            "tests/test_runtime_build.py"
-          ],
-          "status": "completed"
         }
       ]
     },
@@ -907,14 +984,15 @@
       "title": "Task Session Integrity",
       "context_pack": "docs/ai/context-packs/task-session-integrity.md",
       "status": "current",
-      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
-      "last_refreshed": "2026-08-27T21:54:18+08:00",
+      "source_commit": "44630d3805a54ae02184131497c715d64fa88e5a",
+      "last_refreshed": "2026-09-08T00:14:51+08:00",
       "stable_specs": [
         "docs/specs/task-session-integrity.md"
       ],
       "tracked_files": [
         "skills/repo-context-ledger/scripts/ledger.py",
         "skills/repo-context-ledger/SKILL.md",
+        "skills/repo-context-ledger/agents/openai.yaml",
         "skills/repo-context-ledger/references/production-workflow.md",
         "skills/repo-context-ledger/assets/handoff-template.md",
         "tests/test_ledger.py",
@@ -1062,8 +1140,8 @@
       "title": "Verification presets",
       "context_pack": "docs/ai/context-packs/verification-presets.md",
       "status": "current",
-      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
-      "last_refreshed": "2026-08-27T21:54:19+08:00",
+      "source_commit": "44630d3805a54ae02184131497c715d64fa88e5a",
+      "last_refreshed": "2026-09-08T00:14:50+08:00",
       "stable_specs": [
         "docs/specs/verification-presets.md"
       ],
@@ -1074,9 +1152,58 @@
         "skills/repo-context-ledger/scripts/ledger.py",
         "skills/repo-context-ledger/SKILL.md",
         "skills/repo-context-ledger/references/verification-presets.md",
-        "tests/test_ledger.py"
+        "tests/test_ledger.py",
+        "skills/repo-context-ledger/assets/verify-change.py",
+        "tests/test_verification_boundaries.py"
       ],
       "recent_changes": [
+        {
+          "id": "20260907222104-gviiisen-57768a4aa1",
+          "path": "docs/changes/2026/09/20260907222104-gviiisen-57768a4aa1-reduce-verification-wrapping-and-support-global-.md",
+          "title": "Reduce verification wrapping and support global runtime reuse",
+          "feature": "verification-presets",
+          "date": "2026-09-07",
+          "summary": "The development build uses ordinary tools for preparation/operations, reuses an identified session, and groups reviewed acceptance checks without replaying operations for logging. Optional bounded step annotations preserve passed/failed/not-run details while actual exit code controls the managed result. Timings separate subprocess, preparation, recording, and Ledger overhead. Opt-in global mode supplies a portable fail-closed forwarding entry, leaving configuration, ownership and history local. The global installation and consumer forwarding entry now use the same tested development runtime, retaining policy/audit commands.",
+          "evidence_paths": [
+            ".context-ledger/ledger.py",
+            ".context-ledger/writing-quality.md",
+            "AGENTS.md",
+            "README.md",
+            "README.zh-CN.md",
+            "benchmarks/README.md",
+            "benchmarks/closeout_workflow_benchmark.py",
+            "benchmarks/small_fix_authoring_benchmark.py",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/continuation-quality.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/ai/context-packs/verification-presets.md",
+            "docs/ai/context-packs/workflow-planning.md",
+            "docs/specs/compact-local-config-workflow.md",
+            "docs/specs/contract-stability.md",
+            "docs/specs/runtime-architecture.md",
+            "docs/specs/verification-presets.md",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/assets/verify-change.py",
+            "skills/repo-context-ledger/references/global-runtime.md",
+            "skills/repo-context-ledger/references/production-workflow.md",
+            "skills/repo-context-ledger/references/verification-presets.md",
+            "skills/repo-context-ledger/references/writing-quality.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/constants.pyfrag",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/test_policy_and_audit.py",
+            "tests/test_runtime_build.py",
+            "tests/test_small_fix_closeout.py",
+            "tests/test_verification_boundaries.py"
+          ],
+          "status": "completed"
+        },
         {
           "id": "20260827065951-gviiisen-6daa4a6c38",
           "path": "docs/changes/2026/08/20260827065951-gviiisen-6daa4a6c38-add-safe-verification-presets.md",
@@ -1118,8 +1245,8 @@
       "title": "Workflow Planning",
       "context_pack": "docs/ai/context-packs/workflow-planning.md",
       "status": "current",
-      "source_commit": "4800d58e9bde70c8f0b55a9afe0f6e7df90480d2",
-      "last_refreshed": "2026-08-27T21:54:20+08:00",
+      "source_commit": "44630d3805a54ae02184131497c715d64fa88e5a",
+      "last_refreshed": "2026-09-08T00:14:49+08:00",
       "stable_specs": [
         "docs/specs/workflow-planning.md"
       ],
@@ -1137,7 +1264,40 @@
         "tests/fixtures/workflow-plan-eval-v1.json",
         "tests/golden/workflow-plan-v1.json"
       ],
-      "recent_changes": []
+      "recent_changes": [
+        {
+          "id": "20260907230332-gviiisen-16c6b7fe8e",
+          "path": "docs/changes/2026/09/20260907230332-gviiisen-16c6b7fe8e-judge-task-deltas-before-invoking-ledger.md",
+          "title": "Judge task deltas before invoking Ledger",
+          "feature": "workflow-planning",
+          "date": "2026-09-07",
+          "summary": "A silent Agent-level delta decision precedes Ledger calls. Routine reads and requested rechecks with sufficient context use ordinary tools. Known unfinished work keeps its session/epoch and updates only new changes and findings. Missing context, a paused task or an actual handover uses the existing bounded commands. A new change after publication receives a new record; a similar request never justifies reusing stale verification or inferring authorization.",
+          "evidence_paths": [
+            ".context-ledger/ledger.py",
+            "AGENTS.md",
+            "README.md",
+            "README.zh-CN.md",
+            "docs/ai/context-packs/compact-local-config-workflow.md",
+            "docs/ai/context-packs/context-routing-performance.md",
+            "docs/ai/context-packs/continuation-quality.md",
+            "docs/ai/context-packs/contract-stability.md",
+            "docs/ai/context-packs/coverage-integrity.md",
+            "docs/ai/context-packs/native-context-bridge.md",
+            "docs/ai/context-packs/pack-health-doctor.md",
+            "docs/ai/context-packs/runtime-architecture.md",
+            "docs/ai/context-packs/task-session-integrity.md",
+            "docs/ai/context-packs/verification-presets.md",
+            "docs/ai/context-packs/workflow-planning.md",
+            "docs/specs/workflow-planning.md",
+            "skills/repo-context-ledger/SKILL.md",
+            "skills/repo-context-ledger/references/production-workflow.md",
+            "skills/repo-context-ledger/scripts/ledger.py",
+            "src/repo_context_ledger/runtime.py.tmpl",
+            "tests/test_small_fix_closeout.py"
+          ],
+          "status": "completed"
+        }
+      ]
     }
   ]
 }
